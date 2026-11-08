@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows 10 and 11 (x64): a readout in the taskbar and the same panel, released as `Stratoscope-<version>-windows.zip`. See [docs/WINDOWS.md](docs/WINDOWS.md).
+
 ## v0.1.4 · 2026-11-08
 
 - Parked conversations whose details can't be read (no log) show "In use" instead of "Free".

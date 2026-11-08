@@ -1,0 +1,5 @@
+{
+  "status": "thinking", "title": "118 t/s", "queued": 0, "percent": null,
+  "context_used": 209, "context_max": 131072, "recent": 5, "last_request_hit": "miss",
+  "cache_slots": 6, "cache_parked": 4, "batch_slots": 4, "has_system": true, "has_totals": true
+}

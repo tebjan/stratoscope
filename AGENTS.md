@@ -17,6 +17,8 @@ Stratoscope is an **instrument**: it shows what an engine reports and says when 
 
 - Layout: `Sources/StratoscopeCore` is engine- and platform-neutral and must not import AppKit or any other UI framework. `Sources/Stratoscope` is the macOS app; another platform gets its own target. One folder per engine under `Sources/StratoscopeCore/Engines/`.
 - Build and test: `swift build`, `./scripts/test.sh`. Try the UI without an engine: `STRATOSCOPE_ENGINE=demo swift run Stratoscope`.
+- The Windows app is C# (.NET 10) in `Sources/Windows`; everything Windows-specific stays under that folder, nothing new in the repo root. Build and test: `dotnet test Sources/Windows/Stratoscope.Windows.sln -c Release`. The rules above apply to it too; what both apps must show is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#shared-behaviour), the rest in [docs/WINDOWS.md](docs/WINDOWS.md).
+- Windows: use a maintained library before writing your own (JSON is System.Text.Json, no NuGet package in `Core` or `App`), and do not allocate per poll or per frame.
 - New engine data goes into `EngineSnapshot` as an **optional** field. `nil` means "unknown" and hides that part of the menu.
 - Add a test for the logic you add, preferably a pure function separated from networking.
 - Comments and UI text are English.

@@ -1,0 +1,10 @@
+{"engine": {"model": "example-model", "max_context": 131072, "version": "0.1.56", "batch_slots": 4, "conversation_cache_slots": 6, "expert_slots": 6405},
+ "live": {"state": "generating", "queued": 0, "phase": "answering", "prompt_tokens": 48200, "prompt_read": null, "prompt_total": null, "generated": 3110, "max_tokens": 32000, "elapsed_s": 101.4, "tok_s": 83.2, "tok_s_mean": 83.2, "prefill_tok_s_mean": 204.0, "tok_s_window_s": 2.0,
+  "parallel": 4, "running": 2,
+  "slots": [
+   {"slot": 0, "state": "idle", "held_tokens": 91473},
+   {"slot": 1, "state": "decoding", "prompt_tokens": 52127, "prompt_read": null, "generated": 4729, "elapsed_s": 114.8, "tok_s": 42.0},
+   {"slot": 2, "state": "decoding", "prompt_tokens": 48200, "prompt_read": null, "generated": 3110, "elapsed_s": 101.4, "tok_s": 41.2},
+   {"slot": 3, "state": "idle", "held_tokens": 0}],
+  "outside_slots": 0, "waiting": 0, "admitting": 0},
+ "requests": []}

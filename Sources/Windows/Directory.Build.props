@@ -1,0 +1,19 @@
+<Project>
+  <!-- Shared settings for the Windows projects (Core, App, and the tests, which import this file explicitly). The Swift package ignores it.
+       Target frameworks are set per project: net10.0 for the UI-free core, net10.0-windows for the app and its tests.
+       Build output of every Windows project goes to artifacts/ next to this file (ignored by git). -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <Version Condition="'$(Version)' == ''">0.1.4</Version>
+    <Authors>Stratoscope contributors</Authors>
+    <Product>Stratoscope</Product>
+    <Copyright>MIT License</Copyright>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
+  </PropertyGroup>
+</Project>

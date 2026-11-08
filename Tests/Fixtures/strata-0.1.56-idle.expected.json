@@ -1,0 +1,5 @@
+{
+  "status": "idle", "title": "ready", "queued": 0, "percent": null,
+  "context_used": 414, "context_max": 131072, "recent": 8, "last_request_hit": "small",
+  "cache_slots": 6, "cache_parked": 0, "batch_slots": 4, "has_system": true, "has_totals": true
+}

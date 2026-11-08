@@ -2,13 +2,43 @@ name: Release
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:   # builds the DMG as a workflow artifact, without publishing a release
+  workflow_dispatch:   # builds the DMG and the Windows zips as workflow artifacts, without publishing a release
 
 permissions:
   contents: write
 
 jobs:
+  # The Windows zips are built first and handed to the release job, so one release carries all downloads
+  # (and a failed Windows build stops the release before anything is published).
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version
+        id: v
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then V="${GITHUB_REF_NAME#v}"; else V="0.0.0-dev"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Test, publish and zip
+        shell: pwsh
+        run: ./scripts/windows/build.ps1 -Version "${{ steps.v.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Stratoscope-windows-${{ steps.v.outputs.version }}
+          path: |
+            Sources/Windows/artifacts/Stratoscope-*-windows*.zip
+            Sources/Windows/artifacts/Stratoscope-*-windows*.zip.sha256
+
   release:
+    needs: windows
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +54,11 @@ jobs:
 
       - name: Build DMG
         run: VERSION="${{ steps.v.outputs.version }}" ./scripts/make-dmg.sh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Stratoscope-windows-${{ steps.v.outputs.version }}
+          path: build
 
       - uses: actions/upload-artifact@v4
         with:
@@ -41,4 +76,5 @@ jobs:
           ./scripts/release-notes.sh "$V" > build/release-notes.md
           gh release create "$GITHUB_REF_NAME" \
             "build/Stratoscope-$V.dmg" "build/Stratoscope-$V.dmg.sha256" \
+            build/Stratoscope-$V-windows*.zip build/Stratoscope-$V-windows*.zip.sha256 \
             --title "Stratoscope $V" --notes-file build/release-notes.md

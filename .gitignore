@@ -3,3 +3,9 @@
 build/
 *.app
 .DS_Store
+bin/
+obj/
+artifacts/
+TestResults/
+.vs/
+*.user

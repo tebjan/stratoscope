@@ -1,0 +1,10 @@
+{"engine": {"model": "example-model", "max_context": 131072, "version": "0.1.56", "batch_slots": 4},
+ "live": {"state": "reading", "queued": 0, "phase": "reading the prompt", "prompt_tokens": 3000, "prompt_read": 1000, "prompt_total": 3000, "generated": 0, "max_tokens": 3000, "elapsed_s": 1.0, "tok_s": null, "tok_s_mean": null, "prefill_tok_s_mean": null, "tok_s_window_s": null,
+  "parallel": 4, "running": 2,
+  "slots": [
+   {"slot": 0, "state": "reading", "prompt_tokens": 6771, "prompt_read": 2048, "generated": 0, "elapsed_s": 2.0, "tok_s": null},
+   {"slot": 1, "state": "reading", "prompt_tokens": 3000, "prompt_read": 1000, "generated": 0, "elapsed_s": 1.0, "tok_s": null},
+   {"slot": 2, "state": "idle", "held_tokens": 0},
+   {"slot": 3, "state": "idle", "held_tokens": 0}],
+  "outside_slots": 0, "waiting": 0, "admitting": 0},
+ "requests": []}

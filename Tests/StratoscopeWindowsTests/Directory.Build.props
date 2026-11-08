@@ -1,0 +1,4 @@
+<Project>
+  <!-- The Windows parts keep their shared build settings in Sources/Windows. This project lives in Tests/ like the Swift tests, so it imports them. -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\Sources\Windows\Directory.Build.props" />
+</Project>

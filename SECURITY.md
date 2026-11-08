@@ -6,7 +6,7 @@ Please report security issues **privately** via GitHub: **Security → Advisorie
 
 ## Security posture
 
-Stratoscope is a **read-only monitor**:
+Stratoscope is a **read-only monitor**. The Windows app follows the same rules, including the client config reading (from `%USERPROFILE%\.config\kilo` and `\opencode`, or `%XDG_CONFIG_HOME%`), and installs per user, without administrator rights:
 
 - **No `sudo`, no privilege escalation.** It runs as your user.
 - **Nothing leaves your Mac.** No telemetry, no analytics, no update check. The only network traffic is HTTP to the engine you configured, by default on `127.0.0.1`.
@@ -27,6 +27,8 @@ On macOS the app is signed ad hoc and not notarized yet, which is why it asks fo
 ```bash
 ./scripts/build-app.sh
 ```
+
+The Windows zip comes from the same workflow, is not code-signed yet, and has a `.sha256` file too: `(Get-FileHash Stratoscope-<version>-windows.zip).Hash` must match it.
 
 ## Supported versions
 

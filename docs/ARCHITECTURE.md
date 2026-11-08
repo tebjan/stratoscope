@@ -19,7 +19,7 @@ Everything that can be tested without a screen lives in `StratoscopeCore` and is
 
 ## Platforms
 
-`StratoscopeCore` knows nothing about any UI. It only imports Foundation, so everything an engine adapter does (fetching, parsing, estimating, formatting) is shared by all platforms. The UI is the only platform-specific part: today `Sources/Stratoscope` is the macOS app, built with AppKit.
+`StratoscopeCore` knows nothing about any UI. It only imports Foundation, so everything an engine adapter does (fetching, parsing, estimating, formatting) is shared by all platforms. The UI is the only platform-specific part: today `Sources/Stratoscope` is the macOS app, built with AppKit. Windows is a second implementation in C# (`Sources/Windows`, `Core` and `App`), kept in step by [Shared behaviour](#shared-behaviour) and the recorded payloads in `Tests/Fixtures`: see [WINDOWS.md](WINDOWS.md).
 
 To add a platform:
 
@@ -82,6 +82,16 @@ Guidelines:
 - **Never block.** `poll` runs every two seconds on the main queue. Use `JSONFetcher` (1.5 s timeout) and call `completion` when done.
 - **Keep engine code out of the UI.** If the menu needs something new, add it to `EngineSnapshot` as an optional field and make it useful for every engine.
 - Use `DemoProvider` as the smallest example.
+
+## Shared behaviour
+
+What every front end does the same way. The payloads in `Tests/Fixtures` with their `*.expected.json` files (see the README there) pin it down; the C# tests read them, the Swift tests do not yet.
+
+- **Missing values:** a key that is missing or `null` is unknown (`–` or left out, never `0`); a number sent as text is not a number. A missing section (`hardware`, `conversation_cache`, `totals`) is not drawn. Shown on purpose: the title is padded to three digits and reads `0 t/s`, and the running request's cache reuse carries `≈`.
+- **Numbers:** English formatting whatever the system language (`1,234,567`, `26.4`), halves round to even, durations `42 s`, `2 min 5 s`, `3 h 12 min`, sizes in GiB with one decimal.
+- **Strata sources:** router mode asks `GET <router>/running`, then `GET <router>/upstream/<model>/metrics`; direct mode `GET <url>/metrics`. Nothing else. Status comes from `live.state` and `live.phase`; speeds from `live.prefill_tok_s_mean` (else the progress of `live.prompt_read` between polls) and `live.tok_s`; context from `live.prompt_tokens + live.generated` of `engine.max_context`; requests from `requests[]`; RAM, GPU, CPU from `hardware`; the prompt cache from `conversation_cache`; totals from `totals`.
+- **States:** connecting (nothing shown), offline, no model (router answers, `running` empty; nothing is woken), loading (router state is not `ready`), then ready, reading, thinking, writing. An HTTP 429 from the router keeps the last data on screen, marked.
+- **Settings:** environment variable, then the settings file, then the default. A router without `url` is asked alone, never `127.0.0.1:8095`.
 
 ## Not built yet
 

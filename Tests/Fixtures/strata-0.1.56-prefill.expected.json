@@ -1,0 +1,5 @@
+{
+  "status": "prefill", "title": "1,788 t/s", "queued": 0, "percent": 30,
+  "context_used": 6771, "context_max": 131072, "recent": 1, "last_request_hit": "small",
+  "running_cache_hit": "miss", "cache_slots": 6, "cache_parked": 0, "batch_slots": 4, "has_system": true, "has_totals": true
+}
