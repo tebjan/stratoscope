@@ -43,7 +43,15 @@ Open an issue first so the design can be agreed before the code.
 | `N free` | limit minus `X`, only when both are known (`ContextUsage.free`) | not shown |
 | Bars under the context bar (one per finished request, last 12) | prompt plus output tokens of each finished request (`RequestStats.contextTokens`) | not shown |
 
-The marker on the bar is `ContextUsage.compactAt`: the token count where the *client* summarises or trims the conversation. It is `nil` unless a source knows it, and then nothing is drawn. The adapter decides the source: an engine that reports it passes it through; for Strata, whose `/metrics` has no such field, it is the user's own `compact_at` setting. Never a guess. The setting is one number for one client, so with several clients on one engine it can only describe one of them. The bars below the context bar need no setting: a sudden drop is where a client started over, and the cache dots show what that cost.
+The marker on the bar is `ContextUsage.compactAt`: the token count where the *client* summarises or trims the conversation. It is `nil` unless a source knows it, and then nothing is drawn. The adapter decides the source. An engine that reports it passes it through. Strata's `/metrics` has no such field, so the Strata adapter takes, in this order:
+
+1. The client configs read by `ClientConfigReader` (`ClientLimits.swift`): Kilo's `kilo.jsonc` and OpenCode's `opencode.json`. A config counts when its `baseURL` has the same host and port as the router, `url` or proxy, and it names the running model. The value is the model's `limit.context` minus `limit.output`, which is the rule observed for Kilo. Two matching configs that disagree give `nil`.
+2. The user's `compact_at` setting, as the fallback for everything that cannot be read (other clients, other models).
+3. Nothing: no marker.
+
+The reader only looks at the server address and the `limit` numbers of each model, and never uses, stores or logs a key. Another client is one more entry in `ClientConfigReader.sources` and, if it summarises by another rule, its own `compactAt`. Test it with a sample config, like `ClientLimitsTests`.
+
+The bars below the context bar need no setting: a sudden drop is where a client started over, and the cache dots show what that cost.
 
 ## Screenshots
 

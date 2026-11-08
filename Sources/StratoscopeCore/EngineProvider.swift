@@ -19,7 +19,7 @@ public enum EngineRegistry {
     public static func make(_ config: Config) -> EngineProvider {
         switch config.engine.lowercased() {
         case DemoProvider.id: return DemoProvider()
-        default: return StrataProvider(config: config)
+        default: return StrataProvider(config: config, clients: config.readClientConfigs ? ClientConfigReader() : nil)
         }
     }
 }

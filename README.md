@@ -81,6 +81,8 @@ Each inference engine has a small adapter that turns its metrics into one common
 
 Stratoscope reads `http://127.0.0.1:8095/metrics` by default. For the list of parked conversations it also reads Strata's log file. If you run a llama-swap router in front of Strata, set `router` and Stratoscope takes the model name and loading state from there.
 
+**The line on the context bar.** Where a client summarises the chat is the client's decision, and Strata doesn't report it. Stratoscope reads it from the config of the clients that talk to your Strata: Kilo (`~/.config/kilo/kilo.jsonc`) and OpenCode (`~/.config/opencode/opencode.json`). It only counts a config that points at the same server address and names the model that is running, and it takes the model's context size minus its output size. Only those numbers and the server address are read, never your keys. If no config matches, or two disagree, the line uses your `compact_at`, and without that there is no line. Set `compact_at` for any other client. Set `client_configs` to `none` to turn the reading off.
+
 Nothing is sent anywhere except requests to your Strata server. It never writes to Strata or its files. When Strata doesn't report a value, the menu shows `–` instead of guessing, and an estimated number gets a `≈`.
 
 ## Settings
@@ -94,7 +96,8 @@ Environment variables win over `~/.config/stratoscope.json`, which wins over the
 | `STRATOSCOPE_ROUTER_URL` | `router` | Router in front of the inference engine. `none` turns it off |
 | `STRATOSCOPE_LOG` | `log` | Inference engine log file. Strata default: newest `*.log` in `~/.local/share/strata/install` |
 | `STRATOSCOPE_WEBUI_URL` | `webui` | Adds an "Open chat UI" entry to the menu |
-| `STRATOSCOPE_COMPACT_AT` | `compact_at` | Optional. Token count where your client summarises the chat. Drawn as a line on the context bar. Without it there is no line |
+| `STRATOSCOPE_COMPACT_AT` | `compact_at` | Optional. Token count where your client summarises the chat, drawn as a line on the context bar. Used when Stratoscope can't find the value itself (see below) |
+| `STRATOSCOPE_CLIENT_CONFIGS` | `client_configs` | `none` stops Stratoscope from reading client configs |
 
 Example `~/.config/stratoscope.json`:
 

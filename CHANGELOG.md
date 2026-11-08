@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.1.3 · 2026-11-08
+
+- The summarise marker on the context bar now finds its value itself: it reads the context and output size of the running model from the Kilo and OpenCode configs that point at the same server, and uses context minus output. Where nothing can be read, or two configs disagree, `compact_at` is the fallback, and without it there is no marker. `client_configs: none` turns the reading off.
+
 ## v0.1.2 · 2026-11-08
 
 - Status words and labels start with a capital letter ("Ready", "Reading", "Hit rate", …).

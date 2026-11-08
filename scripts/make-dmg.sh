@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 ./scripts/build-app.sh
-VERSION="${VERSION:-0.1.2}"
+VERSION="${VERSION:-0.1.3}"
 
 STAGE="build/dmg"
 rm -rf "$STAGE" && mkdir -p "$STAGE"

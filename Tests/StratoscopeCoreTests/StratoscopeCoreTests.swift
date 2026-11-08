@@ -89,6 +89,103 @@ import Testing
     }
 }
 
+@Suite struct ClientLimitsTests {
+    private let kilo = """
+    {
+      // local model through the router
+      "model": "openai-compatible/m1",
+      "provider": {
+        "openai-compatible": {
+          "options": { "apiKey": "SECRET-VALUE", "baseURL": "http://127.0.0.1:8080/v1", },
+          "models": {
+            "m1": { "limit": { "context": 90112, "output": 24576 } },   /* main */
+            "m2": { "limit": { "context": 32768, "output": 8192 } }
+          }
+        }
+      }
+    }
+    """
+    private let opencode = """
+    { "providers": { "llama-swap": { "settings": { "baseURL": "http://localhost:8080/v1", "apiKey": "SECRET-VALUE" },
+      "models": { "m1": { "modelID": "m1", "limit": { "context": 90112, "output": 24576 } } } } } }
+    """
+
+    @Test func testReadsBothLayoutsAndComments() {
+        let k = ClientLimits.parse(kilo, client: "Kilo")
+        #expect(k.count == 2)
+        #expect(k.first { $0.model == "m1" }?.compactAt == 65_536)
+        #expect(k.first { $0.model == "m1" }?.baseURL == "http://127.0.0.1:8080/v1")
+        let o = ClientLimits.parse(opencode, client: "OpenCode")
+        #expect(o.count == 1 && o[0].compactAt == 65_536)
+    }
+
+    @Test func testCommentMarkersInsideStringsSurvive() {
+        let t = ClientLimits.stripJSONComments(#"{"u": "http://x/y // not a comment"} // real comment"#)
+        #expect(t.contains("http://x/y // not a comment"))
+        #expect(!t.contains("real comment"))
+    }
+
+    @Test func testBrokenFileGivesNothing() {
+        #expect(ClientLimits.parse("{ not json", client: "Kilo").isEmpty)
+        #expect(ClientLimits.parse("{}", client: "Kilo").isEmpty)
+    }
+
+    @Test func testMatchesByAddressAndModel() {
+        let l = ClientLimits.parse(kilo, client: "Kilo")
+        #expect(ClientLimits.compactAt(limits: l, endpoints: ["http://127.0.0.1:8080"], model: "m1") == 65_536)
+        #expect(ClientLimits.compactAt(limits: l, endpoints: ["http://localhost:8080"], model: "m1") == 65_536)   // same address
+        #expect(ClientLimits.compactAt(limits: l, endpoints: ["http://127.0.0.1:8095"], model: "m1") == nil)      // other server
+        #expect(ClientLimits.compactAt(limits: l, endpoints: ["http://127.0.0.1:8080"], model: "other") == nil)   // other model
+        #expect(ClientLimits.compactAt(limits: l, endpoints: [], model: "m1") == nil)
+    }
+
+    @Test func testClientsThatAgreeCountOnce() {
+        let l = ClientLimits.parse(kilo, client: "Kilo") + ClientLimits.parse(opencode, client: "OpenCode")
+        #expect(ClientLimits.compactAt(limits: l, endpoints: ["http://127.0.0.1:8080"], model: "m1") == 65_536)
+    }
+
+    @Test func testClientsThatDisagreeGiveNoMarker() {
+        let a = ClientModelLimit(client: "A", baseURL: "http://127.0.0.1:8080/v1", model: "m", context: 100_000, output: 20_000)
+        let b = ClientModelLimit(client: "B", baseURL: "http://127.0.0.1:8080/v1", model: "m", context: 100_000, output: 30_000)
+        #expect(ClientLimits.compactAt(limits: [a, b], endpoints: ["http://127.0.0.1:8080"], model: "m") == nil)
+    }
+
+    @Test func testOutputLargerThanContextIsIgnored() {
+        let a = ClientModelLimit(client: "A", baseURL: "http://127.0.0.1:8080/v1", model: "m", context: 8_000, output: 9_000)
+        #expect(ClientLimits.compactAt(limits: [a], endpoints: ["http://127.0.0.1:8080"], model: "m") == nil)
+    }
+
+    private func home() throws -> String {
+        let dir = NSTemporaryDirectory() + "stratoscope-test-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: dir + "/.config/kilo", withIntermediateDirectories: true)
+        try kilo.write(toFile: dir + "/.config/kilo/kilo.jsonc", atomically: true, encoding: .utf8)
+        return dir
+    }
+
+    @Test func testReaderFindsKiloConfig() throws {
+        let r = ClientConfigReader(home: try home())
+        #expect(r.compactAt(endpoints: ["http://127.0.0.1:8080"], model: "m1") == 65_536)
+        #expect(ClientConfigReader(home: "/nonexistent").limits().isEmpty)
+    }
+
+    @Test func testStrataReadsClientConfigAndFallsBackToManualSetting() throws {
+        let m = try JSONSerialization.jsonObject(with: Data(#"{"engine": {"max_context": 98304}, "live": {"state": "idle"}}"#.utf8)) as! [String: Any]
+        var c = Config(); c.log = "/nonexistent.log"; c.router = "http://127.0.0.1:8080"
+        let reader = ClientConfigReader(home: try home())
+        #expect(StrataProvider(config: c, clients: reader).snapshot(from: m, model: "m1").context.compactAt == 65_536)
+        #expect(StrataProvider(config: c, clients: nil).snapshot(from: m, model: "m1").context.compactAt == nil)   // switched off
+        c.compactAt = 50_000
+        #expect(StrataProvider(config: c, clients: reader).snapshot(from: m, model: "m1").context.compactAt == 65_536)   // what the client says wins
+        #expect(StrataProvider(config: c, clients: reader).snapshot(from: m, model: "unknown").context.compactAt == 50_000)   // nothing to read: fallback
+        #expect(StrataProvider(config: c, clients: nil).snapshot(from: m, model: "m1").context.compactAt == 50_000)
+    }
+
+    @Test func testConfigCanSwitchReadingOff() throws {
+        #expect(Config.load(environment: [:], home: "/nonexistent").readClientConfigs == true)
+        #expect(Config.load(environment: ["STRATOSCOPE_CLIENT_CONFIGS": "none"], home: "/nonexistent").readClientConfigs == false)
+    }
+}
+
 @Suite struct StrataCacheLogTests {
     private func parked(_ tokens: Int, total: Int, bytes: Int = 1000) -> String {
         "conversation cache: parked \(tokens) tokens in 12.3 ms; parked=\(total) bytes=\(bytes) evictions=0 snapshot_bytes=\(bytes)"

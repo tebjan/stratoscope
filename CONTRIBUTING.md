@@ -19,7 +19,7 @@ Nothing leaves your Mac: no telemetry, no analytics, no network calls except to 
 
 Stratoscope is an instrument. It shows what an engine reports and says so when it doesn't know.
 
-1. **Only reported values.** Every number on screen comes from the engine's own metrics. A value the engine doesn't report is shown as "–" or left out, never as `0` and never guessed from something else.
+1. **Only reported values.** Every number on screen comes from the engine's own metrics. The one exception is the summarise marker on the context bar, which no engine reports: it comes from your own `compact_at` setting or from the `limit` numbers in the config of a client that talks to the engine (read-only, never keys), and is left out when neither says. A value the engine doesn't report is shown as "–" or left out, never as `0` and never guessed from something else.
 2. **Estimates are marked.** Where a number has to be derived (for example Strata does not report the cache reuse of a request that is still running), the UI shows it as approximate (`≈`) and the code says why.
 3. **Engines are asked through their public interface only**, and only while they run. Stratoscope never starts, wakes, signals or restarts an engine, and never writes to its files.
 4. **It describes; it doesn't act.** No automatic actions on your engine or your machine.

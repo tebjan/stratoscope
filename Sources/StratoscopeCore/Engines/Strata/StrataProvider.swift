@@ -14,8 +14,11 @@ public final class StrataProvider: EngineProvider {
     private let cacheLog = StrataCacheLog()
     private var proxy = "http://127.0.0.1:8095"
     private var lastRead: (Double, Date)?
+    private let clients: ClientConfigReader?
 
-    public init(config: Config) { self.config = config }
+    /// `clients`: where to look for the summarise threshold of the AI clients that use this engine.
+    /// Nil (the default) reads no client config.
+    public init(config: Config, clients: ClientConfigReader? = nil) { self.config = config; self.clients = clients }
 
     // MARK: Polling
 
@@ -74,6 +77,13 @@ public final class StrataProvider: EngineProvider {
             if let m = (try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date, best == nil || m > best!.1 { best = (p, m) }
         }
         return best?.0
+    }
+
+    /// Strata's /metrics has no such value. It comes from the configs of the clients that talk to this
+    /// server and use this model; where those say nothing (or disagree), the user's own `compact_at` is the fallback.
+    private func compactAt(model: String) -> Double? {
+        let endpoints = [config.router, config.url ?? "http://127.0.0.1:8095", proxy].compactMap { $0 }
+        return clients?.compactAt(endpoints: endpoints, model: model) ?? config.compactAt
     }
 
     func snapshot(from m: [String: Any], model: String) -> EngineSnapshot {
@@ -149,7 +159,7 @@ public final class StrataProvider: EngineProvider {
         return EngineSnapshot(engine: "Strata", model: model, status: status, queued: Int(num(live, "queued") ?? 0),
                               live: liveRequest, recent: recent,
                               context: ContextUsage(used: ctxUsed, max: num(eng, "max_context") ?? 0,   // 0 = the engine did not say
-                                                    compactAt: config.compactAt),   // Strata's /metrics has no such field
+                                                    compactAt: compactAt(model: model)),
                               system: system, cache: cache, totals: totals, links: links())
     }
 }
