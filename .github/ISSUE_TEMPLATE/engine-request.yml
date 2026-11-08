@@ -1,0 +1,28 @@
+name: Engine request
+description: Ask for support for another local inference engine
+labels: [engine]
+body:
+  - type: input
+    id: engine
+    attributes:
+      label: Engine
+      placeholder: llama.cpp server, MLX, Uzu, ...
+    validations: { required: true }
+  - type: input
+    id: endpoint
+    attributes:
+      label: Where does it expose metrics?
+      description: Endpoint URL or docs link, for example `/metrics` or `/slots`.
+    validations: { required: true }
+  - type: textarea
+    id: payload
+    attributes:
+      label: Sample payload
+      description: A real response from a running engine while it processes a request.
+      render: json
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you like to write the adapter?
+      options:
+        - label: Yes, I'll open a PR (see docs/ARCHITECTURE.md)

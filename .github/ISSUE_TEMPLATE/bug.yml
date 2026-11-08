@@ -1,0 +1,28 @@
+name: Bug report
+description: Something shows wrong, or the menu bar item doesn't appear
+labels: [bug]
+body:
+  - type: input
+    id: engine
+    attributes:
+      label: Engine and version
+      placeholder: Strata 0.1.58
+    validations: { required: true }
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS
+      placeholder: MacBook Pro M1 Max, macOS 27.0.1
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you expect, and what did you see?
+      description: A screenshot of the menu helps.
+    validations: { required: true }
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Raw metrics (optional)
+      description: Output of `curl http://127.0.0.1:<port>/metrics`. Remove anything private.
+      render: json

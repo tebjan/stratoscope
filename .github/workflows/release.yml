@@ -1,0 +1,44 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:   # builds the DMG as a workflow artifact, without publishing a release
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        id: v
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then V="${GITHUB_REF_NAME#v}"; else V="0.0.0-dev"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: swift test
+
+      - name: Build DMG
+        run: VERSION="${{ steps.v.outputs.version }}" ./scripts/make-dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Stratoscope-${{ steps.v.outputs.version }}
+          path: |
+            build/Stratoscope-*.dmg
+            build/Stratoscope-*.dmg.sha256
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          ./scripts/release-notes.sh "$V" > build/release-notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            "build/Stratoscope-$V.dmg" "build/Stratoscope-$V.dmg.sha256" \
+            --title "Stratoscope $V" --notes-file build/release-notes.md
