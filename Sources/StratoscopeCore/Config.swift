@@ -9,6 +9,8 @@ import Foundation
 ///     STRATOSCOPE_WEBUI_URL   adds an "Open chat UI" link to the menu
 ///     STRATOSCOPE_COMPACT_AT  token count at which your client summarises the chat; drawn as a marker on the context bar
 ///                             (fallback for when no client config can be read)
+///     STRATOSCOPE_CLIENT_MODEL    the model id your client config uses for this engine, if it differs from the name the
+///                             engine reports (needed to match a client config when there is no router)
 ///     STRATOSCOPE_CLIENT_CONFIGS  "none" stops Stratoscope from reading the config files of clients such as Kilo and
 ///                             OpenCode to find that threshold
 public struct Config {
@@ -19,6 +21,7 @@ public struct Config {
     public var webui: String?
     public var compactAt: Double?
     public var readClientConfigs = true
+    public var clientModel: String?
 
     public init() {}
 
@@ -38,6 +41,7 @@ public struct Config {
         if c.router == "none" || c.router == "" { c.router = nil }
         c.log = pick(["STRATOSCOPE_LOG"], "log")
         c.webui = pick(["STRATOSCOPE_WEBUI_URL"], "webui")
+        c.clientModel = pick(["STRATOSCOPE_CLIENT_MODEL"], "client_model")
         if pick(["STRATOSCOPE_CLIENT_CONFIGS"], "client_configs")?.lowercased() == "none" { c.readClientConfigs = false }
         if let k = pick(["STRATOSCOPE_COMPACT_AT"], "compact_at"), let v = Double(k) { c.compactAt = v }
         else if let v = (json["compact_at"] as? NSNumber)?.doubleValue { c.compactAt = v }

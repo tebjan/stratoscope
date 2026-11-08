@@ -83,7 +83,7 @@ public final class StrataProvider: EngineProvider {
     /// server and use this model; where those say nothing (or disagree), the user's own `compact_at` is the fallback.
     private func compactAt(model: String) -> Double? {
         let endpoints = [config.router, config.url ?? "http://127.0.0.1:8095", proxy].compactMap { $0 }
-        return clients?.compactAt(endpoints: endpoints, model: model) ?? config.compactAt
+        return clients?.compactAt(endpoints: endpoints, model: config.clientModel ?? model) ?? config.compactAt
     }
 
     func snapshot(from m: [String: Any], model: String) -> EngineSnapshot {

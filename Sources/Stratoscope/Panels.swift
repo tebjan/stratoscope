@@ -160,7 +160,7 @@ final class Panels {
         let list = Array(c.entries.reversed())   // newest first
         guard i < list.count else {
             text("Slot \(i + 1)", x: pad, y: 6, size: 11)
-            text("Free", x: 0, y: 6, size: 11, right: menuWidth - pad)
+            text(c.isParkedWithoutDetails(row: i) ? "In use" : "Free", x: 0, y: 6, size: 11, right: menuWidth - pad)
             bar(pad, 24, menuWidth - 2 * pad, 6, 0, .systemMint); return
         }
         let e = list[i]

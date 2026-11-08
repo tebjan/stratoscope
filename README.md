@@ -85,6 +85,21 @@ Stratoscope reads `http://127.0.0.1:8095/metrics` by default. For the list of pa
 
 Nothing is sent anywhere except requests to your Strata server. It never writes to Strata or its files. When Strata doesn't report a value, the menu shows `–` instead of guessing, and an estimated number gets a `≈`.
 
+## Other setups
+
+Strata listens on port 8095 unless it is started with `--port`, so the default works for a plain Strata. Everything else is a setting:
+
+| Your setup | What you see | What to do |
+|---|---|---|
+| Strata only, no router | Everything works. The model name is the one Strata reports. There is no "Loading" state, because only a router knows it | Nothing |
+| Strata on another port | No menu bar item at all | Set `url`. To check the address: `curl <url>/metrics` should answer with JSON |
+| Strata behind a router | Model name and loading state come from the router | Set `router` |
+| Strata's log is somewhere else | The parked conversations show "In use" without details, and there is no "Open log" entry | Set `log` |
+| A client other than Kilo or OpenCode | No line on the context bar | Set `compact_at` to the token count where that client summarises |
+| Kilo or OpenCode, but their model id differs from what Strata reports | No line on the context bar | Set `client_model` to the id used in the client config, or `compact_at` |
+| Client configs in `$XDG_CONFIG_HOME` | Found there | Nothing |
+| An engine other than Strata | Nothing (the item stays hidden) | Not supported yet, see [Supported inference engines](#supported-inference-engines) |
+
 ## Settings
 
 Environment variables win over `~/.config/stratoscope.json`, which wins over the defaults. If you start the app from the Finder on macOS, use the JSON file, because the Finder doesn't pass your shell variables on.
@@ -97,6 +112,7 @@ Environment variables win over `~/.config/stratoscope.json`, which wins over the
 | `STRATOSCOPE_LOG` | `log` | Inference engine log file. Strata default: newest `*.log` in `~/.local/share/strata/install` |
 | `STRATOSCOPE_WEBUI_URL` | `webui` | Adds an "Open chat UI" entry to the menu |
 | `STRATOSCOPE_COMPACT_AT` | `compact_at` | Optional. Token count where your client summarises the chat, drawn as a line on the context bar. Used when Stratoscope can't find the value itself (see below) |
+| `STRATOSCOPE_CLIENT_MODEL` | `client_model` | The model id your client config uses for this engine, if it differs from the name the engine reports |
 | `STRATOSCOPE_CLIENT_CONFIGS` | `client_configs` | `none` stops Stratoscope from reading client configs |
 
 Example `~/.config/stratoscope.json`:

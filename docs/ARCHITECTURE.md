@@ -45,7 +45,7 @@ Open an issue first so the design can be agreed before the code.
 
 The marker on the bar is `ContextUsage.compactAt`: the token count where the *client* summarises or trims the conversation. It is `nil` unless a source knows it, and then nothing is drawn. The adapter decides the source. An engine that reports it passes it through. Strata's `/metrics` has no such field, so the Strata adapter takes, in this order:
 
-1. The client configs read by `ClientConfigReader` (`ClientLimits.swift`): Kilo's `kilo.jsonc` and OpenCode's `opencode.json`. A config counts when its `baseURL` has the same host and port as the router, `url` or proxy, and it names the running model. The value is the model's `limit.context` minus `limit.output`, which is the rule observed for Kilo. Two matching configs that disagree give `nil`.
+1. The client configs read by `ClientConfigReader` (`ClientLimits.swift`): Kilo's `kilo.jsonc` and OpenCode's `opencode.json`. A config counts when its `baseURL` has the same host and port as the router, `url` or proxy, and it names the running model. The value is the model's `limit.context` minus `limit.output`, which is the rule observed for Kilo. `client_model` names the model id used in the client config when it differs from the engine's name. Two matching configs that disagree give `nil`.
 2. The user's `compact_at` setting, as the fallback for everything that cannot be read (other clients, other models).
 3. Nothing: no marker.
 

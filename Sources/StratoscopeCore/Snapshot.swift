@@ -120,6 +120,10 @@ public struct CacheStats {
         self.budgetBytes = budgetBytes; self.usedBytes = usedBytes; self.slots = slots; self.parked = parked
         self.requests = requests; self.requestsReused = requestsReused; self.evictions = evictions; self.entries = entries
     }
+
+    /// Slot rows are listed newest first. A row past the known entries but within `parked` is a conversation
+    /// the engine reports but we have no details for (for example because its log can't be read): not free.
+    public func isParkedWithoutDetails(row: Int) -> Bool { row >= entries.count && row < parked }
 }
 
 public struct Totals {

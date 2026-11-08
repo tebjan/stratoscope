@@ -180,6 +180,32 @@ import Testing
         #expect(StrataProvider(config: c, clients: nil).snapshot(from: m, model: "m1").context.compactAt == 50_000)
     }
 
+    @Test func testClientModelNamesTheModelTheClientUses() throws {
+        // No router: the engine reports its own model name, the client config uses another one.
+        let m = try JSONSerialization.jsonObject(with: Data(#"{"engine": {"model": "engine-own-name", "max_context": 98304}, "live": {"state": "idle"}}"#.utf8)) as! [String: Any]
+        var c = Config(); c.log = "/nonexistent.log"; c.router = "http://127.0.0.1:8080"
+        let reader = ClientConfigReader(home: try home())
+        #expect(StrataProvider(config: c, clients: reader).snapshot(from: m, model: "engine-own-name").context.compactAt == nil)
+        c.clientModel = "m1"
+        #expect(StrataProvider(config: c, clients: reader).snapshot(from: m, model: "engine-own-name").context.compactAt == 65_536)
+        #expect(Config.load(environment: ["STRATOSCOPE_CLIENT_MODEL": "x"], home: "/nonexistent").clientModel == "x")
+    }
+
+    @Test func testReaderHonoursAnotherConfigHome() throws {
+        let h = try home()   // has kilo.jsonc under <h>/.config
+        #expect(ClientConfigReader(home: "/nonexistent", configHome: h + "/.config").limits().count == 2)
+        #expect(ClientConfigReader(home: "/nonexistent", configHome: h + "/elsewhere").limits().isEmpty)
+        #expect(ClientConfigReader(home: h, configHome: "").limits().count == 2)   // empty means: use the default
+    }
+
+    @Test func testParkedConversationsWithoutDetailsAreNotFree() {
+        let c = CacheStats(slots: 4, parked: 3, entries: [CacheEntry(id: 7, tokens: 100, bytes: 1)])
+        #expect(c.isParkedWithoutDetails(row: 0) == false)   // known
+        #expect(c.isParkedWithoutDetails(row: 1) == true)    // parked, no details
+        #expect(c.isParkedWithoutDetails(row: 2) == true)
+        #expect(c.isParkedWithoutDetails(row: 3) == false)   // really free
+    }
+
     @Test func testConfigCanSwitchReadingOff() throws {
         #expect(Config.load(environment: [:], home: "/nonexistent").readClientConfigs == true)
         #expect(Config.load(environment: ["STRATOSCOPE_CLIENT_CONFIGS": "none"], home: "/nonexistent").readClientConfigs == false)

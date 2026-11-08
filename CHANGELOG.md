@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.4 · 2026-11-08
+
+- Parked conversations whose details can't be read (no log) show "In use" instead of "Free".
+- New setting `client_model`: the model id your client config uses, for setups where it differs from the name the engine reports.
+- Client configs are also looked up in `$XDG_CONFIG_HOME`.
+- README: a table of other setups and what to set for each.
+
 ## v0.1.3 · 2026-11-08
 
 - The summarise marker on the context bar now finds its value itself: it reads the context and output size of the running model from the Kilo and OpenCode configs that point at the same server, and uses context minus output. Where nothing can be read, or two configs disagree, `compact_at` is the fallback, and without it there is no marker. `client_configs: none` turns the reading off.

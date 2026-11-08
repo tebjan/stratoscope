@@ -114,13 +114,14 @@ public final class ClientConfigReader {
     private let sources: [(client: String, path: String)]
     private var cache: [String: (modified: Date, limits: [ClientModelLimit])] = [:]
 
-    /// `home` is only for tests.
-    public init(home: String = NSHomeDirectory()) {
+    /// `configHome`: where the clients keep their config. Default `~/.config`; pass `$XDG_CONFIG_HOME` if it is set.
+    public init(home: String = NSHomeDirectory(), configHome: String? = nil) {
+        let base = (configHome?.isEmpty == false) ? configHome! : home + "/.config"
         sources = [
-            ("Kilo", home + "/.config/kilo/kilo.jsonc"),
-            ("Kilo", home + "/.config/kilo/kilo.json"),
-            ("OpenCode", home + "/.config/opencode/opencode.json"),
-            ("OpenCode", home + "/.config/opencode/opencode.jsonc"),
+            ("Kilo", base + "/kilo/kilo.jsonc"),
+            ("Kilo", base + "/kilo/kilo.json"),
+            ("OpenCode", base + "/opencode/opencode.json"),
+            ("OpenCode", base + "/opencode/opencode.jsonc"),
         ]
     }
 
