@@ -59,8 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func menuBarTitle(_ s: EngineSnapshot) -> String {
         switch s.status {
-        case .loading: return "loading"
-        case .idle: return "ready"
+        case .loading: return "Loading"
+        case .idle: return "Ready"
         case .prefill: return Fmt.speed(s.live?.prefillTokensPerSecond) + (s.queued > 0 ? " +\(s.queued)" : "")
         case .thinking, .decode: return Fmt.speed(s.live?.decodeTokensPerSecond) + (s.queued > 0 ? " +\(s.queued)" : "")
         }

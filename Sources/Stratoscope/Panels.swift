@@ -32,11 +32,11 @@ final class Panels {
 
     static func word(_ s: EngineSnapshot) -> String {
         switch s.status {
-        case .loading: return "loading"
-        case .idle: return "ready"
-        case .prefill: return "reading"
-        case .thinking: return "thinking"
-        case .decode: return "writing"
+        case .loading: return "Loading"
+        case .idle: return "Ready"
+        case .prefill: return "Reading"
+        case .thinking: return "Thinking"
+        case .decode: return "Writing"
         }
     }
 
@@ -56,7 +56,7 @@ final class Panels {
         let inner = menuWidth - 2 * pad, col = Panels.color(s)
         dot(pad, 14, col)
         text(s.model, x: pad + 18, y: 11, size: 13, bold: true)
-        text(Panels.word(s) + (s.queued > 0 ? " · queue \(s.queued)" : ""), x: 0, y: 11, size: 12, bold: true, color: col, right: menuWidth - pad)
+        text(Panels.word(s) + (s.queued > 0 ? " · Queue \(s.queued)" : ""), x: 0, y: 11, size: 12, bold: true, color: col, right: menuWidth - pad)
         if case .loading(let why) = s.status { text(why, x: pad, y: 44, size: 12); return }
 
         if let l = s.live, s.isReading {
@@ -83,7 +83,7 @@ final class Panels {
             let hit = CacheHit.classify(prompt: r.promptTokens, reused: r.reusedTokens)
             dot(pad, 61, hit.color)
             text("Cache \(hit.label): \(Fmt.number(r.reusedTokens)) of \(Fmt.number(r.promptTokens)) tokens", x: pad + 16, y: 59, size: 11, bold: true)
-            text("read \(Fmt.number(r.promptRead))\(pre) · \(Fmt.number(r.outputTokens)) tokens in \(Fmt.number(r.durationSeconds)) s", x: pad, y: 75, size: 11)
+            text("Read \(Fmt.number(r.promptRead))\(pre) · \(Fmt.number(r.outputTokens)) tokens in \(Fmt.number(r.durationSeconds)) s", x: pad, y: 75, size: 11)
         } else { text("No requests yet", x: pad, y: 44, size: 12) }
 
         // Context: the engine's limit, what this request uses of it, and (when someone knows it) the marker
@@ -115,11 +115,11 @@ final class Panels {
         text("Prefill", x: pad, y: 30, size: 11, bold: true, color: .systemOrange)
         text("\(pv.last.map { Fmt.number($0) } ?? "–") t/s", x: 0, y: 30, size: 11, right: pad + half)
         sparkbars(pad, 48, half, 30, pre, max((pv.max() ?? 0) * 1.15, 100), .systemOrange)
-        text("avg \(pv.isEmpty ? "–" : Fmt.number(pv.reduce(0, +) / Double(pv.count)))", x: pad, y: 80, size: 10)
+        text("Avg \(pv.isEmpty ? "–" : Fmt.number(pv.reduce(0, +) / Double(pv.count)))", x: pad, y: 80, size: 10)
         text("Decode", x: xr, y: 30, size: 11, bold: true, color: .systemBlue)
         text("\(dv.last.map { Fmt.number($0, 1) } ?? "–") t/s", x: 0, y: 30, size: 11, right: menuWidth - pad)
         sparkbars(xr, 48, half, 30, dec, max((dv.max() ?? 0) * 1.15, 10), .systemBlue)
-        text("avg \(dv.isEmpty ? "–" : Fmt.number(dv.reduce(0, +) / Double(dv.count), 1))", x: xr, y: 80, size: 10)
+        text("Avg \(dv.isEmpty ? "–" : Fmt.number(dv.reduce(0, +) / Double(dv.count), 1))", x: xr, y: 80, size: 10)
     }
 
     // MARK: System
@@ -148,7 +148,7 @@ final class Panels {
         bar(pad, 28, menuWidth - 2 * pad, 9, c.budgetBytes > 0 ? c.usedBytes / c.budgetBytes : 0,
             c.usedBytes / max(c.budgetBytes, 1) > 0.9 ? .systemRed : .systemMint)
         text("\(c.parked) of \(c.slots) slots used", x: pad, y: 42, size: 11)
-        text("hit rate \(c.requests > 0 ? Fmt.number(c.requestsReused / c.requests * 100) : "–") % · evicted \(Fmt.number(c.evictions))", x: 0, y: 42, size: 11, right: menuWidth - pad)
+        text("Hit rate \(c.requests > 0 ? Fmt.number(c.requestsReused / c.requests * 100) : "–") % · evicted \(Fmt.number(c.evictions))", x: 0, y: 42, size: 11, right: menuWidth - pad)
         let recent = Array(s.recent.prefix(12).reversed())
         text("Last \(recent.count):", x: pad, y: 62, size: 11)
         var x = menuWidth - pad - CGFloat(recent.count) * 14 + 4
@@ -160,7 +160,7 @@ final class Panels {
         let list = Array(c.entries.reversed())   // newest first
         guard i < list.count else {
             text("Slot \(i + 1)", x: pad, y: 6, size: 11)
-            text("free", x: 0, y: 6, size: 11, right: menuWidth - pad)
+            text("Free", x: 0, y: 6, size: 11, right: menuWidth - pad)
             bar(pad, 24, menuWidth - 2 * pad, 6, 0, .systemMint); return
         }
         let e = list[i]

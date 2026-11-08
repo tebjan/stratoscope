@@ -5,7 +5,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-0.1.1}"
+VERSION="${VERSION:-0.1.2}"
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
 APP="build/Stratoscope.app"
 
