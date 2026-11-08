@@ -61,10 +61,31 @@ import Testing
         let c = Config.load(environment: ["STRATOSCOPE_ROUTER_URL": "none"], home: try home(with: nil))
         #expect(c.router == nil)
     }
+}
 
-    @Test func testEnvironmentCompactAt() throws {
-        let c = Config.load(environment: ["STRATOSCOPE_COMPACT_AT": "60000"], home: try home(with: nil))
-        #expect(c.compactAt == 60000)
+@Suite struct ContextTests {
+    @Test func testCompactAtComesFromEnvironment() throws {
+        let h = NSTemporaryDirectory() + "stratoscope-test-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: h, withIntermediateDirectories: true)
+        #expect(Config.load(environment: ["STRATOSCOPE_COMPACT_AT": "60000"], home: h).compactAt == 60000)
+        #expect(Config.load(environment: [:], home: h).compactAt == nil)   // nobody said: no marker
+    }
+
+    @Test func testFreeIsLimitMinusUsed() {
+        #expect(ContextUsage(used: 57_840, max: 98_304).free == 40_464)
+    }
+
+    @Test func testFreeIsNilWhenEitherNumberIsUnknown() {
+        #expect(ContextUsage(used: nil, max: 98_304).free == nil)
+        #expect(ContextUsage(used: 1_000, max: 0).free == nil)   // 0 = the engine did not report a limit
+    }
+
+    @Test func testFreeNeverGoesNegative() {
+        #expect(ContextUsage(used: 100, max: 50).free == 0)
+    }
+
+    @Test func testContextAfterRequestIsPromptPlusAnswer() {
+        #expect(RequestStats(promptTokens: 42_385, outputTokens: 9).contextTokens == 42_394)
     }
 }
 
@@ -127,6 +148,13 @@ import Testing
     private func provider() -> StrataProvider {
         var c = Config(); c.log = "/nonexistent.log"
         return StrataProvider(config: c)
+    }
+
+    @Test func testCompactAtIsPassedThroughOnlyWhenConfigured() {
+        let m = metrics(#"{"state": "idle", "queued": 0}"#)
+        #expect(provider().snapshot(from: m, model: "m").context.compactAt == nil)
+        var c = Config(); c.log = "/nonexistent.log"; c.compactAt = 60_000
+        #expect(StrataProvider(config: c).snapshot(from: m, model: "m").context.compactAt == 60_000)
     }
 
     @Test func testIdle() {

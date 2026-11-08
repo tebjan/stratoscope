@@ -5,7 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let env = ProcessInfo.processInfo.environment
     private let config = Config.load()
     private lazy var provider: EngineProvider = makeProvider()
-    private lazy var panels = Panels(compactAt: config.compactAt)
+    private lazy var panels = config.engine.lowercased() == DemoProvider.id ? Panels(now: { DemoProvider.referenceDate }) : Panels()
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let menu = NSMenu()

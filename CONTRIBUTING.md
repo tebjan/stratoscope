@@ -28,6 +28,10 @@ Stratoscope is an instrument. It shows what an engine reports and says so when i
 
 If your change runs against one of these, open an issue first. There may be another way to get the same answer.
 
+## Changing how the menu looks
+
+Run `./scripts/screenshot.sh` and commit the new `docs/img/*.png` in the same PR. The images come from the demo data, so nothing has to be captured by hand, and unchanged code produces identical files. Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#screenshots).
+
 ## Adding an engine
 
 1. Open an issue ("Engine request") with the engine's metrics endpoint and a sample payload.

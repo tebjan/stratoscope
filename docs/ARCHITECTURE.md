@@ -34,6 +34,21 @@ Open an issue first so the design can be agreed before the code.
 
 `EngineSnapshot` holds what the menu can show: status (loading, idle, prefill, thinking, decode), the running request, finished requests, context usage, and three **optional** sections: `system` (RAM, GPU, CPU), `cache` (prompt cache and parked conversations) and `totals`. A section that is `nil` is not drawn. An engine that has no cache stats simply gets a shorter menu.
 
+## Where the context numbers come from
+
+| Shown | Source | If missing |
+|---|---|---|
+| `X of Y` and the bar | `X`: prompt plus generated tokens of the running request, or of the last request when idle. `Y`: the engine's context limit (`ContextUsage.max`) | no limit: just `X`, no bar fill |
+| Marker | `ContextUsage.compactAt`, see below | no marker |
+| `N free` | limit minus `X`, only when both are known (`ContextUsage.free`) | not shown |
+| Bars under the context bar (one per finished request, last 12) | prompt plus output tokens of each finished request (`RequestStats.contextTokens`) | not shown |
+
+The marker on the bar is `ContextUsage.compactAt`: the token count where the *client* summarises or trims the conversation. It is `nil` unless a source knows it, and then nothing is drawn. The adapter decides the source: an engine that reports it passes it through; for Strata, whose `/metrics` has no such field, it is the user's own `compact_at` setting. Never a guess. The setting is one number for one client, so with several clients on one engine it can only describe one of them. The bars below the context bar need no setting: a sudden drop is where a client started over, and the cache dots show what that cost.
+
+## Screenshots
+
+The images in `docs/img` are rendered from `DemoProvider`'s fixed data by `./scripts/screenshot.sh`, not captured by hand: the menu is painted into an opaque 2x PNG, and the demo's clock is pinned, so unchanged code gives byte-identical files. After any change to how the menu looks, run the script and commit the images with the change. To add a screenshot, add a `shoot` line to the script and reference the file in the README.
+
 ## Adding an engine
 
 1. Create `Sources/StratoscopeCore/Engines/MyEngine/MyEngineProvider.swift` and conform to `EngineProvider`:

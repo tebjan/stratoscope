@@ -148,7 +148,8 @@ public final class StrataProvider: EngineProvider {
 
         return EngineSnapshot(engine: "Strata", model: model, status: status, queued: Int(num(live, "queued") ?? 0),
                               live: liveRequest, recent: recent,
-                              context: ContextUsage(used: ctxUsed, max: num(eng, "max_context") ?? 0),   // 0 = the engine did not say
+                              context: ContextUsage(used: ctxUsed, max: num(eng, "max_context") ?? 0,   // 0 = the engine did not say
+                                                    compactAt: config.compactAt),   // Strata's /metrics has no such field
                               system: system, cache: cache, totals: totals, links: links())
     }
 }

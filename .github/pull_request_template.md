@@ -10,4 +10,5 @@
 
 - [ ] Tests added or updated (`./scripts/test.sh` passes)
 - [ ] CHANGELOG.md updated under "Unreleased"
+- [ ] Menu looks changed: `./scripts/screenshot.sh` run and `docs/img` committed
 - [ ] Missing values show "–", nothing is guessed

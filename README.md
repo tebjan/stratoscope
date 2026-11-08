@@ -7,7 +7,7 @@ A speedometer for your local LLM, always visible in your menu bar.
 [![Release](https://img.shields.io/github/v/release/yosephyne/stratoscope?color=2b9348)](https://github.com/yosephyne/stratoscope/releases/latest)
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white)
 [![License MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-![Engine: Strata](https://img.shields.io/badge/engine-Strata-5c9efa)
+![Inference engine: Strata](https://img.shields.io/badge/inference%20engine-Strata-5c9efa)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2b9348)
 
 <br>
@@ -21,13 +21,13 @@ A speedometer for your local LLM, always visible in your menu bar.
 
 <br>
 
-Stratoscope sits in the menu bar and shows what the engine is doing right now.
+Stratoscope sits in the menu bar and shows what your local LLM inference engine is doing right now.
 
 - The speed, like `247 t/s`. While the prompt is being read it's the prefill speed, while the answer is being written it's the decode speed.
 - A progress bar next to it while the prompt is read. Its color tells you how much came from the cache.
-- In the menu: the current request, how full the context is, the speed of the last 12 requests, RAM / GPU / CPU, the cache slots, and totals.
+- In the menu: the current request, how full the context is and how its size changed over the last 12 requests, the speed of the last 12 requests, RAM / GPU / CPU, the cache slots, and totals.
 
-When the engine isn't running, the menu bar item disappears.
+When no local LLM inference engine is running, the menu bar item disappears.
 
 **Cache colors**
 
@@ -65,23 +65,23 @@ Built for macOS 13 or newer, Apple Silicon and Intel. Tested so far on Apple Sil
 | Windows | Planned |
 | Linux | Not yet |
 
-The engine adapters and all the numbers are platform-neutral. Only the menu bar part is macOS code, so another platform needs its own small front end: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#platforms).
+The inference engine adapters and all the numbers are platform-neutral. Only the menu bar part is macOS code, so another platform needs its own small front end: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#platforms).
 
-## Engines
+## Supported inference engines
 
-| Engine | Status |
+| Inference engine | Status |
 |---|---|
 | Strata | Works |
-| Demo (fake data, for trying the UI) | Works: `STRATOSCOPE_ENGINE=demo` |
+| Demo (fake data, to try the menu without an inference engine) | Works: `STRATOSCOPE_ENGINE=demo` |
 | llama.cpp, MLX, Uzu, BaseRT | Not yet |
 
-Each engine has a small adapter that turns its metrics into one common format. The menu only knows that format. If your engine exposes metrics over HTTP, writing an adapter is usually one file. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), or open an "Engine request" issue.
+Each inference engine has a small adapter that turns its metrics into one common format. The menu only knows that format. If your inference engine exposes metrics over HTTP, writing an adapter is usually one file. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), or open an "Engine request" issue.
 
 ### Strata
 
 Stratoscope reads `http://127.0.0.1:8095/metrics` by default. For the list of parked conversations it also reads Strata's log file. If you run a llama-swap router in front of Strata, set `router` and Stratoscope takes the model name and loading state from there.
 
-Nothing is sent anywhere except requests to your engine. It never writes to the engine or its files. When the engine doesn't report a value, the menu shows `–` instead of guessing, and an estimated number gets a `≈`.
+Nothing is sent anywhere except requests to your Strata server. It never writes to Strata or its files. When Strata doesn't report a value, the menu shows `–` instead of guessing, and an estimated number gets a `≈`.
 
 ## Settings
 
@@ -89,12 +89,12 @@ Environment variables win over `~/.config/stratoscope.json`, which wins over the
 
 | Variable | JSON key | Does |
 |---|---|---|
-| `STRATOSCOPE_ENGINE` | `engine` | `strata` (default) or `demo` |
-| `STRATOSCOPE_URL` | `url` | Engine address. Strata default: `http://127.0.0.1:8095` |
-| `STRATOSCOPE_ROUTER_URL` | `router` | Router in front of the engine. `none` turns it off |
-| `STRATOSCOPE_LOG` | `log` | Engine log file. Strata default: newest `*.log` in `~/.local/share/strata/install` |
+| `STRATOSCOPE_ENGINE` | `engine` | Which inference engine to read: `strata` (default) or `demo` |
+| `STRATOSCOPE_URL` | `url` | Inference engine address. Strata default: `http://127.0.0.1:8095` |
+| `STRATOSCOPE_ROUTER_URL` | `router` | Router in front of the inference engine. `none` turns it off |
+| `STRATOSCOPE_LOG` | `log` | Inference engine log file. Strata default: newest `*.log` in `~/.local/share/strata/install` |
 | `STRATOSCOPE_WEBUI_URL` | `webui` | Adds an "Open chat UI" entry to the menu |
-| `STRATOSCOPE_COMPACT_AT` | `compact_at` | Token count where your client summarises the chat. Drawn as a line on the context bar |
+| `STRATOSCOPE_COMPACT_AT` | `compact_at` | Optional. Token count where your client summarises the chat. Drawn as a line on the context bar. Without it there is no line |
 
 Example `~/.config/stratoscope.json`:
 
@@ -118,7 +118,7 @@ While working on it:
 swift build                                     # build
 ./scripts/test.sh                               # tests
 STRATOSCOPE_ENGINE=demo swift run Stratoscope   # run with fake data
-./scripts/screenshot.sh                         # redo the images above
+./scripts/screenshot.sh                         # redo the images above (after any change to how the menu looks)
 ./scripts/make-dmg.sh                           # build the DMG that goes on Releases
 ```
 

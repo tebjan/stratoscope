@@ -57,6 +57,9 @@ public struct RequestStats {
         self.decodeTokensPerSecond = decodeTokensPerSecond; self.durationSeconds = durationSeconds
     }
 
+    /// Size of the conversation after this request: the prompt plus the answer.
+    public var contextTokens: Double { promptTokens + outputTokens }
+
     /// Prefill speed, or nil when the prompt was too short for the number to mean anything.
     public func prefillTokensPerSecond(minTokens: Double = 500, minMilliseconds: Double = 500) -> Double? {
         (promptMilliseconds > minMilliseconds && promptRead > minTokens) ? promptRead / (promptMilliseconds / 1000) : nil
@@ -66,7 +69,19 @@ public struct RequestStats {
 public struct ContextUsage {
     public var used: Double?
     public var max: Double
-    public init(used: Double? = nil, max: Double) { self.used = used; self.max = max }
+    /// Token count where the client summarises or trims the conversation, drawn as a marker on the context bar.
+    /// `nil` = nobody knows it: no marker. An adapter fills it from what its engine reports; where the engine
+    /// does not (Strata today), from the user's own setting. Never guessed.
+    public var compactAt: Double?
+    public init(used: Double? = nil, max: Double, compactAt: Double? = nil) {
+        self.used = used; self.max = max; self.compactAt = compactAt
+    }
+
+    /// Room left below the engine's limit, or nil when either number is unknown.
+    public var free: Double? {
+        guard max > 0, let used = used else { return nil }
+        return Swift.max(0, max - used)
+    }
 }
 
 public struct SystemStats {

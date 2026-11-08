@@ -8,6 +8,7 @@ import Foundation
 ///     STRATOSCOPE_LOG         engine log file (Strata default: newest *.log in ~/.local/share/strata/install)
 ///     STRATOSCOPE_WEBUI_URL   adds an "Open chat UI" link to the menu
 ///     STRATOSCOPE_COMPACT_AT  token count at which your client summarises the chat; drawn as a marker on the context bar
+///                             (only for engines that do not report it themselves)
 public struct Config {
     public var engine = "strata"
     public var url: String?
