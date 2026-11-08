@@ -24,7 +24,7 @@ A speedometer for your local LLM.
 
 Stratoscope shows what your local LLM inference engine is doing right now, in the macOS menu bar or the Windows taskbar.
 
-- The speed, like `247 t/s`, and a progress bar while a prompt is read. On the Mac the bar's color shows how much came from the cache.
+- The speed, like `247 t/s`, and a progress bar while a prompt is read. The bar's color shows how much came from the cache.
 - The panel: the current request, the context and how its size changed over the last 12 requests, the speed of the last 12 requests, RAM / GPU / CPU, the cache slots, and totals.
 **Cache colors**
 

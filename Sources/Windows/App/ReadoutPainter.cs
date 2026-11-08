@@ -9,10 +9,12 @@ namespace Stratoscope.Windows;
 /// <summary>One server in the taskbar readout.</summary>
 internal sealed class ReadoutItem
 {
-    public ReadoutItem(string name, ServerState state, ReadoutText text, double? fraction, string spoken, string? tip = null, bool nameInCaption = true)
+    public ReadoutItem(string name, ServerState state, ReadoutText text, double? fraction, string spoken, string? tip = null, bool nameInCaption = true, CacheHit? hit = null)
     {
-        Name = name; State = state; Text = text; Fraction = fraction; Spoken = spoken; Tip = tip; NameInCaption = nameInCaption;
+        Name = name; State = state; Text = text; Fraction = fraction; Spoken = spoken; Tip = tip; NameInCaption = nameInCaption; Hit = hit;
     }
+    /// <summary>How much of the prompt came from the cache while it is read: the colour of the bar, as on the Mac (green, yellow, orange, gray). Null when unknown.</summary>
+    public CacheHit? Hit { get; }
     public string Name { get; }
     public ServerState State { get; }
     public ReadoutText Text { get; }
@@ -34,7 +36,7 @@ internal sealed class ReadoutItem
         if (nameInCaption) visible.Add(monitor.Name);
         return new ReadoutItem(monitor.Name, monitor.State, text,
             progress?.Fraction, Display.Spoken(monitor.Name, s, monitor.Polled, monitor.Faulted),
-            Tooltips.NotShown(Tooltips.ReadoutExtra(monitor.State, s, nameInCaption ? null : monitor.Name), visible), nameInCaption);
+            Tooltips.NotShown(Tooltips.ReadoutExtra(monitor.State, s, nameInCaption ? null : monitor.Name), visible), nameInCaption, progress?.Hit);
     }
 }
 
@@ -409,7 +411,7 @@ internal static class ReadoutPainter
 
     /// <summary>
     /// The mark of a server, all from one rounded pill of one height. A reading server is the bar that fills with the progress of the prompt,
-    /// in the orange of the Prefill colour, on a faint track (like the Mac menu bar item). A filled dot, the pill at its shortest, in the
+    /// coloured by how much of the prompt came from the cache, on a faint track (like the Mac menu bar item). A filled dot, the pill at its shortest, in the
     /// state colour is ready, writing or thinking. The states that are not busy have another shape as well as another colour: a hollow grey
     /// ring is offline, connecting or no model, a dotted ring is loading, a red dot with a white mark is an error.
     /// </summary>
@@ -429,7 +431,7 @@ internal static class ReadoutPainter
                     g.FillPath(brush, path);
                 var width = Math.Max(box.Height, (float)Math.Round(box.Width * Math.Max(0, Math.Min(1, item.Fraction ?? 0))));
                 using (var path = Pill(new RectangleF(box.X, box.Y, width, box.Height)))
-                using (var brush = new SolidBrush(state))
+                using (var brush = new SolidBrush(item.Hit is CacheHit hit ? palette.HitColor(hit) : state))
                     g.FillPath(brush, path);
                 break;
             }

@@ -462,7 +462,7 @@ internal static class SnapshotRenderer
             var nameInCaption = servers.Length > 1;      // one server: the glyph and the speed alone; several: the name stands before the glyph
             var text = Display.Readout(s.Snapshot);
             var progress = s.Snapshot != null ? Display.Progress(s.Snapshot) : null;
-            return new ReadoutItem(s.Name, s.State, text, progress?.Fraction, Display.Spoken(s.Name, s.Snapshot, polled, s.State == ServerState.Error && s.Snapshot == null), null, nameInCaption);
+            return new ReadoutItem(s.Name, s.State, text, progress?.Fraction, Display.Spoken(s.Name, s.Snapshot, polled, s.State == ServerState.Error && s.Snapshot == null), null, nameInCaption, progress?.Hit);
         }).ToList();
 
     /// <summary>One server in each state, as the readout shows it.</summary>

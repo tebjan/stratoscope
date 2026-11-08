@@ -25,7 +25,7 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 ## What you see
 
 - **Readout**, one item per server: a glyph and the speed (`[bar] 247 t/s`, `[dot] 26 t/s`). While nothing runs, only the glyph.
-- **Glyph**: orange bar while a prompt is read; blue dot while it writes; green dot when ready; grey ring when offline or no model; dotted ring while loading; red mark on an error.
+- **Glyph**: bar while a prompt is read, colored like on the Mac by how much came from the cache (green, yellow, orange, gray); blue dot while it writes; green dot when ready; grey ring when offline or no model; dotted ring while loading; red mark on an error.
 - **Speed**: plain digits, `10k` from 9,999.5 t/s. With parallel requests it is the total.
 - **Position**: centred in the free gap of the taskbar. It moves only when the taskbar geometry changes, then once.
 - **Panel**: the Mac menu, with tabs for several servers. Two or more parallel requests show a sum bar with one smaller bar per request.
