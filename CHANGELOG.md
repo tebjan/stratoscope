@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.1 · 2026-11-08
+
+- Context: room left below the limit, and one bar per finished request showing the context size after it, for the last 12 requests.
+- The marker for where your client summarises is now optional and only drawn when a value is known (`compact_at` for Strata, which does not report it). The explanatory text under the bar is gone.
+- Menu labels are written out ("Prefill", "Decode") instead of single letters.
+- Screenshots come from fixed demo data and are reproducible with `./scripts/screenshot.sh`.
+
 ## v0.1.0 · 2026-11-08
 
 First version.
