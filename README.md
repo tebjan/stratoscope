@@ -2,10 +2,11 @@
 
 # Stratoscope
 
-A speedometer for your local LLM, always visible in your menu bar.
+A speedometer for your local LLM.
 
 [![Release](https://img.shields.io/github/v/release/yosephyne/stratoscope?color=2b9348)](https://github.com/yosephyne/stratoscope/releases/latest)
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white)
+![Windows 10+](https://img.shields.io/badge/Windows-10%2B-0078d4)
 [![License MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Inference engine: Strata](https://img.shields.io/badge/inference%20engine-Strata-5c9efa)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2b9348)
@@ -21,14 +22,10 @@ A speedometer for your local LLM, always visible in your menu bar.
 
 <br>
 
-Stratoscope sits in the menu bar and shows what your local LLM inference engine is doing right now.
+Stratoscope shows what your local LLM inference engine is doing right now, in the macOS menu bar or the Windows taskbar.
 
-- The speed, like `247 t/s`. While the prompt is being read it's the prefill speed, while the answer is being written it's the decode speed.
-- A progress bar next to it while the prompt is read. Its color tells you how much came from the cache.
-- In the menu: the current request, how full the context is and how its size changed over the last 12 requests, the speed of the last 12 requests, RAM / GPU / CPU, the cache slots, and totals.
-
-When no local LLM inference engine is running, the menu bar item disappears.
-
+- The speed, like `247 t/s`, and a progress bar while a prompt is read. The bar's color shows how much came from the cache.
+- The panel: the current request, the context and how its size changed over the last 12 requests, the speed of the last 12 requests, RAM / GPU / CPU, the cache slots, and totals.
 **Cache colors**
 
 | Color | Meaning |
@@ -57,12 +54,26 @@ To start it at login: System Settings → General → Login Items → add Strato
 
 Built for macOS 13 or newer, Apple Silicon and Intel. Tested so far on Apple Silicon with macOS 27.
 
+### Windows
+
+1. Download `Stratoscope-<version>-windows.zip` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest) and unpack it.
+2. Run `install.cmd`. It installs for your user, no administrator rights, and starts with Windows.
+
+Windows 10 (1809) or newer, 64-bit. The build is not code-signed, so SmartScreen may warn once. Instead of a menu bar item you get a readout in the taskbar, with the same panel. Settings are in `%LOCALAPPDATA%\Stratoscope\config.json`. Differences from the Mac app: [docs/WINDOWS.md](docs/WINDOWS.md).
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/windows-panel-dark.png">
+  <img src="docs/img/windows-panel-light.png" alt="The Stratoscope panel on Windows while a prompt is being read" width="360">
+</picture>
+</div>
+
 ### Other platforms
 
 | Platform | Status |
 |---|---|
 | macOS | Works |
-| Windows | Planned |
+| Windows | Works |
 | Linux | Not yet |
 
 The inference engine adapters and all the numbers are platform-neutral. Only the menu bar part is macOS code, so another platform needs its own small front end: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#platforms).
@@ -102,7 +113,7 @@ Strata listens on port 8095 unless it is started with `--port`, so the default w
 
 ## Settings
 
-Environment variables win over `~/.config/stratoscope.json`, which wins over the defaults. If you start the app from the Finder on macOS, use the JSON file, because the Finder doesn't pass your shell variables on.
+Environment variables win over `~/.config/stratoscope.json`, which wins over the defaults. If you start the app from the Finder on macOS, use the JSON file, because the Finder doesn't pass your shell variables on. On Windows the file is `%LOCALAPPDATA%\Stratoscope\config.json`, see [docs/WINDOWS.md](docs/WINDOWS.md#settings).
 
 | Variable | JSON key | Does |
 |---|---|---|
@@ -140,6 +151,8 @@ STRATOSCOPE_ENGINE=demo swift run Stratoscope   # run with fake data
 ./scripts/screenshot.sh                         # redo the images above (after any change to how the menu looks)
 ./scripts/make-dmg.sh                           # build the DMG that goes on Releases
 ```
+
+On Windows you need the .NET SDK 10: `dotnet test Sources/Windows/Stratoscope.Windows.sln` and `.\scripts\windows\build.ps1`.
 
 Pull requests are welcome, adapters most of all. Read [CONTRIBUTING.md](CONTRIBUTING.md) first, it's short.
 

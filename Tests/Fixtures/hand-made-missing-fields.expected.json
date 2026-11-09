@@ -1,0 +1,5 @@
+{
+  "status": "prefill", "title": "  0 t/s", "queued": 0, "percent": null,
+  "context_used": 30012, "context_max": null, "recent": 2, "last_request_hit": null,
+  "cache_slots": 4, "cache_parked": null, "batch_slots": null, "has_system": true, "has_totals": true
+}

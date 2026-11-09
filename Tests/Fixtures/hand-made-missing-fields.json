@@ -1,0 +1,11 @@
+{
+  "engine": {"model": "example-model"},
+  "live": {"state": "reading", "phase": "reading the prompt", "prompt_read": null, "prompt_total": null, "generated": null},
+  "requests": [
+    {"prompt_tokens": 30000, "output_tokens": 12, "decode_tok_s": 20.5},
+    {"prompt_tokens": 2000, "reused": 100, "prompt_read": 1900, "prompt_ms": 800, "output_tokens": 5, "decode_tok_s": null, "duration_s": 1.5}
+  ],
+  "hardware": {"ram_total": 68152971264, "gpu_util": 40},
+  "conversation_cache": {"slots": 4},
+  "totals": {"requests": 2}
+}

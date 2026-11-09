@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Windows app: taskbar readout, notification-area icon and the panel. WinForms and GDI+ on .NET 10 (Windows 10 1809 and newer).
+       The framework pieces (System.Text.Json, HttpClient, System.Drawing, WinForms, UI Automation, the registry) need no package.
+       Publish self-contained (nothing to install: one compressed file, the smallest of the options WinForms supports) or framework-dependent
+       (needs the .NET 10 Desktop Runtime): scripts/windows/build.ps1. WinForms cannot be trimmed (NETSDK1175) and ReadyToRun makes the
+       compressed single file larger and slower to start, so neither is on. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>Stratoscope.Windows</RootNamespace>
+    <AssemblyName>Stratoscope</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- UI Automation (System.Windows.Automation) lives in the WPF part of the Windows Desktop framework. No WPF window is created. -->
+    <UseWPF>true</UseWPF>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>stratoscope.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyTitle>Stratoscope</AssemblyTitle>
+    <Description>A live gauge for local LLM engines, in the Windows taskbar and notification area.</Description>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SelfContained)' == 'true'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Core\StratoscopeWindowsCore.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="StratoscopeWindowsTests" />
+  </ItemGroup>
+</Project>

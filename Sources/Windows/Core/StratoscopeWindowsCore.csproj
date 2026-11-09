@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The engine-neutral model, configuration, formatting and engine adapters. No WinForms, no System.Drawing: it runs anywhere .NET 10 does.
+       JSON is System.Text.Json, part of the runtime: nothing to ship next to the exe. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Stratoscope.Core</RootNamespace>
+    <AssemblyName>StratoscopeWindowsCore</AssemblyName>
+    <!-- Trim and Native AOT compatible: the trim and AOT analyzers run on every build and their warnings are errors. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="StratoscopeWindowsTests" />
+  </ItemGroup>
+</Project>

@@ -1,9 +1,64 @@
 name: CI
 on: [push, pull_request]
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Runner minutes are limited (macOS counts ten times, Windows twice): look at what changed first, on the cheapest runner.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      swift: ${{ steps.filter.outputs.swift }}
+      windows: ${{ steps.filter.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then BASE="${{ github.event.pull_request.base.sha }}"; else BASE="${{ github.event.before }}"; fi
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            # A new branch or an unknown base: run everything.
+            echo "swift=true" >> "$GITHUB_OUTPUT"
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only "$BASE" "$GITHUB_SHA")"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^(Package\.swift|Sources/Stratoscope/|Sources/StratoscopeCore/|Tests/StratoscopeCoreTests/|\.github/workflows/ci\.yml)'; then
+            echo "swift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "swift=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$CHANGED" | grep -qE '^(Sources/Windows/|Tests/StratoscopeWindowsTests/|Tests/Fixtures/|scripts/windows/|\.github/workflows/ci\.yml)'; then
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "windows=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-and-test:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - run: swift build
       - run: swift test
+
+  # The Windows app: .NET 10, restored from nuget.org through the project files.
+  windows:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: Sources/Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test Stratoscope.Windows.sln -c Release --nologo

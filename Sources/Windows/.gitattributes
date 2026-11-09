@@ -1,0 +1,4 @@
+# Line endings for the Windows parts: batch files need CRLF; the rest follows the checkout default.
+*.cmd text eol=crlf
+*.png binary
+*.ico binary

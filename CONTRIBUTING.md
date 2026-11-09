@@ -4,7 +4,7 @@ Thanks for helping. The most useful contribution is **an adapter for another loc
 
 ## Quick start
 
-The app runs on macOS 13+ today and needs the Xcode Command Line Tools to build. Ports to other platforms are welcome, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#platforms).
+The app runs on macOS 13+ today and needs the Xcode Command Line Tools to build. Ports to other platforms are welcome, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#platforms). The Windows app (C#, .NET 10 SDK) builds from `Sources/Windows` with `dotnet test Sources/Windows/Stratoscope.Windows.sln`: see [docs/WINDOWS.md](docs/WINDOWS.md#build-and-test).
 
 ```bash
 swift build                              # build everything
@@ -24,7 +24,7 @@ Stratoscope is an instrument. It shows what an engine reports and says so when i
 3. **Engines are asked through their public interface only**, and only while they run. Stratoscope never starts, wakes, signals or restarts an engine, and never writes to its files.
 4. **It describes; it doesn't act.** No automatic actions on your engine or your machine.
 5. **Engine code stays out of the UI.** If the menu needs something new, add an optional field to `EngineSnapshot` that is useful for every engine.
-6. **Say what was tested.** A PR states the engine, its version and the Mac it was verified on, and says plainly what was checked against a real engine and what only against a recorded payload or the demo.
+6. **Say what was tested.** A PR states the engine, its version and the Mac or Windows PC it was verified on, and says plainly what was checked against a real engine and what only against a recorded payload or the demo.
 
 If your change runs against one of these, open an issue first. There may be another way to get the same answer.
 
@@ -44,4 +44,5 @@ Run `./scripts/screenshot.sh` and commit the new `docs/img/*.png` in the same PR
 - Open an issue first for anything beyond a fix: a new panel, data source or engine.
 - Add or update a test for the logic you change. Put logic in `StratoscopeCore` (no AppKit) so it can be tested without a screen.
 - Comments and UI text are English.
+- C#: use a maintained library before writing your own, and keep `Sources/Windows` self-contained (no new files in the repo root).
 - Update [CHANGELOG.md](CHANGELOG.md) under "Unreleased".

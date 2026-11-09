@@ -1,0 +1,10 @@
+{"engine": {"model": "example-model", "max_context": 131072, "version": "0.1.56", "batch_slots": 4},
+ "live": {"state": "generating", "queued": 0, "phase": "answering", "prompt_tokens": 1240, "prompt_read": null, "prompt_total": null, "generated": 310, "max_tokens": 3000, "elapsed_s": 4.0, "tok_s": 420.2, "tok_s_mean": 420.2, "prefill_tok_s_mean": 204.0, "tok_s_window_s": 2.0,
+  "parallel": 4, "running": 4,
+  "slots": [
+   {"slot": 0, "state": "decoding", "prompt_tokens": 1180, "prompt_read": null, "generated": 520, "elapsed_s": 5.2, "tok_s": 128.4},
+   {"slot": 1, "state": "decoding", "prompt_tokens": 1210, "prompt_read": null, "generated": 430, "elapsed_s": 4.6, "tok_s": 104.2},
+   {"slot": 2, "state": "decoding", "prompt_tokens": 1225, "prompt_read": null, "generated": 360, "elapsed_s": 4.3, "tok_s": 96.7},
+   {"slot": 3, "state": "decoding", "prompt_tokens": 1240, "prompt_read": null, "generated": 310, "elapsed_s": 4.0, "tok_s": 90.9}],
+  "outside_slots": 0, "waiting": 0, "admitting": 0},
+ "requests": []}

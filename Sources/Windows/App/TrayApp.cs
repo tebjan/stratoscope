@@ -1,0 +1,283 @@
+using System.Diagnostics;
+using System.Drawing;
+using System.IO;
+using System.Windows.Forms;
+using Microsoft.Win32;
+using Stratoscope.Core;
+
+namespace Stratoscope.Windows;
+
+/// <summary>
+/// The running app: polls the servers every two seconds and shows the result in the taskbar readout. There is no notification-area
+/// icon: the readout is the only presence, so it stays visible, grey, while no engine answers.
+///
+/// Everything that depends on the display or on Windows settings goes through one <see cref="UiController"/>. Any event that could change
+/// the look (display scale, text size, theme, accent, high contrast, monitors, taskbar, explorer restart) ends in <see cref="Rebuild"/>:
+/// the readout and the panel are drawn again for the new DPI and theme.
+/// </summary>
+internal sealed class TrayApp : ApplicationContext
+{
+    private const int PollMilliseconds = 2000;
+    public const string QuitEventName = "Local\\Stratoscope.Windows.Quit";
+    private readonly SynchronizationContext? uiContext = SynchronizationContext.Current;
+    private readonly EventWaitHandle quitEvent;
+    private readonly RegisteredWaitHandle quitWait;
+
+    private readonly string? configPath;
+    private readonly IJsonSource source = new HttpJsonSource();
+    private readonly System.Windows.Forms.Timer pollTimer = new System.Windows.Forms.Timer { Interval = PollMilliseconds };
+    private readonly System.Windows.Forms.Timer reloadTimer = new System.Windows.Forms.Timer { Interval = 600 };
+    private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
+    private readonly ContextMenuStrip menu = new ContextMenuStrip();
+    private readonly UiController ui;
+    private readonly StatusPanel panel;
+    private readonly ReadoutHost readout;
+    private FileSystemWatcher? watcher;
+
+    private Config config = new Config();
+    private List<ServerMonitor> monitors = new List<ServerMonitor>();
+    private int selected;
+    private bool polling;
+
+    public TrayApp(string? configFile)
+    {
+        configPath = configFile;
+        ui = new UiController(new RegistrySystemSettings(), SystemMonitors.Instance, () => config.UiScalePercent, TaskbarCentre);
+        panel = new StatusPanel(() => PanelModelBuilder.Panel(monitors, selected, DateTime.UtcNow), OnPanelAction, ui);
+        readout = new ReadoutHost(SynchronizationContext.Current, ui);
+        readout.ItemClicked += (index, rect) => { SelectServer(index); panel.Toggle(rect, readout.Edge); readout.SuppressTips = panel.IsOpen; };
+        readout.ContextMenuRequested += point => { BuildMenu(); menu.Show(point); };
+        readout.EnvironmentChanged += reason => ui.Notify(reason, force: reason.Contains("display") || reason.Contains("taskbar") || reason.Contains("dpi"));
+        ui.Changed += reason => Rebuild();
+
+        menu.Opening += (s, e) => BuildMenu();
+
+        LoadConfig();
+        pollTimer.Tick += async (s, e) => { ui.Notify("poll"); await PollAllAsync(); };
+        reloadTimer.Tick += (s, e) => { reloadTimer.Stop(); LoadConfig(); };
+        SystemEvents.UserPreferenceChanged += OnPreferenceChanged;
+        SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
+
+        // "Stratoscope.exe --quit" (used by the installer and uninstaller) signals this event: a clean exit, no process killing.
+        quitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, QuitEventName);
+        quitWait = ThreadPool.RegisterWaitForSingleObject(quitEvent, (state, timedOut) => BeginInvokeOnUi(ExitThread), null, Timeout.Infinite, true);
+
+        readout.Start();
+        ui.Notify("start");
+        pollTimer.Start();
+        var _ = PollAllAsync();
+    }
+
+    /// <summary>Where the DPI is read: the middle of the taskbar, which is on the monitor the readout and the icon are on.</summary>
+    private static Point TaskbarCentre()
+    {
+        var tb = TaskbarProbe.FindTaskbar();
+        if (tb != IntPtr.Zero && Native.GetWindowRect(tb, out var r)) return new Point((r.Left + r.Right) / 2, (r.Top + r.Bottom) / 2);
+        var p = Screen.PrimaryScreen!.Bounds;
+        return new Point(p.Left + p.Width / 2, p.Top + p.Height / 2);
+    }
+
+    /// <summary>
+    /// Where the panel opens after a click on the tray icon: at the cursor when the cursor is on the taskbar (a mouse click), otherwise
+    /// at the notification area (the icon was activated with the keyboard).
+    /// </summary>
+    private Rectangle TrayAnchor()
+    {
+        var cursor = Cursor.Position;
+        var info = TaskbarProbe.Read(ReadoutHost.ReadoutClass);
+        if (info == null || info.Bounds.Contains(cursor)) return new Rectangle(cursor.X - 8, cursor.Y - 8, 16, 16);
+        var n = info.Notification;
+        return new Rectangle(n.Left + n.Width / 2 - 8, n.Top + n.Height / 2 - 8, 16, 16);
+    }
+
+    // MARK: Settings
+
+    private void LoadConfig()
+    {
+        config = Config.Load(null, configPath);
+        monitors = config.Servers.Select(s => new ServerMonitor(s.Name, EngineRegistry.Make(s, source))).ToList();
+        selected = Servers.Clamp(selected, monitors.Count);
+        WatchConfig();
+        ui.Notify("settings");
+        UpdateUi();
+        readout.Refresh();
+        var _ = PollAllAsync();
+    }
+
+    private void WatchConfig()
+    {
+        watcher?.Dispose();
+        watcher = null;
+        var path = config.Path;
+        var dir = path == null ? null : Path.GetDirectoryName(path);
+        if (path == null || dir == null || !Directory.Exists(dir)) return;
+        try
+        {
+            watcher = new FileSystemWatcher(dir, Path.GetFileName(path)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size, EnableRaisingEvents = true };
+            FileSystemEventHandler changed = (s, e) => { if (reloadTimer.Enabled) return; BeginInvokeOnUi(() => { reloadTimer.Stop(); reloadTimer.Start(); }); };
+            watcher.Changed += changed; watcher.Created += changed; watcher.Deleted += changed;
+            watcher.Renamed += (s, e) => changed(s, e);
+        }
+        catch (Exception e) when (e is IOException || e is ArgumentException || e is UnauthorizedAccessException) { }
+    }
+
+    private void BeginInvokeOnUi(Action action)
+    {
+        // The context that was current when the app started is the WinForms one of the UI thread.
+        if (uiContext != null) uiContext.Post(_ => action(), null);
+        else action();
+    }
+
+    // MARK: Events that change the look
+
+    private void OnPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e) => BeginInvokeOnUi(() => ui.Notify("preference " + e.Category));
+    private void OnDisplayChanged(object? sender, EventArgs e) => BeginInvokeOnUi(() => ui.Notify("display settings", force: true));
+
+    /// <summary>Draws everything again for the current DPI, text size, theme and monitors.</summary>
+    private void Rebuild()
+    {
+        UpdateUi();
+        readout.Refresh();
+        panel.ApplyEnvironment();
+    }
+
+    // MARK: Polling
+
+    private async Task PollAllAsync()
+    {
+        if (polling) return;
+        polling = true;
+        try
+        {
+            var current = monitors;
+            await Task.WhenAll(current.Select(m => m.PollAsync(cancellation.Token)));
+            if (ReferenceEquals(current, monitors)) UpdateUi();
+        }
+        catch (OperationCanceledException) { }
+        finally { polling = false; }
+    }
+
+    private void UpdateUi()
+    {
+        // The readout is the only presence of the app, so it is always visible, grey while a server does not answer.
+        readout.SuppressTips = panel.IsOpen;
+        readout.Update(PanelModelBuilder.Readout(monitors), monitors.Count > 0, config.ReadoutPosition);
+        // The panel is redrawn when a poll brought other data, and every ten seconds for the ages ("3 min ago") that tick with the clock;
+        // a poll with the same numbers leaves it alone.
+        var version = string.Join(",", monitors.Select(m => m.DataVersion)) + "|" + selected;
+        if (version != panelVersion || (DateTime.UtcNow - panelRefreshedAt).TotalSeconds >= 10)
+        {
+            panelVersion = version; panelRefreshedAt = DateTime.UtcNow;
+            panel.Refresh();
+        }
+    }
+
+    private string panelVersion = "";
+    private DateTime panelRefreshedAt = DateTime.MinValue;
+
+    // MARK: Panel and menu
+
+    private void SelectServer(int index)
+    {
+        selected = Servers.Clamp(index, monitors.Count);
+        panel.Refresh();
+    }
+
+    private void OnPanelAction(PanelAction action, int index)
+    {
+        switch (action)
+        {
+            case PanelAction.SelectTab: SelectServer(index); break;
+            case PanelAction.OpenLink:
+                var links = SelectedLinks();
+                if (index < links.Count) Open(links[index]);
+                break;
+            case PanelAction.Quit: ExitThread(); break;
+        }
+    }
+
+    private List<EngineLink> SelectedLinks() =>
+        monitors.Count == 0 ? new List<EngineLink>() : monitors[Servers.Clamp(selected, monitors.Count)].Snapshot?.Links ?? new List<EngineLink>();
+
+    private void BuildMenu()
+    {
+        foreach (ToolStripItem item in menu.Items) item.Dispose();
+        menu.Items.Clear();
+        foreach (var problem in config.Problems)
+            menu.Items.Add(new ToolStripMenuItem(MenuText.SettingsProblem + problem) { Enabled = false });
+        if (config.Problems.Count > 0) menu.Items.Add(new ToolStripSeparator());
+
+        menu.Items.Add(MenuText.ShowStatus, null, (s, e) => panel.Toggle(TrayAnchor(), readout.Edge));
+        var links = SelectedLinks();
+        if (links.Count > 0) menu.Items.Add(new ToolStripSeparator());
+        foreach (var link in links) { var l = link; menu.Items.Add(l.Title, null, (s, e) => Open(l)); }
+        menu.Items.Add(new ToolStripSeparator());
+
+        var settings = new ToolStripMenuItem(MenuText.Settings);
+        var start = new ToolStripMenuItem(MenuText.StartWithWindows) { Checked = Autostart.IsEnabled, CheckOnClick = false };
+        start.Click += (s, e) => { if (!Autostart.Set(!Autostart.IsEnabled)) MessageBox.Show("Windows did not let Stratoscope change its Startup shortcut.", AppInfo.Name); };
+        settings.DropDownItems.Add(start);
+        settings.DropDownItems.Add(new ToolStripSeparator());
+        settings.DropDownItems.Add(MenuText.OpenSettingsFile, null, (s, e) => OpenSettingsFile());
+        settings.DropDownItems.Add(MenuText.ReloadSettings, null, (s, e) => LoadConfig());
+        menu.Items.Add(settings);
+        menu.Items.Add(MenuText.CheckForUpdates, null, (s, e) => OpenUrl(AppInfo.ReleasesUrl));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem(AppInfo.Label) { Enabled = false });
+        menu.Items.Add(MenuText.Quit, null, (s, e) => ExitThread());
+    }
+
+    private static void OpenUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)) return;
+        Start(uri.AbsoluteUri);
+    }
+
+    /// <summary>Opens a link of the engine: a web address in the browser, a file in its editor. Nothing else is started.</summary>
+    private static void Open(EngineLink link)
+    {
+        if (Uri.TryCreate(link.Target, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        { Start(uri.AbsoluteUri); return; }
+        if (File.Exists(link.Target)) Start(link.Target);
+    }
+
+    private static void Start(string target)
+    {
+        try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception || e is InvalidOperationException) { }
+    }
+
+    private void OpenSettingsFile()
+    {
+        var path = config.Path;
+        if (path == null) return;
+        try
+        {
+            if (!File.Exists(path))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, Config.Template, new System.Text.UTF8Encoding(false));
+            }
+            Process.Start(new ProcessStartInfo("notepad.exe", "\"" + path + "\"") { UseShellExecute = true });
+        }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is System.ComponentModel.Win32Exception) { }
+    }
+
+    // MARK: Shutdown
+
+    protected override void ExitThreadCore()
+    {
+        SystemEvents.UserPreferenceChanged -= OnPreferenceChanged;
+        SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
+        pollTimer.Stop(); reloadTimer.Stop();
+        quitWait.Unregister(null);
+        quitEvent.Dispose();
+        cancellation.Cancel();
+        watcher?.Dispose();
+        readout.Dispose();
+        panel.Dispose();
+        menu.Dispose();
+        (source as IDisposable)?.Dispose();
+        base.ExitThreadCore();
+    }
+}
