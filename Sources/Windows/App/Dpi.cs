@@ -1,5 +1,9 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
+using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.UI.HiDpi;
+using static Windows.Win32.PInvoke;
 
 namespace Stratoscope.Windows;
 
@@ -18,7 +22,7 @@ internal interface IMonitors
 
 internal sealed class MonitorInfo
 {
-    public IntPtr Handle { get; set; }
+    public HMONITOR Handle { get; set; }
     public Rectangle Bounds { get; set; }
     public Rectangle WorkArea { get; set; }
     public int Dpi { get; set; }
@@ -30,22 +34,12 @@ internal sealed class SystemMonitors : IMonitors
 {
     public static readonly SystemMonitors Instance = new SystemMonitors();
 
-    [DllImport("shcore.dll")]
-    private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint x, out uint y);
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForSystem();
-    [DllImport("user32.dll")]
-    private static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, EnumMonitorProc proc, IntPtr data);
-    private delegate bool EnumMonitorProc(IntPtr monitor, IntPtr dc, ref Native.RECT rect, IntPtr data);
-
-    private const int MDT_EFFECTIVE_DPI = 0;
-
     /// <summary>The effective DPI of a monitor: what Settings > Display > Scale says (100 % is 96).</summary>
-    public static int OfMonitor(IntPtr monitor)
+    public static int OfMonitor(HMONITOR monitor)
     {
         try
         {
-            if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, out var x, out _) == 0 && x >= 96) return (int)x;
+            if (!monitor.IsNull && GetDpiForMonitor(monitor, MONITOR_DPI_TYPE.MDT_EFFECTIVE_DPI, out var x, out _).Succeeded && x >= 96) return (int)x;
         }
         catch (DllNotFoundException) { }
         catch (EntryPointNotFoundException) { }
@@ -55,34 +49,34 @@ internal sealed class SystemMonitors : IMonitors
     }
 
     /// <summary>The DPI of the monitor a window is mostly on.</summary>
-    public static int OfWindow(IntPtr window) =>
-        window == IntPtr.Zero ? 96 : OfMonitor(Native.MonitorFromWindow(window, Native.MONITOR_DEFAULTTONEAREST));
+    public static int OfWindow(HWND window) =>
+        window.IsNull ? 96 : OfMonitor(MonitorFromWindow(window, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST));
 
-    public int DpiAt(Point p) => OfMonitor(Native.MonitorFromPoint(new Native.POINT { X = p.X, Y = p.Y }, Native.MONITOR_DEFAULTTONEAREST));
+    public int DpiAt(Point p) => OfMonitor(MonitorFromPoint(p, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST));
 
     public Rectangle WorkAreaAt(Point p)
     {
-        var info = new Native.MONITORINFO { cbSize = Marshal.SizeOf(typeof(Native.MONITORINFO)) };
-        var monitor = Native.MonitorFromPoint(new Native.POINT { X = p.X, Y = p.Y }, Native.MONITOR_DEFAULTTONEAREST);
-        return Native.GetMonitorInfo(monitor, ref info) ? info.rcWork.ToRectangle() : System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+        var info = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+        var monitor = MonitorFromPoint(p, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+        return GetMonitorInfo(monitor, ref info) ? info.rcWork : System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
     }
 
     /// <summary>Every monitor, with its physical bounds, work area and DPI.</summary>
-    public static List<MonitorInfo> All()
+    public static unsafe List<MonitorInfo> All()
     {
         var list = new List<MonitorInfo>();
-        EnumMonitorProc visit = (IntPtr monitor, IntPtr dc, ref Native.RECT rect, IntPtr data) =>
+        MONITORENUMPROC visit = (monitor, dc, rect, data) =>
         {
-            var info = new Native.MONITORINFO { cbSize = Marshal.SizeOf(typeof(Native.MONITORINFO)) };
-            if (Native.GetMonitorInfo(monitor, ref info))
+            var info = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+            if (GetMonitorInfo(monitor, ref info))
                 list.Add(new MonitorInfo
                 {
-                    Handle = monitor, Bounds = info.rcMonitor.ToRectangle(), WorkArea = info.rcWork.ToRectangle(),
-                    Dpi = OfMonitor(monitor), Primary = (info.dwFlags & 1) != 0,
+                    Handle = monitor, Bounds = info.rcMonitor, WorkArea = info.rcWork,
+                    Dpi = OfMonitor(monitor), Primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0,
                 });
             return true;
         };
-        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, visit, IntPtr.Zero);
+        EnumDisplayMonitors(HDC.Null, null, visit, 0);
         return list;
     }
 }

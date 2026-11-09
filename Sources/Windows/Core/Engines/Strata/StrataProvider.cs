@@ -63,9 +63,10 @@ public sealed class StrataProvider : IEngineProvider
             lastSnapshot = null; lastModelId = null;
             return Placeholder("-", EngineStatus.NoModel, null);
         }
-        var id = first.Model ?? "Model";
+        var id = first.Model ?? "Model";          // what the router's URLs and the clients' configs use
+        var title = Title(first);                 // what the user sees: the friendly name from the router's config, else the id
         var state = first.State ?? "?";
-        if (state != "ready") return Placeholder(id, EngineStatus.Loading, "State: " + state);
+        if (state != "ready") return Placeholder(title, EngineStatus.Loading, "State: " + state);
 
         var metricsUrl = Endpoints.Join(router, "upstream", id, "metrics");
         baseForLinks = Endpoints.Join(router, "upstream", id).AbsoluteUri.TrimEnd('/');
@@ -74,13 +75,18 @@ public sealed class StrataProvider : IEngineProvider
         {
             // The router's per-model request limit is reached. Keep the last data and say so.
             if (lastSnapshot != null && lastModelId == id) return lastSnapshot.WithRouterLimited();
-            return Placeholder(id, EngineStatus.Loading, "Router request limit reached");
+            return Placeholder(title, EngineStatus.Loading, "Router request limit reached");
         }
-        if (!metrics.Ok) return Placeholder(id, EngineStatus.Error, "Server not responding");
-        var snapshot = Translate(metrics.Body!, id);
+        if (!metrics.Ok) return Placeholder(title, EngineStatus.Error, "Server not responding");
+        var snapshot = Translate(metrics.Body!, id);   // the id finds the client config of this model
+        snapshot.Model = title;
         lastSnapshot = snapshot; lastModelId = id;
         return snapshot;
     }
+
+    /// <summary>The model's name as the router shows it: llama-swap's <c>name</c> from its config, and the model id when it has none.</summary>
+    internal static string Title(RunningModel running) =>
+        !string.IsNullOrWhiteSpace(running.Name) ? running.Name.Trim() : running.Model ?? "Model";
 
     /// <summary>Without a router: ask the Strata server directly. If nothing answers, the engine counts as not running.</summary>
     private async Task<EngineSnapshot?> PollDirect(CancellationToken cancellation)

@@ -1,9 +1,13 @@
 using System.Collections.Concurrent;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Stratoscope.Core;
+using Windows.Win32.Foundation;
+using Windows.Win32.UI.Input.KeyboardAndMouse;
+using Windows.Win32.UI.WindowsAndMessaging;
+using static Windows.Win32.PInvoke;
+using DiagnosticsTrace = System.Diagnostics.Trace;
 
 namespace Stratoscope.Windows;
 
@@ -13,7 +17,8 @@ namespace Stratoscope.Windows;
 /// Windows 11 has no supported API for third-party taskbar content (deskbands are gone), so this does what the other
 /// taskbar tools do: a borderless, layered child window of the taskbar window (Shell_TrayWnd), placed in free space (TaskbarLayout).
 /// The geometry is checked a few times a second, so a change of DPI, monitor, taskbar position, auto-hide, theme or task-button count
-/// is followed, and a restart of explorer.exe (the TaskbarCreated message) re-creates the window.
+/// is followed, and a restart of explorer.exe (the TaskbarCreated message) re-creates the window. Why the readout is not shown, when it
+/// is not, goes to the error log once per change, and the user is told in one sentence.
 ///
 /// Everything runs on its own thread with its own message loop: the taskbar and this thread share an input queue while
 /// the child window exists, so this thread never waits for the UI thread or the network.
@@ -22,19 +27,20 @@ internal sealed class ReadoutHost : IDisposable
 {
     public const string ControlClass = "Stratoscope.TaskbarControl";
     public const string ReadoutClass = "Stratoscope.TaskbarReadout";
-    private const uint WM_UPDATE = Native.WM_APP + 1;
+    private const uint WM_UPDATE = WM_APP + 1;
     private const int TimerMilliseconds = 500;
 
-    private static readonly ConcurrentDictionary<IntPtr, ReadoutHost> Hosts = new ConcurrentDictionary<IntPtr, ReadoutHost>();
-    private static readonly Native.WndProc Proc = WindowProc;
+    private static readonly ConcurrentDictionary<HWND, ReadoutHost> Hosts = new ConcurrentDictionary<HWND, ReadoutHost>();
+    private static readonly WNDPROC Proc = WindowProc;
+    private static readonly LRESULT Handled = new LRESULT(0);
     private static bool classesRegistered;
 
     private readonly SynchronizationContext? ui;
     private readonly UiController controller;
     private readonly object gate = new object();
     private Thread? thread;
-    private IntPtr control;
-    private IntPtr readout;
+    private HWND control;
+    private HWND readout;
     private uint taskbarCreated;
 
     // Data handed in from the UI thread.
@@ -73,9 +79,6 @@ internal sealed class ReadoutHost : IDisposable
     public UiMetrics Metrics { get { lock (gate) return metrics; } }
     /// <summary>The readout's rectangle on screen, or empty while it is not shown.</summary>
     public Rectangle ScreenRect { get { lock (gate) return currentScreenRect; } }
-    /// <summary>The window handle of the readout (zero while not created). For checks from outside.</summary>
-    public IntPtr ReadoutWindow => readout;
-    public IntPtr ControlWindow => control;
 
     public void Start()
     {
@@ -90,20 +93,19 @@ internal sealed class ReadoutHost : IDisposable
     public void Update(IList<ReadoutItem> newItems, bool show, ReadoutPosition where)
     {
         lock (gate) { items = newItems.ToList(); wanted = show; position = where; }
-        if (control != IntPtr.Zero) Native.PostMessage(control, WM_UPDATE, IntPtr.Zero, IntPtr.Zero);
+        if (!control.IsNull) PostMessage(control, WM_UPDATE, 0, 0);
     }
 
     /// <summary>Redraws everything, for example after the user changed the UI scale. Thread-safe.</summary>
     public void Refresh()
     {
         lock (gate) lastSignature = "";
-        if (control != IntPtr.Zero) Native.PostMessage(control, WM_UPDATE, IntPtr.Zero, IntPtr.Zero);
+        if (!control.IsNull) PostMessage(control, WM_UPDATE, 0, 0);
     }
 
     public void Dispose()
     {
-        var c = control;
-        if (c != IntPtr.Zero) Native.PostMessage(c, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+        if (!control.IsNull) PostMessage(control, WM_CLOSE, 0, 0);
         thread?.Join(3000);
     }
 
@@ -112,73 +114,65 @@ internal sealed class ReadoutHost : IDisposable
     private void Run(ManualResetEventSlim ready)
     {
         RegisterClasses();
-        taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
-        control = Native.CreateWindowEx(Native.WS_EX_TOOLWINDOW, ControlClass, "Stratoscope taskbar control", Native.WS_POPUP, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, Native.GetModuleHandle(null), IntPtr.Zero);
-        if (control != IntPtr.Zero)
+        taskbarCreated = RegisterWindowMessage("TaskbarCreated");
+        control = LayeredWindows.Create(WINDOW_EX_STYLE.WS_EX_TOOLWINDOW, ControlClass, "Stratoscope taskbar control", WINDOW_STYLE.WS_POPUP, 0, 0, HWND.Null);
+        if (!control.IsNull)
         {
             Hosts[control] = this;
-            Native.SetTimer(control, new IntPtr(1), TimerMilliseconds, IntPtr.Zero);
+            SetTimer(control, 1, TimerMilliseconds, null);
         }
         ready.Set();
-        if (control == IntPtr.Zero) return;
+        if (control.IsNull) return;
         Reconcile(true);
-        while (Native.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+        while (GetMessage(out var msg, HWND.Null, 0, 0).Value > 0)
         {
-            Native.TranslateMessage(ref msg);
-            Native.DispatchMessage(ref msg);
+            TranslateMessage(in msg);
+            DispatchMessage(in msg);
         }
-        DestroyReadout(); tipWindow.Dispose();
+        DestroyReadout(); tipWindow.Dispose(); statusWindow.Dispose();
         Hosts.TryRemove(control, out _);
     }
 
     private static void RegisterClasses()
     {
         if (classesRegistered) return;
-        var cursor = Native.LoadCursor(IntPtr.Zero, Native.IDC_ARROW);
-        foreach (var name in new[] { ControlClass, ReadoutClass })
-        {
-            var wc = new Native.WNDCLASSEX
-            {
-                cbSize = Marshal.SizeOf(typeof(Native.WNDCLASSEX)), lpfnWndProc = Proc, hInstance = Native.GetModuleHandle(null),
-                hCursor = cursor, lpszClassName = name,
-            };
-            Native.RegisterClassEx(ref wc);   // a second call for the same class fails harmlessly
-        }
+        LayeredWindows.RegisterClass(ControlClass, Proc);
+        LayeredWindows.RegisterClass(ReadoutClass, Proc);
         classesRegistered = true;
     }
 
-    private static IntPtr WindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    private static LRESULT WindowProc(HWND hWnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
         foreach (var host in Hosts.Values)
         {
             if (hWnd == host.control) return host.ControlMessage(hWnd, msg, wParam, lParam);
             if (hWnd == host.readout) return host.ReadoutMessage(hWnd, msg, wParam, lParam);
         }
-        return Native.DefWindowProc(hWnd, msg, wParam, lParam);
+        return DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
     private void Changed(string reason) => Post(() => EnvironmentChanged?.Invoke(reason));
 
-    private IntPtr ControlMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    private LRESULT ControlMessage(HWND hWnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
-        if (taskbarCreated != 0 && msg == taskbarCreated) { DestroyReadout(); Reconcile(true); Changed("taskbar re-created"); return IntPtr.Zero; }
+        if (taskbarCreated != 0 && msg == taskbarCreated) { DestroyReadout(); Reconcile(true); Changed("taskbar re-created"); return Handled; }
         switch (msg)
         {
-            case WM_UPDATE: Reconcile(false); return IntPtr.Zero;
-            case Native.WM_TIMER:
-                if (wParam.ToInt64() == 2) AnimateStep(); else if (wParam.ToInt64() == 3) ShowTip(); else Reconcile(false);
-                return IntPtr.Zero;
-            case Native.WM_DISPLAYCHANGE: Reconcile(true); Changed("display change"); return IntPtr.Zero;
-            case Native.WM_DPICHANGED: Reconcile(true); Changed("dpi change"); return IntPtr.Zero;
-            case Native.WM_THEMECHANGED: Reconcile(true); Changed("theme change"); return IntPtr.Zero;
-            case Native.WM_SETTINGCHANGE: Reconcile(true); Changed("setting change"); return IntPtr.Zero;
-            case Native.WM_CLOSE: Native.KillTimer(hWnd, new IntPtr(1)); DestroyReadout(); Native.DestroyWindow(hWnd); return IntPtr.Zero;
-            case Native.WM_DESTROY: Native.PostQuitMessage(0); return IntPtr.Zero;
+            case WM_UPDATE: Reconcile(false); return Handled;
+            case WM_TIMER:
+                if (wParam.Value == 2) AnimateStep(); else if (wParam.Value == 3) ShowTip(); else Reconcile(false);
+                return Handled;
+            case WM_DISPLAYCHANGE: Reconcile(true); Changed("display change"); return Handled;
+            case WM_DPICHANGED: Reconcile(true); Changed("dpi change"); return Handled;
+            case WM_THEMECHANGED: Reconcile(true); Changed("theme change"); return Handled;
+            case WM_SETTINGCHANGE: Reconcile(true); Changed("setting change"); return Handled;
+            case WM_CLOSE: KillTimer(hWnd, 1); DestroyReadout(); DestroyWindow(hWnd); return Handled;
+            case WM_DESTROY: PostQuitMessage(0); return Handled;
         }
-        return Native.DefWindowProc(hWnd, msg, wParam, lParam);
+        return DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
-    private static Point ClientPoint(IntPtr lParam) => new Point((short)(lParam.ToInt64() & 0xFFFF), (short)((lParam.ToInt64() >> 16) & 0xFFFF));
+    private static Point ClientPoint(LPARAM lParam) => new Point((short)(lParam.Value & 0xFFFF), (short)((lParam.Value >> 16) & 0xFFFF));
 
     private int ItemAt(Point p)
     {
@@ -186,29 +180,29 @@ internal sealed class ReadoutHost : IDisposable
         return -1;
     }
 
-    private IntPtr ReadoutMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    private LRESULT ReadoutMessage(HWND hWnd, uint msg, WPARAM wParam, LPARAM lParam)
     {
         switch (msg)
         {
-            case Native.WM_MOUSEACTIVATE: return Native.MA_NOACTIVATE;   // never take focus
-            case Native.WM_MOUSEMOVE:
+            case WM_MOUSEACTIVATE: return new LRESULT((nint)MA_NOACTIVATE);   // never take focus
+            case WM_MOUSEMOVE:
                 {
                     var index = ItemAt(ClientPoint(lParam));
                     if (!tracking)
                     {
-                        var track = new Native.TRACKMOUSEEVENT { cbSize = Marshal.SizeOf(typeof(Native.TRACKMOUSEEVENT)), dwFlags = Native.TME_LEAVE, hwndTrack = hWnd };
-                        tracking = Native.TrackMouseEvent(ref track);
+                        var track = new TRACKMOUSEEVENT { cbSize = (uint)Marshal.SizeOf<TRACKMOUSEEVENT>(), dwFlags = TRACKMOUSEEVENT_FLAGS.TME_LEAVE, hwndTrack = hWnd };
+                        tracking = TrackMouseEvent(ref track);
                     }
                     if (index != hover) { hover = index; Redraw(); ArmTip(index); }
-                    return IntPtr.Zero;
+                    return Handled;
                 }
-            case Native.WM_MOUSELEAVE:
+            case WM_MOUSELEAVE:
                 tracking = false; hover = -1; pressed = -1; Redraw(); HideTip();
-                return IntPtr.Zero;
-            case Native.WM_LBUTTONDOWN:
+                return Handled;
+            case WM_LBUTTONDOWN:
                 pressed = ItemAt(ClientPoint(lParam)); Redraw(); HideTip();
-                return IntPtr.Zero;
-            case Native.WM_LBUTTONUP:
+                return Handled;
+            case WM_LBUTTONUP:
                 {
                     var index = ItemAt(ClientPoint(lParam));
                     var was = pressed;
@@ -218,24 +212,23 @@ internal sealed class ReadoutHost : IDisposable
                         var rect = bounds[index]; rect.Offset(currentScreenRect.Location);
                         Post(() => ItemClicked?.Invoke(index, rect));
                     }
-                    return IntPtr.Zero;
+                    return Handled;
                 }
-            case Native.WM_RBUTTONUP:
+            case WM_RBUTTONUP:
                 {
-                    var p = new Native.POINT { X = ClientPoint(lParam).X, Y = ClientPoint(lParam).Y };
-                    Native.ClientToScreen(hWnd, ref p);
-                    var point = new Point(p.X, p.Y);
+                    var point = ClientPoint(lParam);
+                    ClientToScreen(hWnd, ref point);
                     Post(() => ContextMenuRequested?.Invoke(point));
-                    return IntPtr.Zero;
+                    return Handled;
                 }
-            case Native.WM_SETCURSOR:
-                Native.SetCursor(Native.LoadCursor(IntPtr.Zero, hover >= 0 ? Native.IDC_HAND : Native.IDC_ARROW));
-                return new IntPtr(1);
-            case Native.WM_DESTROY:
-                readout = IntPtr.Zero; lastSignature = "";
-                return IntPtr.Zero;
+            case WM_SETCURSOR:
+                SetCursor(LoadCursor(HINSTANCE.Null, hover >= 0 ? IDC_HAND : IDC_ARROW));
+                return new LRESULT(1);
+            case WM_DESTROY:
+                readout = HWND.Null; lastSignature = "";
+                return Handled;
         }
-        return Native.DefWindowProc(hWnd, msg, wParam, lParam);
+        return DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
     private void Post(Action action)
@@ -249,14 +242,15 @@ internal sealed class ReadoutHost : IDisposable
     private void DestroyReadout()
     {
         var h = readout;
-        readout = IntPtr.Zero; lastSignature = ""; hover = pressed = -1; tracking = false; HideTip();
+        readout = HWND.Null; lastSignature = ""; hover = pressed = -1; tracking = false; HideTip();
         lock (gate) currentScreenRect = Rectangle.Empty;
-        if (h != IntPtr.Zero && Native.IsWindow(h)) Native.DestroyWindow(h);   // destroys its tooltip too (owned window)
+        if (!h.IsNull && IsWindow(h)) DestroyWindow(h);   // destroys its tooltip too (owned window)
     }
 
     private void Hide()
     {
-        if (readout != IntPtr.Zero && Native.IsWindow(readout)) Native.ShowWindow(readout, Native.SW_HIDE);
+        if (!readout.IsNull && IsWindow(readout)) ShowWindow(readout, SHOW_WINDOW_CMD.SW_HIDE);
+        statusWindow.Hide();
         lock (gate) currentScreenRect = Rectangle.Empty;
         lastSignature = "";
     }
@@ -275,17 +269,15 @@ internal sealed class ReadoutHost : IDisposable
 
     private void Redraw()
     {
-        if (readout == IntPtr.Zero) return;
+        if (readout.IsNull) return;
         List<ReadoutItem> current; lock (gate) current = items;
         if (current.Count == 0 || placer.Current is not Rectangle rect) return;
         var list = new List<Rectangle>();
         // Hover and pressed only change the pixels, never the position.
         using (var bmp = ReadoutPainter.Render(current, metrics, rect.Size, list, hitTestable: true, hover: hover, pressed: pressed))
-            Present(readout, bmp, lastClient ?? rect.Location);
+            LayeredWindows.Present(readout, bmp, lastClient ?? rect.Location);
         windowUpdates++; Trace("readout paint: hover or pressed changed");
     }
-
-    private IntPtr GetTaskbar() => TaskbarProbe.FindTaskbar();
 
     private void Reconcile(bool force)
     {
@@ -294,6 +286,9 @@ internal sealed class ReadoutHost : IDisposable
         var info = TaskbarProbe.Read(ReadoutClass);
         if (info != null) { edge = info.Edge; dpi = info.Dpi; }   // the panel opened from the tray icon needs these too
         if (info != null && info.Dpi != lastDpi) { lastDpi = info.Dpi; force = true; Changed("taskbar dpi " + info.Dpi); }
+        if (show && current.Count > 0 && info == null)
+            Report("The taskbar window (Shell_TrayWnd) was not found, so the readout cannot be placed.",
+                "Stratoscope is running, but Windows' taskbar could not be found, so there is nowhere to show the readout yet. It appears as soon as the taskbar is there.");
         if (!show || current.Count == 0 || info == null || info.Hidden) { StepPlacer(null, true); return; }
         RefreshButtons(info);
         // The first place is only worked out once the task buttons are known (a few moments at start), so it does not have to move at once.
@@ -305,45 +300,60 @@ internal sealed class ReadoutHost : IDisposable
         // The size comes from the reserved widths (never from the content) and the target from the geometry alone.
         var desired = ReadoutPainter.Measure(current, m, info.Bounds.Height);
         var place = TaskbarLayout.Place(info.ToGeometry(), where, desired);
-        if (place == null) { StepPlacer(null, false); return; }
-        var origin = new Native.POINT { X = place.Value.Left, Y = place.Value.Top };
-        Native.ScreenToClient(info.Window, ref origin);
+        if (place == null)
+        {
+            Report("There is no room for the readout: taskbar " + info.Bounds + " at the " + info.Edge + " edge, notification area " + info.Notification + ", " + info.Buttons.Count + " task buttons.",
+                info.Edge == TaskbarEdge.Left || info.Edge == TaskbarEdge.Right
+                    ? "Stratoscope is running, but it shows its readout on a taskbar at the bottom or the top of the screen, and yours is at the side."
+                    : "Stratoscope is running, but there is not enough free room next to the clock on your taskbar. The readout appears as soon as there is room.");
+            StepPlacer(null, false);
+            return;
+        }
+        var origin = place.Value.Location;
+        ScreenToClient(info.Window, ref origin);
         var target = new Rectangle(origin.X, origin.Y, place.Value.Width, place.Value.Height);
 
-        if (readout != IntPtr.Zero && (!Native.IsWindow(readout) || Native.GetParent(readout) != info.Window)) { DestroyReadout(); placer.Step(DateTime.UtcNow, null); }
+        if (!readout.IsNull && (!IsWindow(readout) || GetParent(readout) != info.Window)) { DestroyReadout(); placer.Step(DateTime.UtcNow, null); }
         var metricsChanged = m.Signature != lastMetricsSignature;
         lastMetricsSignature = m.Signature;
         if (TracePath != null)
             geometryNote = "notification area from " + info.Notification.Left + ", buttons " + info.Buttons.Count + " to " + (info.Buttons.Count == 0 ? 0 : info.Buttons.Where(b => b.Right <= info.Notification.Left + 1).Select(b => b.Right).DefaultIfEmpty(0).Max());
-        var action = StepPlacer(target, metricsChanged || readout == IntPtr.Zero);
+        var action = StepPlacer(target, metricsChanged || readout.IsNull);
         if (placer.Current is not Rectangle rect) return;
 
-        if (readout == IntPtr.Zero)
+        if (readout.IsNull)
         {
-            readout = Native.CreateWindowEx(Native.WS_EX_LAYERED | Native.WS_EX_NOACTIVATE, ReadoutClass, "Stratoscope readout",
-                Native.WS_CHILD | Native.WS_CLIPSIBLINGS, 0, 0, rect.Width, rect.Height, info.Window, IntPtr.Zero, Native.GetModuleHandle(null), IntPtr.Zero);
-            if (readout == IntPtr.Zero) return;
+            readout = LayeredWindows.Create(WINDOW_EX_STYLE.WS_EX_LAYERED | WINDOW_EX_STYLE.WS_EX_NOACTIVATE, ReadoutClass, "Stratoscope readout",
+                WINDOW_STYLE.WS_CHILD | WINDOW_STYLE.WS_CLIPSIBLINGS, rect.Width, rect.Height, info.Window);
+            if (readout.IsNull)
+            {
+                Report("The readout window could not be created, Win32 error " + Marshal.GetLastPInvokeError() + ".",
+                    "Stratoscope is running, but Windows would not let it create the readout window.");
+                return;
+            }
             force = true;
         }
+        Report(null);
 
         var signature = string.Join("|", current.Select(i => i.Text.Value + "," + i.Text.Unit + "," + i.State + "," + (i.Fraction.HasValue ? (int)(i.Fraction.Value * 100) : -1)))
             + "#" + rect.Width + "x" + rect.Height + "@" + m.Signature;
-        var screen = new Native.POINT { X = 0, Y = 0 };
-        Native.ClientToScreen(info.Window, ref screen);
+        var screen = Point.Empty;
+        ClientToScreen(info.Window, ref screen);
         lock (gate) currentScreenRect = new Rectangle(rect.X + screen.X, rect.Y + screen.Y, rect.Width, rect.Height);   // follows a taskbar that slides, without a move
         if (!force && action.Kind == PlaceKind.None && signature == lastSignature)
         {
             KeepOnTop(info.Window);
+            UpdateStatus();
             return;
         }
 
         // A move of the same size is eased (or jumps once when animations are off); anything else is one update of the layered window.
         var easeFrom = action.Kind == PlaceKind.Move && !metricsChanged && lastSize == rect.Size && controller.Current.Animations && lastClient.HasValue ? lastClient : null;
-        if (easeFrom.HasValue) { animFrom = easeFrom.Value; animTo = rect.Location; animStart = Environment.TickCount64; Native.SetTimer(control, new IntPtr(2), 16, IntPtr.Zero); }
-        else Native.KillTimer(control, new IntPtr(2));
+        if (easeFrom.HasValue) { animFrom = easeFrom.Value; animTo = rect.Location; animStart = Environment.TickCount64; SetTimer(control, 2, 16, null); }
+        else KillTimer(control, 2);
         var list = new List<Rectangle>();
         using (var bmp = ReadoutPainter.Render(current, m, rect.Size, list, hitTestable: true, hover: hover, pressed: pressed))
-            Present(readout, bmp, easeFrom ?? rect.Location);
+            LayeredWindows.Present(readout, bmp, easeFrom ?? rect.Location);
         windowUpdates++;
         if (TracePath != null)
             Trace("readout paint: " + (force ? "forced (" + (metricsChanged ? "scale or theme" : "new window or environment change") + ")"
@@ -355,9 +365,60 @@ internal sealed class ReadoutHost : IDisposable
         if (signature != lastSignature && action.Kind == PlaceKind.None) contentUpdates++;
         lastSignature = signature;
         // The accessible name of the window is what a screen reader says: one sentence per server.
-        Native.SetWindowText(readout, string.Join("; ", current.Select(i => i.Spoken)));
-        Native.ShowWindow(readout, Native.SW_SHOWNOACTIVATE);
+        SetWindowText(readout, string.Join("; ", current.Select(i => i.Spoken)));
+        ShowWindow(readout, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
         KeepOnTop(info.Window);
+        UpdateStatus();
+    }
+
+    private readonly TipWindow statusWindow = new TipWindow();
+    private string? statusText;
+    private DateTime statusUntil;
+
+    /// <summary>
+    /// Puts a short status next to the readout for one minute from now (null takes it away). Asking again with the same text does not start
+    /// the minute again. Thread-safe; the host shows and hides it on its own thread.
+    /// </summary>
+    public void ShowStatus(string? text)
+    {
+        lock (gate)
+        {
+            if (text == statusText) return;
+            statusText = text;
+            statusUntil = DateTime.UtcNow.AddMinutes(1);
+        }
+    }
+
+    private void UpdateStatus()
+    {
+        string? text; DateTime until; Rectangle anchor;
+        lock (gate) { text = statusText; until = statusUntil; anchor = currentScreenRect; }
+        var wanted = text != null && DateTime.UtcNow < until && !readout.IsNull && !anchor.IsEmpty && IsWindowVisible(readout);
+        if (!wanted) { if (statusWindow.IsShown) statusWindow.Hide(); return; }
+        if (statusWindow.IsShown) return;
+        var m = controller.ForDpi(dpi);
+        statusWindow.Show(text!, anchor, System.Windows.Forms.Screen.FromRectangle(anchor).WorkingArea, preferAbove: edge != TaskbarEdge.Top, m.Panel, m.Scale);
+    }
+
+    private string? lastReport;
+    private DateTime? unavailableSince;
+    private bool unavailableShown;
+
+    /// <summary>The readout has not been shown for a while: one sentence in plain words for the user, once per session. Raised on the UI thread.</summary>
+    public event Action<string>? Unavailable;
+
+    /// <summary>
+    /// Writes why the readout is not shown to the error log, once per change, and tells the user in plain words when it stays that way for
+    /// 20 seconds. <c>technical</c> null says that the readout is placed.
+    /// </summary>
+    private void Report(string? technical, string? plain = null)
+    {
+        if (technical == null) { lastReport = null; unavailableSince = null; return; }
+        if (technical != lastReport) { lastReport = technical; DiagnosticsTrace.TraceWarning("The readout is not shown: " + technical); }
+        unavailableSince ??= DateTime.UtcNow;
+        if (unavailableShown || plain == null || (DateTime.UtcNow - unavailableSince.Value).TotalSeconds < 20) return;
+        unavailableShown = true;
+        Post(() => Unavailable?.Invoke(plain));
     }
 
     // MARK: Stable position
@@ -399,24 +460,24 @@ internal sealed class ReadoutHost : IDisposable
     /// <summary>One frame of the ease to a new position: SetWindowPos only when the position really changes.</summary>
     private void AnimateStep()
     {
-        if (readout == IntPtr.Zero || !animFrom.HasValue || !animTo.HasValue) { Native.KillTimer(control, new IntPtr(2)); return; }
+        if (readout.IsNull || !animFrom.HasValue || !animTo.HasValue) { KillTimer(control, 2); return; }
         var t = Math.Min(1.0, (Environment.TickCount64 - animStart) / 160.0);
         var eased = 1 - Math.Pow(1 - t, 3);
         var p = new Point((int)Math.Round(animFrom.Value.X + (animTo.Value.X - animFrom.Value.X) * eased), (int)Math.Round(animFrom.Value.Y + (animTo.Value.Y - animFrom.Value.Y) * eased));
         if (p != lastClient)
         {
-            Native.SetWindowPos(readout, IntPtr.Zero, p.X, p.Y, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+            SetWindowPos(readout, HWND.Null, p.X, p.Y, 0, 0, SET_WINDOW_POS_FLAGS.SWP_NOSIZE | SET_WINDOW_POS_FLAGS.SWP_NOZORDER | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
             setWindowPosCalls++;
             lastClient = p;
         }
-        if (t >= 1.0) { Native.KillTimer(control, new IntPtr(2)); animFrom = null; }
+        if (t >= 1.0) { KillTimer(control, 2); animFrom = null; }
     }
 
     /// <summary>The XAML layer of the taskbar can come to the front; keep the readout above it without activating anything.</summary>
-    private void KeepOnTop(IntPtr taskbar)
+    private void KeepOnTop(HWND taskbar)
     {
-        if (readout == IntPtr.Zero || Native.GetWindow(taskbar, Native.GW_CHILD) == readout) return;
-        Native.SetWindowPos(readout, Native.HWND_TOP, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        if (readout.IsNull || GetWindow(taskbar, GET_WINDOW_CMD.GW_CHILD) == readout) return;
+        SetWindowPos(readout, HWND.Null, 0, 0, 0, 0, SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
     }
 
     // MARK: Tooltip (the themed TipWindow, 700 ms after the pointer rests on an item, above it, never while the panel is open)
@@ -430,21 +491,21 @@ internal sealed class ReadoutHost : IDisposable
     {
         HideTip();
         tipItem = index;
-        if (index >= 0 && control != IntPtr.Zero) Native.SetTimer(control, new IntPtr(3), 700, IntPtr.Zero);
+        if (index >= 0 && !control.IsNull) SetTimer(control, 3, 700, null);
     }
 
     private void HideTip()
     {
-        if (control != IntPtr.Zero) Native.KillTimer(control, new IntPtr(3));
+        if (!control.IsNull) KillTimer(control, 3);
         tipWindow.Hide();
         tipItem = -1;
     }
 
     private void ShowTip()
     {
-        if (control != IntPtr.Zero) Native.KillTimer(control, new IntPtr(3));
+        if (!control.IsNull) KillTimer(control, 3);
         List<ReadoutItem> current; lock (gate) current = items;
-        if (SuppressTips || tipItem < 0 || tipItem >= current.Count || tipItem >= bounds.Count || readout == IntPtr.Zero) return;
+        if (SuppressTips || tipItem < 0 || tipItem >= current.Count || tipItem >= bounds.Count || readout.IsNull) return;
         var text = current[tipItem].Tip;
         if (string.IsNullOrEmpty(text)) return;       // nothing to add to what the item says: no tooltip
         var item = bounds[tipItem]; item.Offset(currentScreenRect.Location);
@@ -452,44 +513,5 @@ internal sealed class ReadoutHost : IDisposable
         // Above the item (below on a taskbar at the top of the screen), in the palette of the panel.
         var metrics = controller.ForDpi(dpi);
         tipWindow.Show(text, item, work, preferAbove: edge != TaskbarEdge.Top, metrics.Panel, metrics.Scale);
-    }
-
-
-    /// <summary>Gives the window its pixels: a premultiplied 32-bit bitmap through UpdateLayeredWindow, so per-pixel transparency works.</summary>
-    internal static void Present(IntPtr window, Bitmap bmp, Point positionInParent)
-    {
-        var screenDc = Native.GetDC(IntPtr.Zero);
-        var memDc = Native.CreateCompatibleDC(screenDc);
-        var header = new Native.BITMAPINFOHEADER
-        {
-            biSize = Marshal.SizeOf(typeof(Native.BITMAPINFOHEADER)), biWidth = bmp.Width, biHeight = -bmp.Height, biPlanes = 1, biBitCount = 32,
-        };
-        var dib = Native.CreateDIBSection(memDc, ref header, 0, out var bits, IntPtr.Zero, 0);
-        var old = IntPtr.Zero;
-        try
-        {
-            if (dib == IntPtr.Zero) return;
-            var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
-            try
-            {
-                var bytes = new byte[data.Stride * data.Height];
-                Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
-                Marshal.Copy(bytes, 0, bits, Math.Min(bytes.Length, bmp.Width * 4 * bmp.Height));
-            }
-            finally { bmp.UnlockBits(data); }
-            old = Native.SelectObject(memDc, dib);
-            var dst = new Native.POINT { X = positionInParent.X, Y = positionInParent.Y };
-            var size = new Native.SIZE { Cx = bmp.Width, Cy = bmp.Height };
-            var src = new Native.POINT();
-            var blend = new Native.BLENDFUNCTION { BlendOp = Native.AC_SRC_OVER, SourceConstantAlpha = 255, AlphaFormat = Native.AC_SRC_ALPHA };
-            Native.UpdateLayeredWindow(window, screenDc, ref dst, ref size, memDc, ref src, 0, ref blend, Native.ULW_ALPHA);
-        }
-        finally
-        {
-            if (old != IntPtr.Zero) Native.SelectObject(memDc, old);
-            if (dib != IntPtr.Zero) Native.DeleteObject(dib);
-            Native.DeleteDC(memDc);
-            Native.ReleaseDC(IntPtr.Zero, screenDc);
-        }
     }
 }

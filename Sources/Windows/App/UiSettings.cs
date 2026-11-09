@@ -1,6 +1,6 @@
 using System.Drawing;
-using System.Runtime.InteropServices;
-using Microsoft.Win32;
+using Stratoscope.Core;
+using Windows.UI.ViewManagement;
 
 namespace Stratoscope.Windows;
 
@@ -20,38 +20,17 @@ internal interface ISystemSettings
     Color Accent { get; }
 }
 
-internal sealed class RegistrySystemSettings : ISystemSettings
+/// <summary>The real settings: the Windows Runtime <c>UISettings</c> for text size and animations, the registry for the themes.</summary>
+internal sealed class WindowsSystemSettings : ISystemSettings
 {
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool SystemParametersInfo(uint action, uint param, out int value, uint winIni);
-    private const uint SPI_GETCLIENTAREAANIMATION = 0x1042;
+    private readonly UISettings ui = new UISettings();
 
     public Color Accent => SystemColors.Highlight;
     public bool AppsDark => WindowsTheme.AppsDark();
     public bool SystemDark => WindowsTheme.SystemDark();
     public bool HighContrast => System.Windows.Forms.SystemInformation.HighContrast;
-
-    public bool Animations
-    {
-        get
-        {
-            try { return SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, out var on, 0) && on != 0; }
-            catch (EntryPointNotFoundException) { return false; }
-        }
-    }
-
-    public double TextScale
-    {
-        get
-        {
-            try
-            {
-                var v = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Accessibility", "TextScaleFactor", 100);
-                return v is int percent ? Math.Max(1.0, Math.Min(2.25, percent / 100.0)) : 1.0;
-            }
-            catch (Exception) { return 1.0; }
-        }
-    }
+    public bool Animations => ui.AnimationsEnabled;
+    public double TextScale => Math.Clamp(ui.TextScaleFactor, 1.0, 2.25);
 }
 
 /// <summary>Everything a window needs to draw itself at the current display scale and theme.</summary>
@@ -96,11 +75,13 @@ internal sealed class UiController
     private readonly IMonitors monitors;
     private readonly Func<int?> scalePercent;
     private readonly Func<Point> probe;
+    private readonly Func<ThemeChoice> theme;
     private string last = "";
 
-    public UiController(ISystemSettings settings, IMonitors monitors, Func<int?> uiScalePercent, Func<Point> probePoint)
+    public UiController(ISystemSettings settings, IMonitors monitors, Func<int?> uiScalePercent, Func<Point> probePoint, Func<ThemeChoice>? panelTheme = null)
     {
         this.settings = settings; this.monitors = monitors; scalePercent = uiScalePercent; probe = probePoint;
+        theme = panelTheme ?? (() => ThemeChoice.System);
     }
 
     /// <summary>Raised on the thread that calls <see cref="Notify"/>, with the reason, when the metrics are no longer what they were.</summary>
@@ -120,7 +101,9 @@ internal sealed class UiController
         {
             Dpi = percent.HasValue ? (int)Math.Round(96 * percent.Value / 100.0) : monitorDpi,
             TextScale = settings.TextScale,
-            AppsDark = settings.AppsDark, SystemDark = settings.SystemDark,
+            // The user's choice is for the panel; the readout sits on the taskbar, whose colour is Windows' own.
+            AppsDark = theme() switch { ThemeChoice.Light => false, ThemeChoice.Dark => true, _ => settings.AppsDark },
+            SystemDark = settings.SystemDark,
             HighContrast = settings.HighContrast, Animations = settings.Animations, Accent = settings.Accent,
         };
     }

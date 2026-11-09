@@ -1,6 +1,10 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Dwm;
+using Windows.Win32.Graphics.Gdi;
+using static Windows.Win32.PInvoke;
 
 namespace Stratoscope.Windows;
 
@@ -48,9 +52,6 @@ internal sealed class StatusPanel : Form, IPanelSurface
         public EngineSnapshotKey(object? snapshot, DateTime now) { Snapshot = snapshot; Now = now; }
     }
 
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
-
     public StatusPanel(Func<PanelModel> model, Action<PanelAction, int> action, UiController uiController)
     {
         modelSource = model;
@@ -83,14 +84,14 @@ internal sealed class StatusPanel : Form, IPanelSurface
     }
 
     /// <summary>Round corners (Windows 11) and a dark frame when apps use the dark theme. Both are best effort.</summary>
-    private void ApplyWindowAttributes()
+    private unsafe void ApplyWindowAttributes()
     {
         try
         {
             int round = 2;           // DWMWCP_ROUND
-            DwmSetWindowAttribute(Handle, 33, ref round, 4);
+            DwmSetWindowAttribute((HWND)Handle, DWMWINDOWATTRIBUTE.DWMWA_WINDOW_CORNER_PREFERENCE, &round, sizeof(int));
             int dark = ui.Current.AppsDark ? 1 : 0;
-            DwmSetWindowAttribute(Handle, 20, ref dark, 4);   // DWMWA_USE_IMMERSIVE_DARK_MODE
+            DwmSetWindowAttribute((HWND)Handle, DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(int));
         }
         catch (Exception e) when (e is DllNotFoundException || e is EntryPointNotFoundException) { }
     }
@@ -225,21 +226,22 @@ internal sealed class StatusPanel : Form, IPanelSurface
     protected override void OnPaintBackground(PaintEventArgs e) { }
 
     /// <summary>Draws the frame that is shown, as it is: one copy, no clearing, no painting of content.</summary>
-    protected override void OnPaint(PaintEventArgs e)
+    protected override unsafe void OnPaint(PaintEventArgs e)
     {
         if (!presenting && ReadoutHost.Tracing) ReadoutHost.Trace("panel paint: system (window uncovered)");
         var frame = presenter.Shown;
         if (frame == null) return;
         // One GDI call from the pixels of the frame, top-down, into the part of the window that is being painted (the clip). Measured: this
         // takes about 2 ms for a full panel, DrawImage of the same bitmap about 15 ms.
-        var header = new Native.BITMAPINFOHEADER { biSize = Marshal.SizeOf(typeof(Native.BITMAPINFOHEADER)), biWidth = frame.Width, biHeight = -frame.Height, biPlanes = 1, biBitCount = 32 };
+        var info = new BITMAPINFO { bmiHeader = new BITMAPINFOHEADER { biSize = (uint)sizeof(BITMAPINFOHEADER), biWidth = frame.Width, biHeight = -frame.Height, biPlanes = 1, biBitCount = 32 } };
         var hdc = e.Graphics.GetHdc();
-        try { SetDIBitsToDevice(hdc, 0, 0, (uint)frame.Width, (uint)frame.Height, 0, 0, 0, (uint)frame.Height, presenter.ShownBytes, ref header, 0); }
+        try
+        {
+            fixed (byte* bits = presenter.ShownBytes)
+                SetDIBitsToDevice((HDC)hdc, 0, 0, (uint)frame.Width, (uint)frame.Height, 0, 0, 0, (uint)frame.Height, bits, &info, DIB_USAGE.DIB_RGB_COLORS);
+        }
         finally { e.Graphics.ReleaseHdc(hdc); }
     }
-
-    [DllImport("gdi32.dll")]
-    private static extern int SetDIBitsToDevice(IntPtr hdc, int xDest, int yDest, uint width, uint height, int xSrc, int ySrc, uint startScan, uint lines, byte[] bits, ref Native.BITMAPINFOHEADER info, uint colourUse);
 
     // MARK: Keyboard
 

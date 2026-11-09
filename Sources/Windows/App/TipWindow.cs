@@ -2,6 +2,9 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
+using Windows.Win32.Foundation;
+using Windows.Win32.UI.WindowsAndMessaging;
+using static Windows.Win32.PInvoke;
 
 namespace Stratoscope.Windows;
 
@@ -13,27 +16,19 @@ namespace Stratoscope.Windows;
 internal sealed class TipWindow : IDisposable
 {
     private const string ClassName = "Stratoscope.Tip";
-    private const int WS_EX_TOPMOST = 0x8;
-    private const int WM_NCHITTEST = 0x0084;
-    private static readonly IntPtr HTTRANSPARENT = new IntPtr(-1);
-    private static readonly Native.WndProc Proc = (h, msg, w, l) => msg == WM_NCHITTEST ? HTTRANSPARENT : Native.DefWindowProc(h, msg, w, l);
+    private static readonly WNDPROC Proc = (h, msg, w, l) => msg == WM_NCHITTEST ? new LRESULT(HTTRANSPARENT) : DefWindowProc(h, msg, w, l);
     private static bool registered;
 
     private const float RadiusEpx = 6f, ShadowEpx = 8f;
 
-    private IntPtr window;
+    private HWND window;
 
     public bool IsShown { get; private set; }
 
     private static void Register()
     {
         if (registered) return;
-        var wc = new Native.WNDCLASSEX
-        {
-            cbSize = System.Runtime.InteropServices.Marshal.SizeOf(typeof(Native.WNDCLASSEX)), lpfnWndProc = Proc,
-            hInstance = Native.GetModuleHandle(null), hCursor = Native.LoadCursor(IntPtr.Zero, Native.IDC_ARROW), lpszClassName = ClassName,
-        };
-        Native.RegisterClassEx(ref wc);
+        LayeredWindows.RegisterClass(ClassName, Proc);
         registered = true;
     }
 
@@ -69,28 +64,28 @@ internal sealed class TipWindow : IDisposable
 
     private void Place(Bitmap bmp, Point topLeft)
     {
-        if (window == IntPtr.Zero || !Native.IsWindow(window))
+        if (window.IsNull || !IsWindow(window))
         {
             Register();
-            window = Native.CreateWindowEx(WS_EX_TOPMOST | Native.WS_EX_LAYERED | Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW, ClassName, "Stratoscope tooltip",
-                Native.WS_POPUP, 0, 0, bmp.Width, bmp.Height, IntPtr.Zero, IntPtr.Zero, Native.GetModuleHandle(null), IntPtr.Zero);
-            if (window == IntPtr.Zero) return;
+            window = LayeredWindows.Create(WINDOW_EX_STYLE.WS_EX_TOPMOST | WINDOW_EX_STYLE.WS_EX_LAYERED | WINDOW_EX_STYLE.WS_EX_NOACTIVATE | WINDOW_EX_STYLE.WS_EX_TOOLWINDOW,
+                ClassName, "Stratoscope tooltip", WINDOW_STYLE.WS_POPUP, bmp.Width, bmp.Height, HWND.Null);
+            if (window.IsNull) return;
         }
-        ReadoutHost.Present(window, bmp, topLeft);
-        Native.ShowWindow(window, Native.SW_SHOWNOACTIVATE);
+        LayeredWindows.Present(window, bmp, topLeft);
+        ShowWindow(window, SHOW_WINDOW_CMD.SW_SHOWNOACTIVATE);
         IsShown = true;
     }
 
     public void Hide()
     {
-        if (window != IntPtr.Zero && IsShown) Native.ShowWindow(window, Native.SW_HIDE);
+        if (!window.IsNull && IsShown) ShowWindow(window, SHOW_WINDOW_CMD.SW_HIDE);
         IsShown = false;
     }
 
     public void Dispose()
     {
-        if (window != IntPtr.Zero && Native.IsWindow(window)) Native.DestroyWindow(window);
-        window = IntPtr.Zero; IsShown = false;
+        if (!window.IsNull && IsWindow(window)) DestroyWindow(window);
+        window = HWND.Null; IsShown = false;
     }
 
     /// <summary>The tooltip as a premultiplied bitmap: the body in the palette, 6 epx corners, a soft shadow around it.</summary>
@@ -125,15 +120,6 @@ internal sealed class TipWindow : IDisposable
         return bmp;
     }
 
-    private static GraphicsPath Round(Rectangle r, int radius)
-    {
-        var p = new GraphicsPath();
-        var d = Math.Max(1, Math.Min(radius * 2, Math.Min(r.Width, r.Height)));
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d - 1, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d - 1, r.Bottom - d - 1, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d - 1, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
-    }
+    /// <summary>The outline path of a rectangle in whole pixels: the last pixel row and column are the right and bottom edge.</summary>
+    private static GraphicsPath Round(Rectangle r, int radius) => Shapes.RoundedRect(new RectangleF(r.X, r.Y, r.Width - 1, r.Height - 1), radius);
 }

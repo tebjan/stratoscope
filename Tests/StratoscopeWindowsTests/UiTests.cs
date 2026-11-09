@@ -1,8 +1,11 @@
 using System.Drawing;
 using System.Windows.Forms;
+using Stratoscope.Core;
 using Stratoscope.Core.Engines.Demo;
 using Stratoscope.Core.Engines.Strata;
 using Stratoscope.Windows;
+using Windows.Win32.System.Threading;
+using static Windows.Win32.PInvoke;
 
 namespace Stratoscope.Tests;
 
@@ -27,8 +30,8 @@ internal sealed class FakeMonitors : IMonitors
 
 internal static class Ui
 {
-    public static UiController Controller(FakeSettings? s = null, FakeMonitors? m = null, int? percent = null, Point? probe = null) =>
-        new UiController(s ?? new FakeSettings(), m ?? new FakeMonitors(), () => percent, () => probe ?? new Point(100, 100));
+    public static UiController Controller(FakeSettings? s = null, FakeMonitors? m = null, int? percent = null, Point? probe = null, ThemeChoice theme = ThemeChoice.System) =>
+        new UiController(s ?? new FakeSettings(), m ?? new FakeMonitors(), () => percent, () => probe ?? new Point(100, 100), () => theme);
 
     public static readonly int[] Dpis = { 96, 120, 144, 168, 192, 240 };
 }
@@ -233,8 +236,8 @@ public class TooltipTests
 [Collection("ReadoutPainterState")]
 public class ResourceTests
 {
-    private static uint Gdi() => Native.GetGuiResources(Native.GetCurrentProcess(), Native.GR_GDIOBJECTS);
-    private static uint User() => Native.GetGuiResources(Native.GetCurrentProcess(), Native.GR_USEROBJECTS);
+    private static uint Gdi() => GetGuiResources(GetCurrentProcess(), GET_GUI_RESOURCES_FLAGS.GR_GDIOBJECTS);
+    private static uint User() => GetGuiResources(GetCurrentProcess(), GET_GUI_RESOURCES_FLAGS.GR_USEROBJECTS);
 
     // Skipped in CI: the process-wide GDI count jumps between 3 and 15 on the GitHub Windows runner, depending on when
     // cached objects are dropped and rebuilt around a collection. 400 DPI changes there showed no growth (15 every time),
