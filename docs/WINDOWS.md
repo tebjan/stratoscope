@@ -11,16 +11,16 @@ A readout in the taskbar with the live speed, and the same panel as the Mac menu
 
 ## Install
 
-1. Download `Stratoscope-<version>-windows.zip` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest) and unpack it.
-2. Run `install.cmd`.
-3. Look at the taskbar: the readout appears next to the notification area.
+1. Download `Stratoscope-<version>-windows-setup.exe` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest) and open it.
+2. Look at the taskbar: the readout appears next to the notification area.
 
 No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts with Windows, and is not code-signed, so SmartScreen may warn once.
 
-- Update: run `install.ps1` again. Settings stay.
+- Update: run the Setup again. Settings stay.
 - Remove: Settings > Apps, or `uninstall.ps1` (`-RemoveSettings` also deletes `config.json`).
+- Silent: `Stratoscope-<version>-windows-setup.exe /VERYSILENT`.
 - Already have the .NET 10 Desktop Runtime? Take `-windows-framework-dependent.zip` (0.3 MB).
-- `install.ps1` options: `-Autostart default|yes|no`, `-NoStart`, `-InstallDirectory`.
+- The zips hold `install.cmd` and `install.ps1` (options: `-Autostart default|yes|no`, `-DesktopIcon`, `-NoStart`, `-InstallDirectory`).
 
 ## What you see
 
@@ -51,6 +51,7 @@ Open `%LOCALAPPDATA%\Stratoscope\config.json` from the menu (Settings > Open set
 | | `servers` | list of `{ name, engine, url, router, log, webui, client_model }` |
 | `STRATOSCOPE_READOUT_POSITION` | `readout_position` | `center` (default), `tray`, `after-buttons`, `left` |
 | `STRATOSCOPE_UI_SCALE` | `ui_scale` | `auto` (default) or `100` to `250` |
+| `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the panel. Also in the menu under Settings > Theme. The readout always matches the taskbar |
 | `STRATOSCOPE_CONFIG` | | path of the settings file |
 
 - **Tick on the context bar**: context minus output of the running model, read from the Kilo or OpenCode config that points at the same server (`%USERPROFILE%\.config\kilo` and `\opencode`, or `%XDG_CONFIG_HOME%`). Nothing found: `compact_at`. Still nothing: no tick.
@@ -95,19 +96,19 @@ A server on another machine is reached through an SSH forward or a VPN address. 
 
 ```powershell
 dotnet test Sources/Windows/Stratoscope.Windows.sln -c Release
-.\scripts\windows\build.ps1 -Version 0.2.0   # publish both zips with .sha256
+.\scripts\windows\build.ps1 -Version 0.2.0   # publish both zips and the Setup (needs Inno Setup), each with .sha256
 .\scripts\windows\install.ps1                 # install your build
 .\scripts\windows\screenshots.ps1             # regenerate docs\img
 ```
 
-`Stratoscope.exe --help` lists the window-less tools (`--snapshot`, `--measure`, `--trace-panel`, ...). `STRATOSCOPE_TRACE_MOVES=1` writes the readout's moves and the panel's repaints to `readout-moves.log` next to the exe.
+`StratoscopeTools.exe --help` lists the window-less tools (`--snapshot`, `--measure`, `--trace-panel`, ...). `STRATOSCOPE_TRACE_MOVES=1` writes the readout's moves and the panel's repaints to `readout-moves.log` next to the exe.
 
 ## For contributors
 
-- **Layout**: `Core` has model, settings, formatting and engine adapters. `App` is the program. Tests are in `Tests/StratoscopeWindowsTests`, shared payloads in `Tests/Fixtures`.
+- **Layout**: `Core` has model, settings, formatting and engine adapters. `App` is the program, `Tools` the development tools. Tests are in `Tests/StratoscopeWindowsTests`, shared payloads in `Tests/Fixtures`.
 - **Readout**: one table of constants, nothing sized from the text or the state (`ReadoutPainter.TableFor`). Glyph and text on one centre line, on whole pixels.
 - **Text**: Segoe UI Variable (Segoe UI fallback), 12 epx for labels and values, 11 for small text, 13 for the model name. Every line starts with a capital.
-- **Libraries**: `System.Text.Json` (source-generated), `HttpClient`, `FileSystemWatcher`, UI Automation. The app uses no NuGet package. Placement follows the approach of [Ceiling](https://github.com/btsouth/ceiling) (MIT); no code copied.
+- **Libraries**: `System.Text.Json` (source-generated), `HttpClient`, `Microsoft.Extensions.Configuration.Json` for the settings file, UI Automation. CsWin32 generates the Win32 declarations. Placement follows the approach of [Ceiling](https://github.com/btsouth/ceiling) (MIT); no code copied.
 - **Tests (35)**: taskbar placement and stability, readout geometry, DPI, panel frames, engine logic, recorded payloads, rendering, client configs.
 - **Publish**: the release zip is self-contained, one compressed file (61 MB, starts in about 0.3 s). Framework-dependent is 0.3 MB. Trimming and ReadyToRun are not used: WinForms trimming is not supported (`NETSDK1175`), and ReadyToRun made the compressed file bigger and slower.
 - **Security**: user rights only. `GET` to `/running`, `/upstream/<model>/metrics` and `/metrics` of the configured engine, nothing else, no telemetry. See [SECURITY.md](../SECURITY.md).
