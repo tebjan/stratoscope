@@ -96,7 +96,7 @@ internal sealed class UiController
     public ISystemSettings Settings => settings;
     public IMonitors Monitors => monitors;
 
-    /// <summary>The metrics for things that appear at a screen point (an anchor of the panel, the taskbar, the tray).</summary>
+    /// <summary>The metrics for things that appear at a screen point (an anchor of the panel, the taskbar).</summary>
     public UiMetrics At(Point screenPoint) => ForDpi(monitors.DpiAt(screenPoint));
 
     /// <summary>The metrics for a monitor DPI that is already known (the user's override, if any, wins).</summary>

@@ -46,7 +46,7 @@ internal sealed class ReadoutHost : IDisposable
     // Data handed in from the UI thread.
     private List<ReadoutItem> items = new List<ReadoutItem>();
     private bool wanted;
-    private ReadoutPosition position = ReadoutPosition.Tray;
+    private ReadoutPosition position = ReadoutPosition.Clock;
 
     // State of the host thread.
     private string lastSignature = "";
@@ -284,7 +284,7 @@ internal sealed class ReadoutHost : IDisposable
         List<ReadoutItem> current; bool show; ReadoutPosition where;
         lock (gate) { current = items; show = wanted; where = position; }
         var info = TaskbarProbe.Read(ReadoutClass);
-        if (info != null) { edge = info.Edge; dpi = info.Dpi; }   // the panel opened from the tray icon needs these too
+        if (info != null) { edge = info.Edge; dpi = info.Dpi; }   // the panel needs these too
         if (info != null && info.Dpi != lastDpi) { lastDpi = info.Dpi; force = true; Changed("taskbar dpi " + info.Dpi); }
         if (show && current.Count > 0 && info == null)
             Report("The taskbar window (Shell_TrayWnd) was not found, so the readout cannot be placed.",

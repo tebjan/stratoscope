@@ -81,7 +81,7 @@ internal static class ToolsProgram
         var where = Option(args, "--position");
         if (where == "after-buttons") options.Position = ReadoutPosition.AfterButtons;
         else if (where == "left") options.Position = ReadoutPosition.Left;
-        else if (where == "tray") options.Position = ReadoutPosition.Tray;
+        else if (where == "clock") options.Position = ReadoutPosition.Clock;
         SnapshotRenderer.Readout(args[1], items, scale, Dark(args), limit, options);
         return 0;
     }

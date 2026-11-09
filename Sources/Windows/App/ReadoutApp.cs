@@ -16,7 +16,7 @@ namespace Stratoscope.Windows;
 /// the look (display scale, text size, theme, accent, high contrast, monitors, taskbar, explorer restart) ends in <see cref="Rebuild"/>:
 /// the readout and the panel are drawn again for the new DPI and theme.
 /// </summary>
-internal sealed class TrayApp : ApplicationContext
+internal sealed class ReadoutApp : ApplicationContext
 {
     private const int PollMilliseconds = 2000;
     public const string QuitEventName = "Local\\Stratoscope.Windows.Quit";
@@ -40,7 +40,7 @@ internal sealed class TrayApp : ApplicationContext
     private int selected;
     private bool polling;
 
-    public TrayApp(string? configFile)
+    public ReadoutApp(string? configFile)
     {
         configPath = configFile;
         ui = new UiController(new WindowsSystemSettings(), SystemMonitors.Instance, () => config.UiScalePercent, TaskbarCentre, () => config.Theme);
@@ -83,7 +83,7 @@ internal sealed class TrayApp : ApplicationContext
     /// Where the panel opens after a click on the readout: at the cursor when the cursor is on the taskbar (a mouse click), otherwise
     /// at the notification area (the icon was activated with the keyboard).
     /// </summary>
-    private Rectangle TrayAnchor()
+    private Rectangle ReadoutAnchor()
     {
         var cursor = Cursor.Position;
         var info = TaskbarProbe.Read(ReadoutHost.ReadoutClass);
@@ -265,7 +265,7 @@ internal sealed class TrayApp : ApplicationContext
             menu.Items.Add(new ToolStripMenuItem(MenuText.SettingsProblem + problem) { Enabled = false });
         if (config.Problems.Count > 0) menu.Items.Add(new ToolStripSeparator());
 
-        menu.Items.Add(MenuText.ShowStatus, null, (s, e) => panel.Toggle(TrayAnchor(), readout.Edge));
+        menu.Items.Add(MenuText.ShowStatus, null, (s, e) => panel.Toggle(ReadoutAnchor(), readout.Edge));
         var links = SelectedLinks();
         if (links.Count > 0) menu.Items.Add(new ToolStripSeparator());
         foreach (var link in links) { var l = link; menu.Items.Add(l.Title, null, (s, e) => Open(l)); }

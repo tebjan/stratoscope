@@ -30,7 +30,7 @@ internal static class Program
         {
             if (args.Length > 0 && args[0].StartsWith("--", StringComparison.Ordinal)) return Tool(args);
             LogToFile();
-            return RunTray();
+            return Run();
         }
         catch (Exception e)
         {
@@ -41,16 +41,16 @@ internal static class Program
 
     // MARK: The app
 
-    private static int RunTray()
+    private static int Run()
     {
         bool created;
-        using (var mutex = new System.Threading.Mutex(true, "Local\\Stratoscope.Windows.Tray", out created))
+        using (var mutex = new System.Threading.Mutex(true, "Local\\Stratoscope.Windows", out created))
         {
             if (!created) return 0;   // one instance per user session
             Application.ThreadException += (s, e) => Log("ui", e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Log("unhandled", e.ExceptionObject as Exception);
             System.Threading.SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
-            Application.Run(new TrayApp(null));
+            Application.Run(new ReadoutApp(null));
             mutex.ReleaseMutex();
         }
         return 0;
@@ -86,7 +86,7 @@ internal static class Program
             case "--probe-taskbar": return ProbeTaskbar(args);
             case "--quit":
                 // Asks the running instance of this user to exit. Exit code 1 when none is running.
-                return EventWaitHandle.TryOpenExisting(TrayApp.QuitEventName, out var quit) && quit.Set() ? 0 : 1;
+                return EventWaitHandle.TryOpenExisting(ReadoutApp.QuitEventName, out var quit) && quit.Set() ? 0 : 1;
             case "--dump": return Dump(args);
             case "--detect": return Detect();
             default:

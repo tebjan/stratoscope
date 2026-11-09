@@ -24,7 +24,7 @@ Everything that can be tested without a screen lives in `StratoscopeCore` and is
 To add a platform:
 
 1. Add a new target next to `Sources/Stratoscope` (for example `Sources/StratoscopeWindows`) that depends on `StratoscopeCore`.
-2. Poll an `EngineProvider` every two seconds and draw the `EngineSnapshot` it returns: a tray or menu bar item with the speed, and a panel with the sections. Hide the item when the provider returns `nil`.
+2. Poll an `EngineProvider` every two seconds and draw the `EngineSnapshot` it returns: a menu bar or taskbar item with the speed, and a panel with the sections. Hide the item when the provider returns `nil`.
 3. Keep platform code out of `StratoscopeCore`. If the core needs something platform-specific, put it behind a small protocol.
 4. On platforms outside Apple's, `URLSession` lives in `FoundationNetworking`, and paths like `~/.config/stratoscope.json` may need a per-platform location in `Config.swift`.
 

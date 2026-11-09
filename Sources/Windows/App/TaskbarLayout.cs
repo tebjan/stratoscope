@@ -33,7 +33,7 @@ internal static class TaskbarLayout
     /// (the notification-area icon is then the only display).
     /// </summary>
     /// <param name="taskbar">The taskbar window.</param>
-    /// <param name="notification">The notification area (clock and tray icons), the right limit.</param>
+    /// <param name="notification">The notification area (clock and icons), the right limit.</param>
     /// <param name="taskButtons">The union of the start, search, widget and task buttons that lie left of the notification area, or null when unknown.</param>
     /// <param name="desired">The size the readout would like.</param>
     /// <param name="dpi">The DPI of the taskbar's monitor.</param>
@@ -95,7 +95,7 @@ internal static class TaskbarLayout
     /// <summary>
     /// Where the readout goes, by the user's choice. Never over another item: when the chosen place has no room, the readout goes to the
     /// place next to the notification area, and when that has no room either it is not shown.
-    /// <para>tray: directly left of the notification area. after-buttons: right after the last task button, so it moves with the buttons.
+    /// <para>clock: directly left of the notification area. after-buttons: right after the last task button, so it moves with the buttons.
     /// left: at the left edge, in the free space left of centred buttons (after a widgets button if there is one); a left-aligned
     /// taskbar has none.</para>
     /// </summary>
@@ -135,7 +135,7 @@ internal static class TaskbarLayout
     }
 
     /// <summary>
-    /// Where the panel opens: next to the anchor (an item of the readout or the tray icon), on the side facing the
+    /// Where the panel opens: next to the anchor (an item of the readout), on the side facing the
     /// screen, kept inside the work area of the monitor.
     /// </summary>
     public static Point PlacePanel(Rectangle anchor, Size panel, Rectangle workArea, TaskbarEdge edge, int margin = 8)
