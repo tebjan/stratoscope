@@ -279,21 +279,9 @@ internal static class ReadoutPainter
     {
         var alpha = pressed ? Palette.PressedAlpha : Palette.HoverAlpha;
         var fill = palette.HighContrast ? SystemColors.Highlight : (palette.Dark ? Color.White : Color.Black);
-        using (var path = RoundRect(bounds, m.Px(6)))
+        using (var path = Shapes.RoundedRect(bounds, m.Px(6)))
         using (var brush = new SolidBrush(palette.HighContrast ? fill : Palette.Alpha(fill, alpha)))
             g.FillPath(brush, path);
-    }
-
-    private static GraphicsPath RoundRect(Rectangle r, int radius)
-    {
-        var p = new GraphicsPath();
-        var d = Math.Max(1, Math.Min(radius * 2, Math.Min(r.Width, r.Height)));
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
     }
 
     /// <summary>The vertical positions of an item: the baselines, the centre line, and the extent of the text, in device pixels.</summary>
@@ -396,19 +384,6 @@ internal static class ReadoutPainter
         g.PixelOffsetMode = offsetBefore;
     }
 
-    /// <summary>A pill: a rectangle whose corners have the radius height / 2. A pill as wide as it is high is a circle: the dot is the bar at its shortest.</summary>
-    private static GraphicsPath Pill(RectangleF r)
-    {
-        var p = new GraphicsPath();
-        var d = Math.Min(r.Height, r.Width);
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
-    }
-
     /// <summary>
     /// The mark of a server, all from one rounded pill of one height. A reading server is the bar that fills with the progress of the prompt,
     /// coloured by how much of the prompt came from the cache, on a faint track (like the Mac menu bar item). A filled dot, the pill at its shortest, in the
@@ -426,11 +401,11 @@ internal static class ReadoutPainter
             case ServerState.Reading:
             {
                 var track = Palette.Alpha(palette.HighContrast ? palette.Gray : Ink(palette), 0.25);
-                using (var path = Pill(box))
+                using (var path = Shapes.Pill(box))
                 using (var brush = new SolidBrush(track))
                     g.FillPath(brush, path);
                 var width = Math.Max(box.Height, (float)Math.Round(box.Width * Math.Max(0, Math.Min(1, item.Fraction ?? 0))));
-                using (var path = Pill(new RectangleF(box.X, box.Y, width, box.Height)))
+                using (var path = Shapes.Pill(new RectangleF(box.X, box.Y, width, box.Height)))
                 using (var brush = new SolidBrush(item.Hit is CacheHit hit ? palette.HitColor(hit) : state))
                     g.FillPath(brush, path);
                 break;
@@ -453,7 +428,7 @@ internal static class ReadoutPainter
             }
             case ServerState.Error:
             {
-                using (var path = Pill(box)) using (var brush = new SolidBrush(state)) g.FillPath(brush, path);
+                using (var path = Shapes.Pill(box)) using (var brush = new SolidBrush(state)) g.FillPath(brush, path);
                 // A white exclamation mark: a bar and a point, a sixth of the glyph wide (at least a device pixel).
                 var w = Math.Max(1f, (float)Math.Round(box.Height / 6));
                 var x = box.X + (box.Width - w) / 2;
@@ -465,7 +440,7 @@ internal static class ReadoutPainter
                 break;
             }
             default:
-                using (var path = Pill(box)) using (var brush = new SolidBrush(state)) g.FillPath(brush, path);
+                using (var path = Shapes.Pill(box)) using (var brush = new SolidBrush(state)) g.FillPath(brush, path);
                 break;
         }
         g.PixelOffsetMode = savedOffset;

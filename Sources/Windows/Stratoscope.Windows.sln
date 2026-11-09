@@ -5,13 +5,17 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Core", "Core", "{FBF56CC3-7AE6-AD2D-3F14-7F97FD322CD6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StratoscopeWindowsCore", "Core\StratoscopeWindowsCore.csproj", "{9416ACF2-0DB8-4AA9-9588-B664007E3DB0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StratoscopeWindowsCore", "StratoscopeWindowsCore.csproj", "{9416ACF2-0DB8-4AA9-9588-B664007E3DB0}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "App", "App", "{F95F473B-E98A-ACD6-1986-755F447BE36F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StratoscopeWindows", "App\StratoscopeWindows.csproj", "{01AF3DEE-FD4F-4F93-932C-36B5046722B9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StratoscopeWindows", "StratoscopeWindows.csproj", "{01AF3DEE-FD4F-4F93-932C-36B5046722B9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StratoscopeWindowsTests", "..\..\Tests\StratoscopeWindowsTests\StratoscopeWindowsTests.csproj", "{41087FB4-62F7-4961-BCA6-2F586D7DBE7F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tools", "Tools", "{07C2787E-EAC7-C090-1BA3-A61EC2A24D84}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StratoscopeTools", "StratoscopeTools.csproj", "{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -59,6 +63,18 @@ Global
 		{41087FB4-62F7-4961-BCA6-2F586D7DBE7F}.Release|x64.Build.0 = Release|Any CPU
 		{41087FB4-62F7-4961-BCA6-2F586D7DBE7F}.Release|x86.ActiveCfg = Release|Any CPU
 		{41087FB4-62F7-4961-BCA6-2F586D7DBE7F}.Release|x86.Build.0 = Release|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Debug|x64.Build.0 = Debug|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Debug|x86.Build.0 = Debug|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Release|x64.ActiveCfg = Release|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Release|x64.Build.0 = Release|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Release|x86.ActiveCfg = Release|Any CPU
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -66,5 +82,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{9416ACF2-0DB8-4AA9-9588-B664007E3DB0} = {FBF56CC3-7AE6-AD2D-3F14-7F97FD322CD6}
 		{01AF3DEE-FD4F-4F93-932C-36B5046722B9} = {F95F473B-E98A-ACD6-1986-755F447BE36F}
+		{5F2B0F95-39FA-4FF5-8415-5B0447E8A867} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal

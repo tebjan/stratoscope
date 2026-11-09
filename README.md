@@ -8,7 +8,7 @@ A speedometer for your local LLM.
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white)
 ![Windows 10+](https://img.shields.io/badge/Windows-10%2B-0078d4)
 [![License MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-![Inference engine: Strata](https://img.shields.io/badge/inference%20engine-Strata-5c9efa)
+![Engine: Strata](https://img.shields.io/badge/engine-Strata-5c9efa)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2b9348)
 
 <br>
@@ -44,6 +44,23 @@ Stratoscope shows what your local LLM inference engine is doing right now, in th
 
 ## Install
 
+### With your agent (recommended)
+
+Give this prompt to an AI agent that runs on your computer and knows your local LLM setup, or can read its configs: Claude Code, Codex or similar. It installs Stratoscope on macOS or Windows and connects it to your setup, so you do nothing yourself.
+
+```text
+Install Stratoscope on this computer and set it up for my local LLM.
+
+1. Find out whether this is macOS or Windows.
+2. Download the latest release from https://github.com/yosephyne/stratoscope/releases/latest and check it against its .sha256 file:
+   - macOS: Stratoscope-<version>.dmg. Open it, copy Stratoscope to Applications, start it. If macOS warns that the app is not notarized, tell me and wait; do not change security settings without asking me.
+   - Windows: Stratoscope-<version>-windows-setup.exe. Run it.
+3. Find my local LLM setup: a Strata server (default http://127.0.0.1:8095), a llama-swap router in front of it, Strata's log folder, and the Kilo or OpenCode config. On Windows, `Stratoscope.exe --detect` prints what Stratoscope itself finds. Use only what you really find on this computer or in configs you can read. Anything you do not find keeps its default.
+4. Only if the defaults do not match my setup, write Stratoscope's settings file: ~/.config/stratoscope.json on macOS, %LOCALAPPDATA%\Stratoscope\config.json on Windows. Keys: url, router, log, webui, compact_at, client_model, and servers for several. Leave every other config alone, and put no keys or secrets into it.
+5. Check that it works: the speed shows in the macOS menu bar or in the Windows taskbar next to the clock, and clicking it opens the panel. On Windows, if the readout does not show, read error.log in %LOCALAPPDATA%\Stratoscope and tell me the reason in plain words.
+6. Tell me in a few lines what you installed, what you configured and what you saw. Ask me before you do anything that is not on this list.
+```
+
 ### macOS
 
 1. Download the latest `Stratoscope-<version>.dmg` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest).
@@ -56,10 +73,9 @@ Built for macOS 13 or newer, Apple Silicon and Intel. Tested so far on Apple Sil
 
 ### Windows
 
-1. Download `Stratoscope-<version>-windows.zip` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest) and unpack it.
-2. Run `install.cmd`. It installs for your user, no administrator rights, and starts with Windows.
+Download `Stratoscope-<version>-windows-setup.exe` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest) and open it. The readout appears in the taskbar next to the clock, with the same panel as the Mac menu.
 
-Windows 10 (1809) or newer, 64-bit. The build is not code-signed, so SmartScreen may warn once. Instead of a menu bar item you get a readout in the taskbar, with the same panel. Settings are in `%LOCALAPPDATA%\Stratoscope\config.json`. Differences from the Mac app: [docs/WINDOWS.md](docs/WINDOWS.md).
+Windows 10 (1809) or newer, 64-bit. The app is not code-signed, so Windows may first show "Windows protected your PC": choose "More info", then "Run anyway". Settings are in `%LOCALAPPDATA%\Stratoscope\config.json`. Differences from the Mac app: [docs/WINDOWS.md](docs/WINDOWS.md).
 
 <div align="center">
 <picture>

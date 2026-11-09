@@ -33,6 +33,16 @@ public class StrataSnapshotTests
         now = now.AddSeconds(2);
         Assert.Equal(500, provider.Translate(Metrics(Live(2000)), "m").Live!.PrefillTokensPerSecond);
     }
+
+    [Fact]
+    public void TheRouterNameIsShownAndTheIdIsTheFallback()
+    {
+        // llama-swap's /running has the model id and, when its config gives one, the friendly name.
+        var running = Json.Deserialize(@"{""running"": [{""model"": ""qwen-27b-q4"", ""state"": ""ready"", ""name"": "" Qwen 3.6 27B ""}, {""model"": ""gemma-4b"", ""state"": ""ready""}, {""model"": ""blank"", ""name"": ""  ""}]}", Json.RunningType)!;
+        Assert.Equal("Qwen 3.6 27B", StrataProvider.Title(running.Running![0]!));
+        Assert.Equal("gemma-4b", StrataProvider.Title(running.Running![1]!));
+        Assert.Equal("blank", StrataProvider.Title(running.Running![2]!));
+    }
 }
 
 /// <summary>Every recorded payload with an .expected.json goes through the translation and is compared field by field.</summary>
@@ -200,7 +210,7 @@ public class StrataFlowTests
         var source = new FakeSource().Json(Router + "/running", "router-running-ready.json").Json(Metrics, "strata-0.1.56-idle.json");
         var s = await Via(source).PollAsync(CancellationToken.None);
         Assert.Equal(EngineStatus.Idle, s!.Status);
-        Assert.Equal("demo-model", s.Model);
+        Assert.Equal("Demo Model (4 parallel)", s.Model);   // the router's friendly name (name in its /running), not the id demo-model
         Assert.Equal(new[] { Router + "/running", Metrics }, source.Requested);
         await NoModelLoadedIsAStateNotAnError();
         await OnlyGetRequestsAreMadeToKnownReadOnlyPaths();

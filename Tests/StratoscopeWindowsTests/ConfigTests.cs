@@ -31,6 +31,17 @@ public class ConfigTests : IDisposable
         EnvironmentBeatsFile();
         ServersListWatchesSeveralEngines();
         BrokenFileDoesNotCrashAndIsReported();
+        CommentsTrailingCommasAndAByteOrderMarkAreAccepted();
+    }
+
+    private void CommentsTrailingCommasAndAByteOrderMarkAreAccepted()
+    {
+        var path = File_(null);
+        File.WriteAllText(path, "// settings\r\n{ \"url\": \"http://file:7\", /* note */ \"compact_at\": 500, }", new System.Text.UTF8Encoding(true));
+        var c = Config.Load(Env(), path);
+        Assert.Empty(c.Problems);
+        Assert.Equal("http://file:7", Assert.Single(c.Servers).Url);
+        Assert.Equal(500, c.CompactAt);
     }
 
     private void MissingFileGivesTheDefaultsWithoutAProblem()

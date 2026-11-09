@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using Microsoft.Extensions.Configuration;
 
 namespace Stratoscope.Core;
 
@@ -25,6 +26,15 @@ public sealed class EngineConfig
     public double? CompactAt { get; set; }
     /// <summary>False when the config files of clients such as Kilo and OpenCode must not be read (<c>client_configs</c>: none).</summary>
     public bool ReadClientConfigs { get; set; } = true;
+}
+
+/// <summary>The look of the panel.</summary>
+public enum ThemeChoice
+{
+    /// <summary>Follows the Windows apps theme (default).</summary>
+    System,
+    Light,
+    Dark,
 }
 
 /// <summary>Where in the taskbar the readout sits.</summary>
@@ -54,6 +64,7 @@ public enum ReadoutPosition
 ///     STRATOSCOPE_CLIENT_CONFIGS  "none" stops Stratoscope from reading the config files of clients such as Kilo and OpenCode
 ///     STRATOSCOPE_READOUT_POSITION  center (default) | tray (next to the notification area) | after-buttons | left
 ///     STRATOSCOPE_UI_SCALE    auto (default) or 100 to 250
+///     STRATOSCOPE_THEME       system (default) | light | dark: the look of the panel; the readout always matches the taskbar
 ///     STRATOSCOPE_CONFIG      path of the JSON file (default: %LOCALAPPDATA%\Stratoscope\config.json)
 ///
 /// The JSON file may hold a "servers" list (objects with name, engine, url, router, log, webui, client_model) to watch several engines.
@@ -68,10 +79,24 @@ public sealed class Config
     public ReadoutPosition ReadoutPosition { get; set; } = ReadoutPosition.Center;
     /// <summary>Overrides the Windows display scale for this app (100 to 250), or null to follow Windows ("auto").</summary>
     public int? UiScalePercent { get; set; }
+    /// <summary>The look of the panel: follow the Windows apps theme (default), or always light or dark. The readout always matches the taskbar.</summary>
+    public ThemeChoice Theme { get; set; } = ThemeChoice.System;
     /// <summary>Things in the settings that could not be used, in English, for the menu and --dump.</summary>
     public List<string> Problems { get; } = new List<string>();
     /// <summary>The file that was read (or would be read).</summary>
     public string? Path { get; set; }
+    /// <summary>
+    /// Somebody said where the server is: there is a settings file, or STRATOSCOPE_ENGINE, STRATOSCOPE_URL or STRATOSCOPE_ROUTER_URL is set.
+    /// When it is false, the server is the default one until <see cref="ServerDetection"/> finds the real one.
+    /// </summary>
+    public bool Configured { get; private set; }
+
+    /// <summary>Uses the servers that were found instead of the default one, normalised like the entries of the settings file.</summary>
+    public void UseDetected(IEnumerable<EngineConfig> found)
+    {
+        Servers.Clear();
+        foreach (var server in found) Finish(this, server, null);
+    }
 
     public const string DefaultUrl = "http://127.0.0.1:8095";
 
@@ -98,77 +123,112 @@ public sealed class Config
         return env;
     }
 
+    private const string EnvironmentPrefix = "STRATOSCOPE_";
+
+    /// <summary>The environment variables whose name is not the key of the settings file in capitals.</summary>
+    private static readonly Dictionary<string, string> EnvironmentKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["STRATOSCOPE_ROUTER_URL"] = "router",
+        ["STRATOSCOPE_WEBUI_URL"] = "webui",
+    };
+
+    /// <summary>The non-empty STRATOSCOPE_ variables as settings keys: STRATOSCOPE_UI_SCALE is ui_scale, and so on.</summary>
+    private static IEnumerable<KeyValuePair<string, string?>> EnvironmentSettings(IDictionary<string, string?> env)
+    {
+        foreach (var (name, value) in env)
+        {
+            if (!name.StartsWith(EnvironmentPrefix, StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(value)) continue;
+            yield return new KeyValuePair<string, string?>(EnvironmentKeys.TryGetValue(name, out var key) ? key : name[EnvironmentPrefix.Length..].ToLowerInvariant(), value);
+        }
+    }
+
+    /// <summary>
+    /// The settings file with the environment on top (the later source wins). Comments, trailing commas and a byte order mark are accepted.
+    /// A file that cannot be read or parsed is listed as a problem and leaves the environment and the defaults.
+    /// </summary>
+    private static IConfigurationRoot Read(Config config, IDictionary<string, string?> env)
+    {
+        var builder = new ConfigurationBuilder();
+        if (File.Exists(config.Path)) builder.AddJsonFile(config.Path!, optional: false, reloadOnChange: false);
+        builder.AddInMemoryCollection(EnvironmentSettings(env));
+        try { return builder.Build(); }
+        catch (Exception e) when (e is FormatException || e is InvalidDataException)
+        {
+            config.Problems.Add("The settings file is not a JSON object: " + config.Path);
+        }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+        {
+            config.Problems.Add("Cannot read " + config.Path + ": " + e.Message);
+        }
+        return new ConfigurationBuilder().AddInMemoryCollection(EnvironmentSettings(env)).Build();
+    }
+
     public static Config Load(IDictionary<string, string?>? environment = null, string? path = null)
     {
         var env = environment ?? CurrentEnvironment();
         var config = new Config { Path = path ?? DefaultPath(env) };
-        var file = new ConfigFile();
-        if (File.Exists(config.Path))
-        {
-            try
-            {
-                var parsed = Json.Deserialize(File.ReadAllText(config.Path, System.Text.Encoding.UTF8), Json.ConfigType);
-                if (parsed == null) config.Problems.Add("The settings file is not a JSON object: " + config.Path);
-                else file = parsed;
-            }
-            catch (IOException e) { config.Problems.Add("Cannot read " + config.Path + ": " + e.Message); }
-            catch (UnauthorizedAccessException e) { config.Problems.Add("Cannot read " + config.Path + ": " + e.Message); }
-        }
-
-        // The environment variable wins over the value in the file.
-        string? Pick(string envKey, string? fromFile) => env.TryGetValue(envKey, out var v) && !string.IsNullOrEmpty(v) ? v : fromFile;
+        var settings = Read(config, env);
+        string? Get(IConfiguration source, string key) => source[key] is { Length: > 0 } value ? value : null;
+        // Somebody said where the server is: the settings name a server (a file with only a look setting does not), or the environment does.
+        config.Configured = new[] { "servers", "engine", "url", "router" }.Any(key => settings.GetSection(key).Exists())
+            || new[] { "STRATOSCOPE_ENGINE", "STRATOSCOPE_URL", "STRATOSCOPE_ROUTER_URL" }.Any(name => env.TryGetValue(name, out var v) && !string.IsNullOrEmpty(v));
 
         // Settings that apply to every server.
-        var compact = Pick("STRATOSCOPE_COMPACT_AT", file.CompactAt);
+        var compact = Get(settings, "compact_at");
         if (compact != null && double.TryParse(compact, NumberStyles.Float, CultureInfo.InvariantCulture, out var k)) config.CompactAt = k;
-        if (string.Equals(Pick("STRATOSCOPE_CLIENT_CONFIGS", file.ClientConfigs)?.Trim(), "none", StringComparison.OrdinalIgnoreCase)) config.ReadClientConfigs = false;
+        if (string.Equals(Get(settings, "client_configs")?.Trim(), "none", StringComparison.OrdinalIgnoreCase)) config.ReadClientConfigs = false;
 
-        var position = Pick("STRATOSCOPE_READOUT_POSITION", file.ReadoutPosition)?.Trim().ToLowerInvariant();
+        var position = Get(settings, "readout_position")?.Trim().ToLowerInvariant();
         if (position == "after-buttons") config.ReadoutPosition = ReadoutPosition.AfterButtons;
         else if (position == "left") config.ReadoutPosition = ReadoutPosition.Left;
         else if (position == "tray") config.ReadoutPosition = ReadoutPosition.Tray;
         else if (position != null && position != "center") config.Problems.Add("Ignored readout_position \"" + position + "\": use center, tray, after-buttons or left.");
 
-        var scale = Pick("STRATOSCOPE_UI_SCALE", file.UiScale)?.Trim().ToLowerInvariant();
+        var scale = Get(settings, "ui_scale")?.Trim().ToLowerInvariant();
         if (scale != null && scale != "auto")
         {
             if (int.TryParse(scale.TrimEnd('%'), NumberStyles.Integer, CultureInfo.InvariantCulture, out var percent) && percent >= 100 && percent <= 250) config.UiScalePercent = percent;
             else config.Problems.Add("Ignored ui_scale \"" + scale + "\": use auto or a number from 100 to 250.");
         }
 
+        var theme = Get(settings, "theme")?.Trim().ToLowerInvariant();
+        if (theme == "light") config.Theme = ThemeChoice.Light;
+        else if (theme == "dark") config.Theme = ThemeChoice.Dark;
+        else if (theme != null && theme != "system" && theme != "auto") config.Problems.Add("Ignored theme \"" + theme + "\": use system, light or dark.");
+
         var defaults = new EngineConfig
         {
-            Engine = Pick("STRATOSCOPE_ENGINE", file.Engine) ?? "strata",
-            Log = Pick("STRATOSCOPE_LOG", file.Log),
-            Webui = Pick("STRATOSCOPE_WEBUI_URL", file.Webui),
-            Scenario = Pick("STRATOSCOPE_SCENARIO", file.Scenario),
-            ClientModel = Pick("STRATOSCOPE_CLIENT_MODEL", file.ClientModel),
+            Engine = Get(settings, "engine") ?? "strata",
+            Log = Get(settings, "log"),
+            Webui = Get(settings, "webui"),
+            Scenario = Get(settings, "scenario"),
+            ClientModel = Get(settings, "client_model"),
         };
 
         bool envEngine = env.TryGetValue("STRATOSCOPE_URL", out var eu) && !string.IsNullOrEmpty(eu)
             || env.TryGetValue("STRATOSCOPE_ROUTER_URL", out var er) && !string.IsNullOrEmpty(er);
-        var listed = (file.Servers ?? new List<ServerFile?>()).Where(s => s != null).Select(s => s!).ToList();
+        var listed = settings.GetSection("servers").GetChildren().ToList();
         if (!envEngine && listed.Count > 0)
         {
             foreach (var item in listed)
             {
                 var server = new EngineConfig
                 {
-                    Engine = item.Engine ?? defaults.Engine,
-                    Url = item.Url,
-                    Router = item.Router,
-                    Log = item.Log ?? defaults.Log,
-                    Webui = item.Webui ?? defaults.Webui,
-                    Scenario = item.Scenario ?? defaults.Scenario,
-                    ClientModel = item.ClientModel ?? defaults.ClientModel,
+                    Engine = Get(item, "engine") ?? defaults.Engine,
+                    Url = Get(item, "url"),
+                    Router = Get(item, "router"),
+                    Log = Get(item, "log") ?? defaults.Log,
+                    Webui = Get(item, "webui") ?? defaults.Webui,
+                    Scenario = Get(item, "scenario") ?? defaults.Scenario,
+                    ClientModel = Get(item, "client_model") ?? defaults.ClientModel,
                 };
-                Finish(config, server, item.Name);
+                Finish(config, server, Get(item, "name"));
             }
         }
         else
         {
-            defaults.Url = Pick("STRATOSCOPE_URL", file.Url);
-            defaults.Router = Pick("STRATOSCOPE_ROUTER_URL", file.Router);
+            defaults.Url = Get(settings, "url");
+            defaults.Router = Get(settings, "router");
             Finish(config, defaults, null);
         }
         return config;

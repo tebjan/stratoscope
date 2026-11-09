@@ -130,31 +130,3 @@ public sealed record TotalsDto
     [JsonPropertyName("decode_ms")] public double? DecodeMilliseconds { get; init; }
 }
 
-/// <summary>The settings file. Values are read as text so that 200, "200" and "200%" all mean the same, and true and "true" too.</summary>
-public sealed record ConfigFile
-{
-    [JsonPropertyName("engine")] public string? Engine { get; init; }
-    [JsonPropertyName("url")] public string? Url { get; init; }
-    [JsonPropertyName("router")] public string? Router { get; init; }
-    [JsonPropertyName("log")] public string? Log { get; init; }
-    [JsonPropertyName("webui")] public string? Webui { get; init; }
-    [JsonPropertyName("scenario")] public string? Scenario { get; init; }
-    [JsonPropertyName("compact_at")] public string? CompactAt { get; init; }
-    [JsonPropertyName("client_model")] public string? ClientModel { get; init; }
-    [JsonPropertyName("client_configs")] public string? ClientConfigs { get; init; }
-    [JsonPropertyName("readout_position")] public string? ReadoutPosition { get; init; }
-    [JsonPropertyName("ui_scale")] public string? UiScale { get; init; }
-    [JsonPropertyName("servers"), JsonConverter(typeof(TolerantList<ServerFile>))] public List<ServerFile?>? Servers { get; init; }
-}
-
-public sealed record ServerFile
-{
-    [JsonPropertyName("name")] public string? Name { get; init; }
-    [JsonPropertyName("engine")] public string? Engine { get; init; }
-    [JsonPropertyName("url")] public string? Url { get; init; }
-    [JsonPropertyName("router")] public string? Router { get; init; }
-    [JsonPropertyName("log")] public string? Log { get; init; }
-    [JsonPropertyName("webui")] public string? Webui { get; init; }
-    [JsonPropertyName("scenario")] public string? Scenario { get; init; }
-    [JsonPropertyName("client_model")] public string? ClientModel { get; init; }
-}

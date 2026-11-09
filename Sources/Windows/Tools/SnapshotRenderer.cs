@@ -15,18 +15,6 @@ internal static class SnapshotRenderer
     private const float Margin = 40f;
     private const float TaskbarHeight = 48f;
 
-    private static GraphicsPath Round(RectangleF r, float radius)
-    {
-        var p = new GraphicsPath();
-        var d = radius * 2;
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
-    }
-
     private static float PanelHeight(PanelModel model, bool dark)
     {
         using (var scratch = new Bitmap(1, 1))
@@ -74,10 +62,10 @@ internal static class SnapshotRenderer
             var panel = new RectangleF(px, Margin * 0.5f, PanelPainter.Width, panelH);
             var palette = Palette.For(dark);
             for (int i = 6; i >= 1; i--)   // a soft shadow without a blur filter
-                using (var shadow = Round(new RectangleF(panel.X - i, panel.Y - i + 6, panel.Width + 2 * i, panel.Height + 2 * i), 8 + i))
+                using (var shadow = Shapes.RoundedRect(new RectangleF(panel.X - i, panel.Y - i + 6, panel.Width + 2 * i, panel.Height + 2 * i), 8 + i))
                 using (var brush = new SolidBrush(Color.FromArgb(dark ? 22 : 12, 0, 0, 0)))
                     g.FillPath(brush, shadow);
-            using (var shape = Round(panel, 8))
+            using (var shape = Shapes.RoundedRect(panel, 8))
             {
                 using (var brush = new SolidBrush(palette.Background)) g.FillPath(brush, shape);
                 var state = g.Save();
@@ -439,7 +427,7 @@ internal static class SnapshotRenderer
 
     private static void FillRoundedRectangle(this Graphics g, Brush brush, Rectangle r, int radius)
     {
-        using (var p = Round(r, radius)) g.FillPath(brush, p);
+        using (var p = Shapes.RoundedRect(r, radius)) g.FillPath(brush, p);
     }
 
     /// <summary>The readout over a mock taskbar at one display scale. Opaque PNG at that scale.</summary>

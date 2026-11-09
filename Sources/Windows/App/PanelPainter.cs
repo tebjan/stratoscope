@@ -159,28 +159,15 @@ internal sealed class PanelPainter
     /// <summary>True for the areas that stand for one finished request: hovering one marks that request in every chart and in the dot row.</summary>
     internal static bool IsRequestTip(TipKind kind) => kind == TipKind.Request || kind == TipKind.CacheResult || kind == TipKind.ContextRequest;
 
-    private static GraphicsPath Round(RectangleF r, float radius)
-    {
-        var p = new GraphicsPath();
-        var d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
-        if (d <= 0) { p.AddRectangle(r); return p; }
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
-    }
-
     private void Bar(float x, float y, float w, float h, double frac, Color color, double? tick = null)
     {
-        using (var track = Round(new RectangleF(x, y, w, h), h / 2))
+        using (var track = Shapes.RoundedRect(new RectangleF(x, y, w, h), h / 2))
         using (var brush = new SolidBrush(pal.Faint(0.16)))
             g.FillPath(brush, track);
         var f = Math.Max(0, Math.Min(1, double.IsNaN(frac) || double.IsInfinity(frac) ? 0 : frac));
         if (f > 0)
         {
-            using (var fill = Round(new RectangleF(x, y, Math.Max(h, w * (float)f), h), h / 2))
+            using (var fill = Shapes.RoundedRect(new RectangleF(x, y, Math.Max(h, w * (float)f), h), h / 2))
             using (var brush = new SolidBrush(color))
                 g.FillPath(brush, fill);
         }
@@ -211,7 +198,7 @@ internal sealed class PanelPainter
             using (var track = new SolidBrush(pal.Faint(0.10)))
                 g.FillRectangle(track, bx, y, bw, h);
             if (request == model.HoverRequest)          // the request under the pointer: a soft tint behind its own bar, 1 px around it
-                using (var path = Round(new RectangleF(bx - 1, y - 1, bw + 2, h + 2), 2))
+                using (var path = Shapes.RoundedRect(new RectangleF(bx - 1, y - 1, bw + 2, h + 2), 2))
                 using (var wash = new SolidBrush(pal.Faint(Palette.HoverAlpha)))
                     g.FillPath(wash, path);
             if (values[i] is double v && v > 0)
@@ -308,7 +295,7 @@ internal sealed class PanelPainter
     /// <summary>Hover and pressed: the foreground colour at 7 % (12 % pressed), corners 4 epx. Black on light, white on dark, so a grey tint, never a white box.</summary>
     private void SoftFill(RectangleF bounds, bool pressed)
     {
-        using (var path = Round(bounds, 4))
+        using (var path = Shapes.RoundedRect(bounds, 4))
         using (var brush = new SolidBrush(pal.HighContrast ? SystemColors.Highlight : pal.Faint(pressed ? Palette.PressedAlpha : Palette.HoverAlpha)))
             g.FillPath(brush, path);
     }
@@ -316,10 +303,10 @@ internal sealed class PanelPainter
     /// <summary>The keyboard focus: a thin ring in the accent colour (a little muted), 4 epx corners, just outside the element.</summary>
     private void FocusRing(RectangleF area)
     {
-        using (var path = Round(RectangleF.Inflate(area, 1, 1), 5))
+        using (var path = Shapes.RoundedRect(RectangleF.Inflate(area, 1, 1), 5))
         using (var pen = new Pen(pal.HighContrast ? SystemColors.Highlight : Palette.Alpha(model.Accent ?? pal.Accent, 0.85), 1f))
             g.DrawPath(pen, path);
-        using (var path = Round(area, 4))
+        using (var path = Shapes.RoundedRect(area, 4))
         using (var brush = new SolidBrush(pal.HighContrast ? Color.Transparent : pal.Faint(Palette.HoverAlpha)))
             g.FillPath(brush, path);       // focus is a little stronger than hover
     }
@@ -336,7 +323,7 @@ internal sealed class PanelPainter
             var r = new RectangleF(8f + i * w, y, w - 4f, TabHeight);
             var hit = Hits.Count;
             if (i == model.Selected || hit == model.Hover || hit == model.Pressed)
-                using (var p = Round(RectangleF.Inflate(r, 0, -2), 4f))
+                using (var p = Shapes.RoundedRect(RectangleF.Inflate(r, 0, -2), 4f))
                 using (var brush = new SolidBrush(pal.Faint(hit == model.Pressed ? Palette.PressedAlpha : i == model.Selected ? 0.09 : Palette.HoverAlpha)))
                     g.FillPath(brush, p);
             Dot(r.X + 8, r.Y + 11, pal.StateColor(tab.State));

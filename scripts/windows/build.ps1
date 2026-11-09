@@ -29,7 +29,7 @@ try {
         dotnet test Stratoscope.Windows.sln -c Release -p:Version=$Version --nologo
         if ($LASTEXITCODE -ne 0) { throw 'The tests failed.' }
     }
-    $project = 'App/StratoscopeWindows.csproj'
+    $project = 'StratoscopeWindows.csproj'
     $publish = Join-Path $windows 'artifacts/publish'
     if (Test-Path -LiteralPath $publish) { Remove-Item -LiteralPath $publish -Recurse -Force }
 
@@ -41,7 +41,7 @@ try {
     dotnet publish $project -c Release -r $RuntimeIdentifier --no-self-contained -p:Version=$Version -o (Join-Path $publish 'framework-dependent') --nologo
     if ($LASTEXITCODE -ne 0) { throw 'The framework-dependent publish failed.' }
 
-    $scripts = @(Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Name -notin 'build.ps1', 'screenshots.ps1' })
+    $scripts = @(Get-ChildItem -LiteralPath $PSScriptRoot -File | Where-Object { $_.Name -notin 'build.ps1', 'screenshots.ps1', 'stratoscope.iss', '.gitattributes' })
     foreach ($flavour in @(@{ Dir = 'self-contained'; Name = "Stratoscope-$Version-windows" }, @{ Dir = 'framework-dependent'; Name = "Stratoscope-$Version-windows-framework-dependent" })) {
         $stage = Join-Path $windows "artifacts/package/$($flavour.Name)"
         if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
@@ -56,5 +56,17 @@ try {
         [IO.File]::WriteAllText("$zip.sha256", "$hash  $($flavour.Name).zip`n", (New-Object Text.UTF8Encoding($false)))
         Write-Host ('{0}  {1:N1} MB  sha256 {2}' -f $zip, ((Get-Item -LiteralPath $zip).Length / 1MB), $hash)
     }
+
+    # The installer users download: one Setup.exe (scripts\windows\stratoscope.iss, built with Inno Setup).
+    $iscc = @((Get-Command iscc -ErrorAction SilentlyContinue).Source,
+        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe'), (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'), (Join-Path $env:ProgramFiles 'Inno Setup 7\ISCC.exe')) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    if (-not $iscc) { throw 'Inno Setup was not found. Install it once: winget install --id JRSoftware.InnoSetup' }
+    & $iscc "/DAppVersion=$Version" ("/DSourceDir=" + (Join-Path $publish 'self-contained')) '/Q' (Join-Path $PSScriptRoot 'stratoscope.iss')
+    if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed.' }
+    $setup = Join-Path $windows "artifacts/Stratoscope-$Version-windows-setup.exe"
+    $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText("$setup.sha256", "$hash  Stratoscope-$Version-windows-setup.exe`n", (New-Object Text.UTF8Encoding($false)))
+    Write-Host ('{0}  {1:N1} MB  sha256 {2}' -f $setup, ((Get-Item -LiteralPath $setup).Length / 1MB), $hash)
 }
 finally { Pop-Location }

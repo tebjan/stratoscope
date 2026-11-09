@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UseWindowsForms>true</UseWindowsForms>
@@ -14,8 +14,9 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\Sources\Windows\Core\StratoscopeWindowsCore.csproj" />
-    <ProjectReference Include="..\..\Sources\Windows\App\StratoscopeWindows.csproj" />
+    <ProjectReference Include="..\..\Sources\Windows\StratoscopeWindowsCore.csproj" />
+    <ProjectReference Include="..\..\Sources\Windows\StratoscopeWindows.csproj" />
+    <ProjectReference Include="..\..\Sources\Windows\StratoscopeTools.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

@@ -32,7 +32,6 @@ public static class Json
 
     public static JsonTypeInfo<RunningResponse> RunningType => StratoscopeJson.Default.RunningResponse;
     public static JsonTypeInfo<StrataMetrics> MetricsType => StratoscopeJson.Default.StrataMetrics;
-    public static JsonTypeInfo<ConfigFile> ConfigType => StratoscopeJson.Default.ConfigFile;
 }
 
 /// <summary>The generated serializer metadata for every document the app reads.</summary>
@@ -43,7 +42,6 @@ public static class Json
     Converters = [typeof(TolerantNumberConverter), typeof(TolerantStringConverter)])]
 [JsonSerializable(typeof(RunningResponse))]
 [JsonSerializable(typeof(StrataMetrics))]
-[JsonSerializable(typeof(ConfigFile))]
 internal sealed partial class StratoscopeJson : JsonSerializerContext;
 
 /// <summary>A number into a <c>double?</c>. Text, booleans, objects, arrays and numbers a double cannot hold give null.</summary>

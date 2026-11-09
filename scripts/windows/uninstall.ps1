@@ -29,12 +29,11 @@ if (Test-Path -LiteralPath $exe) {
     while ((Get-Date) -lt $deadline -and @(Get-Process -Name 'Stratoscope' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }).Count -gt 0) {
         Start-Sleep -Milliseconds 200
     }
-    if (@(Get-Process -Name 'Stratoscope' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }).Count -gt 0) {
-        throw 'Stratoscope is still running. Quit it from its tray menu, then run the uninstaller again.'
-    }
+    # A copy that did not quit in time is ended: the app holds no unsaved work.
+    Get-Process -Name 'Stratoscope' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
 }
 
-foreach ($link in (Join-Path ([Environment]::GetFolderPath('Programs')) 'Stratoscope.lnk'), (Join-Path ([Environment]::GetFolderPath('Startup')) 'Stratoscope.lnk')) {
+foreach ($link in (Join-Path ([Environment]::GetFolderPath('Programs')) 'Stratoscope.lnk'), (Join-Path ([Environment]::GetFolderPath('Startup')) 'Stratoscope.lnk'), (Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stratoscope.lnk')) {
     if (Test-Path -LiteralPath $link) { Remove-Item -LiteralPath $link -Force }
 }
 $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Stratoscope'

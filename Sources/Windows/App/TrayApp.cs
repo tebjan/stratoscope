@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using Stratoscope.Core;
+using static Windows.Win32.PInvoke;
 
 namespace Stratoscope.Windows;
 
@@ -42,11 +43,12 @@ internal sealed class TrayApp : ApplicationContext
     public TrayApp(string? configFile)
     {
         configPath = configFile;
-        ui = new UiController(new RegistrySystemSettings(), SystemMonitors.Instance, () => config.UiScalePercent, TaskbarCentre);
+        ui = new UiController(new WindowsSystemSettings(), SystemMonitors.Instance, () => config.UiScalePercent, TaskbarCentre, () => config.Theme);
         panel = new StatusPanel(() => PanelModelBuilder.Panel(monitors, selected, DateTime.UtcNow), OnPanelAction, ui);
         readout = new ReadoutHost(SynchronizationContext.Current, ui);
         readout.ItemClicked += (index, rect) => { SelectServer(index); panel.Toggle(rect, readout.Edge); readout.SuppressTips = panel.IsOpen; };
         readout.ContextMenuRequested += point => { BuildMenu(); menu.Show(point); };
+        readout.Unavailable += sentence => MessageBox.Show(sentence, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
         readout.EnvironmentChanged += reason => ui.Notify(reason, force: reason.Contains("display") || reason.Contains("taskbar") || reason.Contains("dpi"));
         ui.Changed += reason => Rebuild();
 
@@ -72,7 +74,7 @@ internal sealed class TrayApp : ApplicationContext
     private static Point TaskbarCentre()
     {
         var tb = TaskbarProbe.FindTaskbar();
-        if (tb != IntPtr.Zero && Native.GetWindowRect(tb, out var r)) return new Point((r.Left + r.Right) / 2, (r.Top + r.Bottom) / 2);
+        if (!tb.IsNull && GetWindowRect(tb, out var r)) return new Point((r.left + r.right) / 2, (r.top + r.bottom) / 2);
         var p = Screen.PrimaryScreen!.Bounds;
         return new Point(p.Left + p.Width / 2, p.Top + p.Height / 2);
     }
@@ -95,13 +97,67 @@ internal sealed class TrayApp : ApplicationContext
     private void LoadConfig()
     {
         config = Config.Load(null, configPath);
-        monitors = config.Servers.Select(s => new ServerMonitor(s.Name, EngineRegistry.Make(s, source))).ToList();
-        selected = Servers.Clamp(selected, monitors.Count);
+        UseServers();
         WatchConfig();
         ui.Notify("settings");
         UpdateUi();
         readout.Refresh();
         var _ = PollAllAsync();
+        StartDetection();
+    }
+
+    private void UseServers()
+    {
+        monitors = config.Servers.Select(s => new ServerMonitor(s.Name, EngineRegistry.Make(s, source))).ToList();
+        selected = Servers.Clamp(selected, monitors.Count);
+    }
+
+    // MARK: Finding the server
+
+    private const string NothingFound = "No engine found\nStart Strata or your router, Stratoscope finds it by itself.";
+    private CancellationTokenSource? detection;
+
+    /// <summary>
+    /// Nobody said where the server is (no settings file, no environment variable): look for it, quietly, until it is found. Without a find, a
+    /// short status stands next to the readout for the first minute; after that the readout is only its grey ring.
+    /// </summary>
+    private void StartDetection()
+    {
+        detection?.Cancel();
+        readout.ShowStatus(null);
+        if (config.Configured) { detection = null; return; }
+        var run = detection = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token);
+        var _ = DetectAsync(run.Token);
+    }
+
+    private async Task DetectAsync(CancellationToken token)
+    {
+        var clients = config.ReadClientConfigs ? new ClientConfigReader(configHome: Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")) : null;
+        using var probe = new HttpJsonSource(TimeSpan.FromSeconds(1.5));
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                var found = await ServerDetection.FindAsync(probe, clients, token).ConfigureAwait(false);
+                if (found.Count > 0)
+                {
+                    BeginInvokeOnUi(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        readout.ShowStatus(null);
+                        config.UseDetected(found);
+                        UseServers();
+                        UpdateUi();
+                        readout.Refresh();
+                        var _ = PollAllAsync();
+                    });
+                    return;
+                }
+                readout.ShowStatus(NothingFound);
+                await Task.Delay(TimeSpan.FromSeconds(15), token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private void WatchConfig()
@@ -217,6 +273,13 @@ internal sealed class TrayApp : ApplicationContext
         var start = new ToolStripMenuItem(MenuText.StartWithWindows) { Checked = Autostart.IsEnabled, CheckOnClick = false };
         start.Click += (s, e) => { if (!Autostart.Set(!Autostart.IsEnabled)) MessageBox.Show("Windows did not let Stratoscope change its Startup shortcut.", AppInfo.Name); };
         settings.DropDownItems.Add(start);
+        var theme = new ToolStripMenuItem(MenuText.Theme);
+        foreach (var (title, choice) in new[] { (MenuText.ThemeSystem, ThemeChoice.System), (MenuText.ThemeLight, ThemeChoice.Light), (MenuText.ThemeDark, ThemeChoice.Dark) })
+        {
+            var picked = choice;
+            theme.DropDownItems.Add(new ToolStripMenuItem(title, null, (s, e) => SetTheme(picked)) { Checked = config.Theme == picked });
+        }
+        settings.DropDownItems.Add(theme);
         settings.DropDownItems.Add(new ToolStripSeparator());
         settings.DropDownItems.Add(MenuText.OpenSettingsFile, null, (s, e) => OpenSettingsFile());
         settings.DropDownItems.Add(MenuText.ReloadSettings, null, (s, e) => LoadConfig());
@@ -225,6 +288,14 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem(AppInfo.Label) { Enabled = false });
         menu.Items.Add(MenuText.Quit, null, (s, e) => ExitThread());
+    }
+
+    /// <summary>The choice is stored in the settings file; the file watcher reloads it, like any other edit.</summary>
+    private void SetTheme(ThemeChoice choice)
+    {
+        var path = config.Path ?? Config.DefaultPath(null);
+        if (!ConfigFile.SetValue(path, "theme", choice.ToString().ToLowerInvariant()))
+            MessageBox.Show("Stratoscope could not change the theme in " + path + ".", AppInfo.Name);
     }
 
     private static void OpenUrl(string url)
