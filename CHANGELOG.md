@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 · 2026-11-09
 
 - Windows 10 and 11 (x64): a readout in the taskbar and the same panel, released as `Stratoscope-<version>-windows.zip`. See [docs/WINDOWS.md](docs/WINDOWS.md).
 

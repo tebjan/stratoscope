@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
-    <Version Condition="'$(Version)' == ''">0.1.4</Version>
+    <Version Condition="'$(Version)' == ''">0.2.0</Version>
     <Authors>Stratoscope contributors</Authors>
     <Product>Stratoscope</Product>
     <Copyright>MIT License</Copyright>

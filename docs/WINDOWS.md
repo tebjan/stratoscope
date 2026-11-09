@@ -95,7 +95,7 @@ A server on another machine is reached through an SSH forward or a VPN address. 
 
 ```powershell
 dotnet test Sources/Windows/Stratoscope.Windows.sln -c Release
-.\scripts\windows\build.ps1 -Version 0.1.4   # publish both zips with .sha256
+.\scripts\windows\build.ps1 -Version 0.2.0   # publish both zips with .sha256
 .\scripts\windows\install.ps1                 # install your build
 .\scripts\windows\screenshots.ps1             # regenerate docs\img
 ```
