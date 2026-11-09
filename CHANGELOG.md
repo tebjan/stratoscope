@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.0 · 2026-11-09
+
+- Mac: a settings menu with Start at login, Theme, Open settings file, Reload settings and Check for updates.
+- Mac: finds the server by itself, like Windows. It shows "No engine found" for a minute, then the item hides.
+- Windows: the readout checks its colours against the taskbar as it really looks, and the grey ring is thicker.
+- Windows: Settings and Check for updates are rows of the panel, with a settings page drawn like the rest of it. The system context menu is gone, it stayed light on a dark Windows.
+- Windows: installer (`Stratoscope-<version>-windows-setup.exe`).
+
 ## v0.2.0 · 2026-11-09
 
 - Windows 10 and 11 (x64): a readout in the taskbar and the same panel, released as `Stratoscope-<version>-windows.zip`. See [docs/WINDOWS.md](docs/WINDOWS.md).

@@ -5,11 +5,11 @@
   Needs the .NET SDK 10 (see Sources\Windows\global.json) and Windows. Everything is `dotnet test` and `dotnet publish`; packages come from
   nuget.org through the project files. The zips hold the published output plus install.cmd, install.ps1 and uninstall.ps1.
 .EXAMPLE
-  .\scripts\windows\build.ps1 -Version 0.2.0
+  .\scripts\windows\build.ps1 -Version 0.3.0
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '0.2.0',
+    [string]$Version = '0.3.0',
     [switch]$SkipTests,
     [string]$RuntimeIdentifier = 'win-x64'
 )
