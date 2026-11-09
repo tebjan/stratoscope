@@ -65,4 +65,18 @@ internal static class LayeredWindows
             ReleaseDC(HWND.Null, screenDc);
         }
     }
+
+    /// <summary>The colour on screen at a point, as the desktop is composed (a layered window that is transparent there shows what is behind it).</summary>
+    public static Color? ColorAt(Point screen)
+    {
+        var dc = GetDC(HWND.Null);
+        if (dc.IsNull) return null;
+        try
+        {
+            var bgr = GetPixel(dc, screen.X, screen.Y).Value;
+            if (bgr == 0xFFFFFFFF) return null;    // CLR_INVALID: the point is off screen
+            return Color.FromArgb((int)(bgr & 0xFF), (int)((bgr >> 8) & 0xFF), (int)((bgr >> 16) & 0xFF));
+        }
+        finally { ReleaseDC(HWND.Null, dc); }
+    }
 }

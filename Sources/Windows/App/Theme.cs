@@ -107,12 +107,13 @@ internal sealed class Palette
 
     private static readonly Dictionary<string, Palette> Cache = new Dictionary<string, Palette>();
 
-    private static Palette Get(bool dark, bool taskbar, bool highContrast)
+    private static Palette Get(bool dark, bool taskbar, bool highContrast, Color? seen = null)
     {
         var key = (dark ? "d" : "l") + (taskbar ? "t" : "p") + (highContrast ? "h" : "n");
         lock (Cache)
         {
             if (highContrast) return new Palette(dark, Color.Black, true);   // system colours can change at any time: never cached
+            if (seen.HasValue) return new Palette(dark, seen.Value, false);  // the colour really seen behind the readout: never cached
             if (!Cache.TryGetValue(key, out var p))
             {
                 var bg = taskbar ? (dark ? Color.FromArgb(32, 32, 32) : Color.FromArgb(243, 243, 243)) : (dark ? Color.FromArgb(43, 43, 43) : Color.FromArgb(245, 245, 245));
@@ -125,8 +126,11 @@ internal sealed class Palette
     /// <summary>The palette of the panel (and of the Mac look) on its background.</summary>
     public static Palette For(bool dark, bool highContrast = false) => Get(dark, false, highContrast);
 
-    /// <summary>The palette for things drawn on the taskbar and the notification area.</summary>
-    public static Palette Taskbar(bool dark, bool highContrast = false) => Get(dark, true, highContrast);
+    /// <summary>
+    /// The palette for things drawn on the taskbar and the notification area. <paramref name="seen"/> is the colour actually on screen behind
+    /// the readout (a tinted or translucent taskbar is not the plain colour the theme name suggests); the colours are checked against that.
+    /// </summary>
+    public static Palette Taskbar(bool dark, bool highContrast = false, Color? seen = null) => Get(dark, true, highContrast, seen);
 
     // Compatibility with the code that predates the split.
     public static Palette Light => For(false);
