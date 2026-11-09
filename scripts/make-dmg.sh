@@ -1,11 +1,11 @@
 #!/bin/sh
 # Builds build/Stratoscope-<version>-macos.dmg (drag-to-Applications disk image).
-#   VERSION=0.3.0 ./scripts/make-dmg.sh      (default version: see build-app.sh)
+#   VERSION=0.3.1 ./scripts/make-dmg.sh      (default version: see build-app.sh)
 set -e
 cd "$(dirname "$0")/.."
 
 ./scripts/build-app.sh
-VERSION="${VERSION:-0.3.0}"
+VERSION="${VERSION:-0.3.1}"
 
 STAGE="build/dmg"
 rm -rf "$STAGE" && mkdir -p "$STAGE"

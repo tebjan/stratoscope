@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.1 · 2026-11-09
+
+- Release files: the Mac download is `Stratoscope-<version>-macos.dmg`, the `.sha256` files are gone (GitHub shows each file's sha256), and the release text is shorter.
+- "Open settings file" creates a settings file of commented examples, on Windows and on the Mac. Choosing a theme keeps the comments, and a setting the app does not know is named.
+- The panel section "Prompt cache" is now "Conversation cache", on both systems.
+
 ## v0.3.0 · 2026-11-09
 
 - Mac: a settings menu with Start at login, Theme, Open settings file, Reload settings and Check for updates.
