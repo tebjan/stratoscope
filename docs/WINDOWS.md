@@ -30,8 +30,7 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 - **Position**: centred in the free gap of the taskbar. It moves only when the taskbar geometry changes, then once.
 - **Panel**: the Mac menu, with tabs for several servers. Two or more parallel requests show a sum bar with one smaller bar per request.
 - **Tooltips**: only data the element does not show. Nothing to add, no tooltip.
-- **Keys**: Esc closes, Left and Right switch tabs, Ctrl+Q quits. Right click on the readout opens the menu.
-
+- **Keys**: Esc closes, Left and Right switch tabs, Ctrl+Q quits.
 <img src="img/windows-readout-states.png" alt="Every state of the readout, dark and light" width="720">
 
 ## Settings

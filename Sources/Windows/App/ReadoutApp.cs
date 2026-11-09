@@ -29,7 +29,6 @@ internal sealed class ReadoutApp : ApplicationContext
     private readonly System.Windows.Forms.Timer pollTimer = new System.Windows.Forms.Timer { Interval = PollMilliseconds };
     private readonly System.Windows.Forms.Timer reloadTimer = new System.Windows.Forms.Timer { Interval = 600 };
     private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
-    private readonly ContextMenuStrip menu = new ContextMenuStrip();
     private readonly UiController ui;
     private readonly StatusPanel panel;
     private readonly ReadoutHost readout;
@@ -44,15 +43,13 @@ internal sealed class ReadoutApp : ApplicationContext
     {
         configPath = configFile;
         ui = new UiController(new WindowsSystemSettings(), SystemMonitors.Instance, () => config.UiScalePercent, TaskbarCentre, () => config.Theme);
-        panel = new StatusPanel(() => PanelModelBuilder.Panel(monitors, selected, DateTime.UtcNow), OnPanelAction, ui);
+        panel = new StatusPanel(() => PanelModelBuilder.Panel(monitors, selected, DateTime.UtcNow, SettingsPageModel()), OnPanelAction, ui);
         readout = new ReadoutHost(SynchronizationContext.Current, ui);
-        readout.ItemClicked += (index, rect) => { SelectServer(index); panel.Toggle(rect, readout.Edge); readout.SuppressTips = panel.IsOpen; };
-        readout.ContextMenuRequested += point => { BuildMenu(); menu.Show(point); };
+        readout.ItemClicked += (index, rect) => { SelectServer(index); TogglePanel(rect); };
+        readout.ContextMenuRequested += point => TogglePanel(ReadoutAnchor());
         readout.Unavailable += sentence => MessageBox.Show(sentence, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
         readout.EnvironmentChanged += reason => ui.Notify(reason, force: reason.Contains("display") || reason.Contains("taskbar") || reason.Contains("dpi"));
         ui.Changed += reason => Rebuild();
-
-        menu.Opening += (s, e) => BuildMenu();
 
         LoadConfig();
         pollTimer.Tick += async (s, e) => { ui.Notify("poll"); await PollAllAsync(); };
@@ -248,7 +245,15 @@ internal sealed class ReadoutApp : ApplicationContext
                 var links = SelectedLinks();
                 if (index < links.Count) Open(links[index]);
                 break;
-            case PanelAction.Settings: ShowSettingsMenu(); break;
+            case PanelAction.Settings: ShowSettings(true); break;
+            case PanelAction.SettingsBack: ShowSettings(false); break;
+            case PanelAction.ToggleStartup:
+                if (!Autostart.Set(!Autostart.IsEnabled)) MessageBox.Show("Windows did not let Stratoscope change its Startup shortcut.", AppInfo.Name);
+                panel.Refresh();
+                break;
+            case PanelAction.SetTheme: SetTheme((ThemeChoice)index); break;
+            case PanelAction.OpenSettingsFile: OpenSettingsFile(); break;
+            case PanelAction.ReloadSettings: LoadConfig(); break;
             case PanelAction.CheckForUpdates: OpenUrl(AppInfo.ReleasesUrl); break;
             case PanelAction.Quit: ExitThread(); break;
         }
@@ -257,53 +262,29 @@ internal sealed class ReadoutApp : ApplicationContext
     private List<EngineLink> SelectedLinks() =>
         monitors.Count == 0 ? new List<EngineLink>() : monitors[Servers.Clamp(selected, monitors.Count)].Snapshot?.Links ?? new List<EngineLink>();
 
-    private void BuildMenu()
+    /// <summary>The settings page of the panel is open; every other way to open the panel starts on the status.</summary>
+    private bool settingsOpen;
+
+    private PanelSettings? SettingsPageModel()
     {
-        foreach (ToolStripItem item in menu.Items) item.Dispose();
-        menu.Items.Clear();
-        foreach (var problem in config.Problems)
-            menu.Items.Add(new ToolStripMenuItem(MenuText.SettingsProblem + problem) { Enabled = false });
-        if (config.Problems.Count > 0) menu.Items.Add(new ToolStripSeparator());
-
-        menu.Items.Add(MenuText.ShowStatus, null, (s, e) => panel.Toggle(ReadoutAnchor(), readout.Edge));
-        var links = SelectedLinks();
-        if (links.Count > 0) menu.Items.Add(new ToolStripSeparator());
-        foreach (var link in links) { var l = link; menu.Items.Add(l.Title, null, (s, e) => Open(l)); }
-        menu.Items.Add(new ToolStripSeparator());
-
-        var settings = new ToolStripMenuItem(MenuText.Settings);
-        FillSettings(settings.DropDownItems);
-        menu.Items.Add(settings);
-        menu.Items.Add(MenuText.CheckForUpdates, null, (s, e) => OpenUrl(AppInfo.ReleasesUrl));
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem(AppInfo.Label) { Enabled = false });
-        menu.Items.Add(MenuText.Quit, null, (s, e) => ExitThread());
+        if (!settingsOpen) return null;
+        var page = new PanelSettings { StartWithWindows = Autostart.IsEnabled, Theme = config.Theme };
+        page.Problems.AddRange(config.Problems);
+        return page;
     }
 
-    /// <summary>The entries under Settings: in the right-click menu as a submenu, and from the panel's Settings row as a menu of their own.</summary>
-    private void FillSettings(ToolStripItemCollection items)
+    /// <summary>Opens the panel on the status, or closes it. The settings page is only ever reached from the panel's own row.</summary>
+    private void TogglePanel(Rectangle anchor)
     {
-        var start = new ToolStripMenuItem(MenuText.StartWithWindows) { Checked = Autostart.IsEnabled, CheckOnClick = false };
-        start.Click += (s, e) => { if (!Autostart.Set(!Autostart.IsEnabled)) MessageBox.Show("Windows did not let Stratoscope change its Startup shortcut.", AppInfo.Name); };
-        items.Add(start);
-        var theme = new ToolStripMenuItem(MenuText.Theme);
-        foreach (var (title, choice) in new[] { (MenuText.ThemeSystem, ThemeChoice.System), (MenuText.ThemeLight, ThemeChoice.Light), (MenuText.ThemeDark, ThemeChoice.Dark) })
-        {
-            var picked = choice;
-            theme.DropDownItems.Add(new ToolStripMenuItem(title, null, (s, e) => SetTheme(picked)) { Checked = config.Theme == picked });
-        }
-        items.Add(theme);
-        items.Add(new ToolStripSeparator());
-        items.Add(MenuText.OpenSettingsFile, null, (s, e) => OpenSettingsFile());
-        items.Add(MenuText.ReloadSettings, null, (s, e) => LoadConfig());
+        if (!panel.IsOpen) settingsOpen = false;
+        panel.Toggle(anchor, readout.Edge);
+        readout.SuppressTips = panel.IsOpen;
     }
 
-    private void ShowSettingsMenu()
+    private void ShowSettings(bool open)
     {
-        var strip = new ContextMenuStrip();
-        FillSettings(strip.Items);
-        strip.Closed += (s, e) => BeginInvokeOnUi(strip.Dispose);
-        strip.Show(Cursor.Position);
+        settingsOpen = open;
+        panel.Refresh();
     }
 
     /// <summary>The choice is stored in the settings file; the file watcher reloads it, like any other edit.</summary>
@@ -363,7 +344,6 @@ internal sealed class ReadoutApp : ApplicationContext
         watcher?.Dispose();
         readout.Dispose();
         panel.Dispose();
-        menu.Dispose();
         (source as IDisposable)?.Dispose();
         base.ExitThreadCore();
     }

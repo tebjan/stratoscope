@@ -14,9 +14,20 @@ internal sealed class TabInfo
     public string Brief { get; }
 }
 
+/// <summary>What the settings page of the panel shows.</summary>
+internal sealed class PanelSettings
+{
+    public bool StartWithWindows { get; set; }
+    public ThemeChoice Theme { get; set; }
+    /// <summary>Things in the settings file that could not be used, in English.</summary>
+    public List<string> Problems { get; } = new List<string>();
+}
+
 /// <summary>Everything the panel shows, as plain data, so it can be drawn on screen or offscreen.</summary>
 internal sealed class PanelModel
 {
+    /// <summary>Not null: the panel shows the settings page instead of the status.</summary>
+    public PanelSettings? Settings { get; set; }
     public List<TabInfo> Tabs { get; } = new List<TabInfo>();
     public int Selected { get; set; }
     public string ServerName { get; set; } = "";
@@ -44,7 +55,7 @@ internal enum TipKind { Server, Request, CacheResult, Context, ContextRequest, R
 /// <summary>An area of the panel with a data tooltip. The text is built on hover (<see cref="PanelPainter.TipText"/>), never while painting.</summary>
 internal readonly record struct TipArea(RectangleF Rect, TipKind Kind, int Index);
 
-internal enum PanelAction { SelectTab, OpenLink, Settings, CheckForUpdates, Quit }
+internal enum PanelAction { SelectTab, OpenLink, Settings, SettingsBack, ToggleStartup, SetTheme, OpenSettingsFile, ReloadSettings, CheckForUpdates, Quit }
 
 internal sealed class PanelHit
 {
@@ -236,6 +247,7 @@ internal sealed class PanelPainter
         Hits.Clear(); Sections.Clear();
         var s = model.Snapshot;
         float y = EdgePadding;
+        if (model.Settings != null) return SettingsPage(y);
         if (model.Tabs.Count > 1) y = Tabs(y);
 
         if (s is null) y += Offline(y);
@@ -276,6 +288,36 @@ internal sealed class PanelPainter
         y += MenuRow(y, model.VersionLabel, null, true, null, 0);
         y += MenuRow(y, MenuText.Quit, "Ctrl+Q", false, PanelAction.Quit, 0);
         return y + EdgePadding;
+    }
+
+    /// <summary>The settings, drawn with the same rows as the rest of the panel: a tick on the right marks what is on.</summary>
+    private float SettingsPage(float y)
+    {
+        var settings = model.Settings!;
+        y += MenuRow(y, "‹  " + MenuText.Settings, null, false, PanelAction.SettingsBack, 0);
+        foreach (var problem in settings.Problems) y += ProblemNote(y, problem);
+        y = Separator(y);
+        y += MenuRow(y, MenuText.StartWithWindows, settings.StartWithWindows ? "✓" : null, false, PanelAction.ToggleStartup, 0);
+        y = Separator(y);
+        T(MenuText.Theme, Pad, y + 4, Body, false, pal.Dim);
+        y += RowHeight;
+        foreach (var (title, choice) in new[] { (MenuText.ThemeSystem, ThemeChoice.System), (MenuText.ThemeLight, ThemeChoice.Light), (MenuText.ThemeDark, ThemeChoice.Dark) })
+            y += MenuRow(y, title, settings.Theme == choice ? "✓" : null, false, PanelAction.SetTheme, (int)choice);
+        y = Separator(y);
+        y += MenuRow(y, MenuText.OpenSettingsFile, null, false, PanelAction.OpenSettingsFile, 0);
+        y += MenuRow(y, MenuText.ReloadSettings, null, false, PanelAction.ReloadSettings, 0);
+        return y + EdgePadding;
+    }
+
+    private float ProblemNote(float y, string text)
+    {
+        var f = F(Body, false);
+        var rect = new RectangleF(Pad, y + 2, Width - 2 * Pad, 200);
+        var measured = g.MeasureString(text, f, (int)rect.Width);
+        Texts.Add(text);
+        using (var brush = new SolidBrush(pal.Orange))
+            g.DrawString(text, f, brush, rect);
+        return (float)Math.Ceiling((measured.Height + 8) / 4) * 4;
     }
 
     private float MenuRow(float y, string title, string? shortcut, bool dimmed, PanelAction? action, int index)
