@@ -36,6 +36,8 @@ jobs:
           path: |
             Sources/Windows/artifacts/Stratoscope-*-windows*.zip
             Sources/Windows/artifacts/Stratoscope-*-windows*.zip.sha256
+            Sources/Windows/artifacts/Stratoscope-*-windows-setup.exe
+            Sources/Windows/artifacts/Stratoscope-*-windows-setup.exe.sha256
 
   release:
     needs: windows
@@ -77,4 +79,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "build/Stratoscope-$V.dmg" "build/Stratoscope-$V.dmg.sha256" \
             build/Stratoscope-$V-windows*.zip build/Stratoscope-$V-windows*.zip.sha256 \
+            "build/Stratoscope-$V-windows-setup.exe" "build/Stratoscope-$V-windows-setup.exe.sha256" \
             --title "Stratoscope $V" --notes-file build/release-notes.md
