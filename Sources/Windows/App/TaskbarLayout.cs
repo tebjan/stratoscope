@@ -135,7 +135,7 @@ internal static class TaskbarLayout
     }
 
     /// <summary>
-    /// Where the panel opens: next to the anchor (an item of the readout or the tray icon), on the side facing the
+    /// Where the panel opens: next to the anchor (an item of the readout), on the side facing the
     /// screen, kept inside the work area of the monitor.
     /// </summary>
     public static Point PlacePanel(Rectangle anchor, Size panel, Rectangle workArea, TaskbarEdge edge, int margin = 8)

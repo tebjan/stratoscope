@@ -52,13 +52,16 @@ internal sealed class UiMetrics
     public float PanelScale => TextFactor;
 
     public Palette Panel => Palette.For(AppsDark, HighContrast);
-    public Palette Taskbar => Palette.Taskbar(SystemDark, HighContrast);
+    /// <summary>The colour on screen behind the readout, when it has been looked at.</summary>
+    public Color? TaskbarSeen { get; set; }
+
+    public Palette Taskbar => Palette.Taskbar(SystemDark, HighContrast, TaskbarSeen);
 
     /// <summary>Device pixels for a size in epx, on the 1-pixel grid.</summary>
     public int Px(float epx) => (int)Math.Round(epx * Scale);
 
     public string Signature =>
-        string.Join("|", Dpi, TextScale.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), AppsDark, SystemDark, HighContrast, Animations, Accent.ToArgb());
+        string.Join("|", Dpi, TextScale.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), AppsDark, SystemDark, HighContrast, Animations, Accent.ToArgb(), TaskbarSeen?.ToArgb());
 
     public static UiMetrics At(int dpi, double textScale = 1.0, bool appsDark = false, bool systemDark = false, bool highContrast = false) =>
         new UiMetrics { Dpi = dpi, TextScale = textScale, AppsDark = appsDark, SystemDark = systemDark, HighContrast = highContrast };
@@ -87,10 +90,13 @@ internal sealed class UiController
     /// <summary>Raised on the thread that calls <see cref="Notify"/>, with the reason, when the metrics are no longer what they were.</summary>
     public event Action<string>? Changed;
 
+    /// <summary>The colour the taskbar really has behind the readout, as the readout host last looked at it (null: not looked at yet).</summary>
+    public Color? TaskbarSeen { get; set; }
+
     public ISystemSettings Settings => settings;
     public IMonitors Monitors => monitors;
 
-    /// <summary>The metrics for things that appear at a screen point (an anchor of the panel, the taskbar, the tray).</summary>
+    /// <summary>The metrics for things that appear at a screen point (an anchor of the panel, the taskbar).</summary>
     public UiMetrics At(Point screenPoint) => ForDpi(monitors.DpiAt(screenPoint));
 
     /// <summary>The metrics for a monitor DPI that is already known (the user's override, if any, wins).</summary>
@@ -103,7 +109,7 @@ internal sealed class UiController
             TextScale = settings.TextScale,
             // The user's choice is for the panel; the readout sits on the taskbar, whose colour is Windows' own.
             AppsDark = theme() switch { ThemeChoice.Light => false, ThemeChoice.Dark => true, _ => settings.AppsDark },
-            SystemDark = settings.SystemDark,
+            SystemDark = settings.SystemDark, TaskbarSeen = TaskbarSeen,
             HighContrast = settings.HighContrast, Animations = settings.Animations, Accent = settings.Accent,
         };
     }

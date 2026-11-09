@@ -23,6 +23,7 @@ GetMessage
 GetModuleHandle
 GetMonitorInfo
 GetParent
+GetPixel
 GetWindow
 GetWindowRect
 IsWindow

@@ -18,7 +18,7 @@ written once, in [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md#shared-behavi
 | Key | Meaning |
 |---|---|
 | `status` | `idle`, `prefill`, `thinking` or `decode` |
-| `title` | the tray or menu bar title: the speed that matters right now, padded to three digits with figure spaces (U+2007), or `ready` (the Windows app writes `Ready`: its lines start with a capital) |
+| `title` | the menu bar or taskbar title: the speed that matters right now, padded to three digits with figure spaces (U+2007), or `ready` (the Windows app writes `Ready`: its lines start with a capital) |
 | `queued` | requests waiting |
 | `percent` | prefill progress in whole percent, while reading |
 | `context_used`, `context_max` | context bar numbers |

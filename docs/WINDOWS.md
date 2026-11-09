@@ -30,8 +30,7 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 - **Position**: centred in the free gap of the taskbar. It moves only when the taskbar geometry changes, then once.
 - **Panel**: the Mac menu, with tabs for several servers. Two or more parallel requests show a sum bar with one smaller bar per request.
 - **Tooltips**: only data the element does not show. Nothing to add, no tooltip.
-- **Keys**: Esc closes, Left and Right switch tabs, Ctrl+Q quits. Right click on the readout opens the menu.
-
+- **Keys**: Esc closes, Left and Right switch tabs, Ctrl+Q quits.
 <img src="img/windows-readout-states.png" alt="Every state of the readout, dark and light" width="720">
 
 ## Settings
@@ -51,7 +50,7 @@ Open `%LOCALAPPDATA%\Stratoscope\config.json` from the menu (Settings > Open set
 | | `servers` | list of `{ name, engine, url, router, log, webui, client_model }` |
 | `STRATOSCOPE_READOUT_POSITION` | `readout_position` | `center` (default), `tray`, `after-buttons`, `left` |
 | `STRATOSCOPE_UI_SCALE` | `ui_scale` | `auto` (default) or `100` to `250` |
-| `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the panel. Also in the menu under Settings > Theme. The readout always matches the taskbar |
+| `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the panel |
 | `STRATOSCOPE_CONFIG` | | path of the settings file |
 
 - **Tick on the context bar**: context minus output of the running model, read from the Kilo or OpenCode config that points at the same server (`%USERPROFILE%\.config\kilo` and `\opencode`, or `%XDG_CONFIG_HOME%`). Nothing found: `compact_at`. Still nothing: no tick.
@@ -79,7 +78,7 @@ A server on another machine is reached through an SSH forward or a VPN address. 
 | Parallel requests | one request | sum bar plus one bar per request |
 | Metrics via a router | `proxy` address from `/running` | `/upstream/<model>/metrics` of the router |
 | Router limit (HTTP 429) | not handled | last data stays, with a note |
-| Start at login | by hand | on by default |
+| Start at login | in the menu, off by default | on by default |
 | Tooltips | none | data per bar, dot and row |
 
 ## Limits

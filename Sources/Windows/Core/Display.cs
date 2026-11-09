@@ -1,6 +1,6 @@
 namespace Stratoscope.Core;
 
-/// <summary>What one server looks like to the user, from least to most active. Drives dots, words and the tray icon.</summary>
+/// <summary>What one server looks like to the user, from least to most active. Drives dots and words.</summary>
 public enum ServerState
 {
     Connecting,
@@ -73,7 +73,7 @@ public static class Display
         }
     }
 
-    /// <summary>The tray title: the speed that matters right now, plus the queue length.</summary>
+    /// <summary>The title: the speed that matters right now, plus the queue length.</summary>
     public static string Title(EngineSnapshot s)
     {
         var queue = s.Queued > 0 ? " +" + s.Queued : "";

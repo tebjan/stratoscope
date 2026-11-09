@@ -19,7 +19,7 @@ public static class Fmt
     }
 
     /// <summary>
-    /// Speed for the tray title: at least three digits wide (figure spaces) and "0 t/s" instead of a dash,
+    /// Speed for the title: at least three digits wide (figure spaces) and "0 t/s" instead of a dash,
     /// so the title does not jump when the speed goes from 0 to 222.
     /// </summary>
     public static string Speed(double? v)

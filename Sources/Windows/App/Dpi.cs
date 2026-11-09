@@ -8,7 +8,7 @@ using static Windows.Win32.PInvoke;
 namespace Stratoscope.Windows;
 
 /// <summary>
-/// What the windows need to know about the monitors. One source for the panel, the readout and the tray icon:
+/// What the windows need to know about the monitors. One source for the panel and the readout:
 /// the effective DPI of the monitor an item appears on. It is asked for a screen point, never taken from a window
 /// that may have been created on another monitor.
 /// </summary>
