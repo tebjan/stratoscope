@@ -1,10 +1,17 @@
 import Cocoa
+import ServiceManagement
 import StratoscopeCore
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let env = ProcessInfo.processInfo.environment
-    private let config = Config.load()
+    private var config = Config.load()
     private lazy var provider: EngineProvider = makeProvider()
+    private let finder = JSONFetcher(timeout: 1.0)
+    private var lastDetection: Date?
+    private var detecting = false
+    private var settingsStamp: Date?
+    private var loginItem: NSMenuItem?
+    private var themeItems: [NSMenuItem] = []
     private lazy var panels = config.engine.lowercased() == DemoProvider.id ? Panels(now: { DemoProvider.referenceDate }) : Panels()
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -30,21 +37,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.imagePosition = .imageLeft
         item.button?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
         item.menu = menu
+        menu.delegate = self
+        applyTheme()
+        settingsStamp = settingsModified()
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(timer, forMode: .common)
         poll()
     }
 
     private func poll() {
+        // An edit of the settings file is picked up like the Reload entry does it.
+        if settingsModified() != settingsStamp { reload(); return }
         provider.poll { [weak self] snap in self?.apply(snap) }
+    }
+
+    // MARK: Settings
+
+    private func settingsModified() -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: Config.settingsPath()))?[.modificationDate] as? Date
+    }
+
+    /// Reads the settings again, starts the engine adapter over, and looks for the server again when none is named.
+    private func reload() {
+        config = Config.load()
+        settingsStamp = settingsModified()
+        provider = makeProvider()
+        lastDetection = nil
+        layout = []
+        applyTheme()
+        poll()
+    }
+
+    /// The choice is for the menu; the menu bar item always matches macOS.
+    private func applyTheme() {
+        switch config.theme {
+        case .system: NSApp.appearance = nil
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+
+    // MARK: Finding the server
+
+    /// Nobody said where the server is: look for it, quietly, every half minute until it is found.
+    private func detectIfDue() {
+        guard !detecting, lastDetection.map({ Date().timeIntervalSince($0) > 30 }) ?? true else { return }
+        detecting = true
+        lastDetection = Date()
+        let reader = config.readClientConfigs ? ClientConfigReader(configHome: env["XDG_CONFIG_HOME"]) : nil
+        ServerDetection.find(fetcher: finder, clients: reader) { [weak self] found in
+            guard let self = self else { return }
+            self.detecting = false
+            guard let first = found.first else { return }
+            self.config.use(first)
+            self.provider = self.makeProvider()
+            self.poll()
+        }
+    }
+
+    /// With nothing named and nothing found the item stays, so the settings can be reached; a named server that does not answer hides it, as before.
+    private func showOffline() {
+        guard !config.configured else { item.isVisible = false; return }
+        item.isVisible = true
+        item.button?.image = NSImage(systemSymbolName: "cpu", accessibilityDescription: AppInfo.name)
+        item.button?.title = ""
+        item.button?.toolTip = "No engine found"
+        item.button?.appearsDisabled = true
+        rebuildOfflineMenu()
+        detectIfDue()
     }
 
     // MARK: Updating the UI
 
     private func apply(_ snap: EngineSnapshot?) {
         panels.snap = snap
-        guard let s = snap else { item.isVisible = false; return }   // engine not running: hide completely
+        guard let s = snap else { showOffline(); return }
         item.isVisible = true
+        item.button?.appearsDisabled = false
         updateMenuBarItem(s)
         rebuildMenuIfNeeded(s)
         blocks.forEach { $0.needsDisplay = true; $0.displayIfNeeded() }
@@ -106,11 +175,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let mi = NSMenuItem(title: link.title, action: #selector(openLink(_:)), keyEquivalent: "")
             mi.target = self; mi.tag = i; menu.addItem(mi)
         }
+        addSettingsAndQuit()
+    }
+
+    private func rebuildOfflineMenu() {
+        guard layout != ["offline"] else { return }
+        layout = ["offline"]; links = []
+        menu.removeAllItems(); blocks = []; groupSizes = []
+        for line in ["No engine found", "Start Strata or your router, Stratoscope finds it by itself."] {
+            let mi = NSMenuItem(title: line, action: nil, keyEquivalent: ""); mi.isEnabled = false
+            menu.addItem(mi)
+        }
+        addSettingsAndQuit()
+    }
+
+    /// The end of every menu: the settings, the update check, the version and Quit.
+    private func addSettingsAndQuit() {
+        menu.addItem(.separator())
+        let settings = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: "Settings")
+        let login = NSMenuItem(title: "Start at login", action: #selector(toggleLoginItem), keyEquivalent: "")
+        login.target = self; loginItem = login
+        sub.addItem(login)
+        let theme = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        let themes = NSMenu(title: "Theme")
+        themeItems = []
+        let choices: [(String, Config.Theme)] = [("System", .system), ("Light", .light), ("Dark", .dark)]
+        for (title, choice) in choices {
+            let mi = NSMenuItem(title: title, action: #selector(pickTheme(_:)), keyEquivalent: "")
+            mi.target = self; mi.representedObject = choice.rawValue
+            themes.addItem(mi); themeItems.append(mi)
+        }
+        theme.submenu = themes
+        sub.addItem(theme)
+        sub.addItem(.separator())
+        let open = NSMenuItem(title: "Open settings file", action: #selector(openSettingsFile), keyEquivalent: "")
+        open.target = self; sub.addItem(open)
+        let again = NSMenuItem(title: "Reload settings", action: #selector(reloadSettings), keyEquivalent: "")
+        again.target = self; sub.addItem(again)
+        settings.submenu = sub
+        menu.addItem(settings)
+        let updates = NSMenuItem(title: "Check for updates", action: #selector(checkForUpdates), keyEquivalent: "")
+        updates.target = self; menu.addItem(updates)
         menu.addItem(.separator())
         let v = NSMenuItem(title: AppInfo.label, action: nil, keyEquivalent: ""); v.isEnabled = false
         menu.addItem(v)
         let q = NSMenuItem(title: "Quit Stratoscope", action: #selector(quit), keyEquivalent: "q")
         q.target = self; menu.addItem(q)
+    }
+
+    /// The ticks are read when the menu opens, so they are right even after a change made elsewhere.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        loginItem?.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        for mi in themeItems { mi.state = (mi.representedObject as? String) == config.theme.rawValue ? .on : .off }
+    }
+
+    @objc private func toggleLoginItem() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled { try service.unregister() } else { try service.register() }
+        } catch {
+            tell("macOS did not let Stratoscope change its login item.", error.localizedDescription)
+        }
+    }
+
+    @objc private func pickTheme(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        if Config.setValue(raw, for: "theme") { reload() }
+        else { tell("Stratoscope could not change the theme in \(Config.settingsPath()).", "Is the file valid JSON?") }
+    }
+
+    @objc private func openSettingsFile() {
+        let path = Config.settingsPath()
+        if !FileManager.default.fileExists(atPath: path) {
+            try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            try? "{}\n".write(toFile: path, atomically: true, encoding: .utf8)
+        }
+        let url = URL(fileURLWithPath: path)
+        if !NSWorkspace.shared.open(url) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    }
+
+    @objc private func reloadSettings() { reload() }
+
+    @objc private func checkForUpdates() {
+        if let url = URL(string: AppInfo.releasesURL) { NSWorkspace.shared.open(url) }
+    }
+
+    private func tell(_ message: String, _ detail: String) {
+        let alert = NSAlert()
+        alert.messageText = message; alert.informativeText = detail
+        alert.runModal()
     }
 
     @objc private func openLink(_ sender: NSMenuItem) {

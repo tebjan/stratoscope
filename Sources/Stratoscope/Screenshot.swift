@@ -12,7 +12,7 @@ enum Screenshot {
         let margin: CGFloat = 44, barH: CGFloat = 26, sepH: CGFloat = 9, rowH: CGFloat = 22
         let blocksH = blocks.reduce(0) { $0 + $1.frame.height }
         let panelH = blocksH + CGFloat(max(0, groups.count - 1)) * sepH
-            + (links.isEmpty ? 0 : sepH + CGFloat(links.count) * rowH) + sepH + 2 * rowH + 12
+            + (links.isEmpty ? 0 : sepH + CGFloat(links.count) * rowH) + sepH + 2 * rowH + sepH + 2 * rowH + 12
         let W = menuWidth + 2 * margin, H = barH + 6 + panelH + margin
         let px = Int(W * scale), py = Int(H * scale)
 
@@ -91,6 +91,9 @@ enum Screenshot {
                 }
             }
             if !links.isEmpty { separator(); links.forEach { row($0.title) } }
+            separator()
+            row("Settings", shortcut: "›")
+            row("Check for updates")
             separator()
             row(version, dimmed: true)
             row("Quit Stratoscope", shortcut: "⌘Q")

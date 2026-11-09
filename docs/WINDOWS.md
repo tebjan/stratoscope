@@ -74,12 +74,12 @@ A server on another machine is reached through an SSH forward or a VPN address. 
 | | Mac | Windows |
 |---|---|---|
 | Speed | text beside the icon | number in the taskbar readout and the panel |
-| Server not answering | item hides | grey ring, the item stays |
+| Server not answering | item hides (stays when no server is set up) | grey ring, the item stays |
 | Several servers | no | tabs, one readout item each |
 | Parallel requests | one request | sum bar plus one bar per request |
 | Metrics via a router | `proxy` address from `/running` | `/upstream/<model>/metrics` of the router |
 | Router limit (HTTP 429) | not handled | last data stays, with a note |
-| Start at login | by hand | on by default |
+| Start at login | in the menu, off by default | on by default |
 | Tooltips | none | data per bar, dot and row |
 
 ## Limits

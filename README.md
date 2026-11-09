@@ -51,14 +51,26 @@ Give this prompt to an AI agent that runs on your computer and knows your local 
 ```text
 Install Stratoscope on this computer and set it up for my local LLM.
 
-1. Find out whether this is macOS or Windows.
-2. Download the latest release from https://github.com/yosephyne/stratoscope/releases/latest and check it against its .sha256 file:
-   - macOS: Stratoscope-<version>.dmg. Open it, copy Stratoscope to Applications, start it. If macOS warns that the app is not notarized, tell me and wait; do not change security settings without asking me.
-   - Windows: Stratoscope-<version>-windows-setup.exe. Run it.
-3. Find my local LLM setup: a Strata server (default http://127.0.0.1:8095), a llama-swap router in front of it, Strata's log folder, and the Kilo or OpenCode config. On Windows, `Stratoscope.exe --detect` prints what Stratoscope itself finds. Use only what you really find on this computer or in configs you can read. Anything you do not find keeps its default.
-4. Only if the defaults do not match my setup, write Stratoscope's settings file: ~/.config/stratoscope.json on macOS, %LOCALAPPDATA%\Stratoscope\config.json on Windows. Keys: url, router, log, webui, compact_at, client_model, and servers for several. Leave every other config alone, and put no keys or secrets into it.
-5. Check that it works: the speed shows in the macOS menu bar or in the Windows taskbar next to the clock, and clicking it opens the panel. On Windows, if the readout does not show, read error.log in %LOCALAPPDATA%\Stratoscope and tell me the reason in plain words.
-6. Tell me in a few lines what you installed, what you configured and what you saw. Ask me before you do anything that is not on this list.
+1. Check whether this is macOS or Windows.
+2. Download the latest release from
+   https://github.com/yosephyne/stratoscope/releases/latest and check it against
+   its .sha256 file. macOS: the .dmg; open it, copy Stratoscope to Applications,
+   start it. If macOS warns that the app is not notarized, tell me and wait, and
+   change no security settings. Windows: Stratoscope-<version>-windows-setup.exe;
+   run it.
+3. Look for my local LLM setup: a Strata server (default http://127.0.0.1:8095),
+   a llama-swap router in front of it, Strata's log folder, and the Kilo or
+   OpenCode config. On Windows, `Stratoscope.exe --detect` shows what Stratoscope
+   finds itself. Use only what you really find; the rest keeps its default.
+4. Only if the defaults do not match my setup, write the settings file
+   (~/.config/stratoscope.json on macOS, %LOCALAPPDATA%\Stratoscope\config.json on
+   Windows). Keys: url, router, log, webui, compact_at, client_model, servers.
+   Leave every other config alone and put no keys or secrets into it.
+5. Check that it works: the speed shows in the menu bar or the taskbar next to
+   the clock, and a click opens the panel. If the Windows readout is missing,
+   read error.log in %LOCALAPPDATA%\Stratoscope and tell me why in plain words.
+6. Tell me in a few lines what you installed, configured and saw. Ask me before
+   you do anything that is not listed here.
 ```
 
 ### macOS
@@ -67,7 +79,7 @@ Install Stratoscope on this computer and set it up for my local LLM.
 2. Open it and drag Stratoscope to Applications.
 3. Start it. On the first launch macOS warns you, because the app isn't notarized yet. Open System Settings → Privacy & Security, scroll down and click **Open Anyway**.
 
-To start it at login: System Settings → General → Login Items → add Stratoscope.
+To start it at login: Settings → Start at login in the Stratoscope menu.
 
 Built for macOS 13 or newer, Apple Silicon and Intel. Tested so far on Apple Silicon with macOS 27.
 
@@ -119,7 +131,7 @@ Strata listens on port 8095 unless it is started with `--port`, so the default w
 | Your setup | What you see | What to do |
 |---|---|---|
 | Strata only, no router | Everything works. The model name is the one Strata reports. There is no "Loading" state, because only a router knows it | Nothing |
-| Strata on another port | No menu bar item at all | Set `url`. To check the address: `curl <url>/metrics` should answer with JSON |
+| Strata on another port | Found by itself on the usual ports and on the addresses your Kilo or OpenCode config uses. Otherwise a dimmed item says "No engine found" | Set `url` (Settings → Open settings file in the menu). To check the address: `curl <url>/metrics` should answer with JSON |
 | Strata behind a router | Model name and loading state come from the router | Set `router` |
 | Strata's log is somewhere else | The parked conversations show "In use" without details, and there is no "Open log" entry | Set `log` |
 | A client other than Kilo or OpenCode | No line on the context bar | Set `compact_at` to the token count where that client summarises |
@@ -141,6 +153,7 @@ Environment variables win over `~/.config/stratoscope.json`, which wins over the
 | `STRATOSCOPE_COMPACT_AT` | `compact_at` | Optional. Token count where your client summarises the chat, drawn as a line on the context bar. Used when Stratoscope can't find the value itself (see below) |
 | `STRATOSCOPE_CLIENT_MODEL` | `client_model` | The model id your client config uses for this engine, if it differs from the name the engine reports |
 | `STRATOSCOPE_CLIENT_CONFIGS` | `client_configs` | `none` stops Stratoscope from reading client configs |
+| `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the look of the menu. Also in the menu under Settings → Theme |
 
 Example `~/.config/stratoscope.json`:
 
