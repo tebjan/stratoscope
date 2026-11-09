@@ -139,11 +139,11 @@ final class Panels {
         row(80, "CPU", "\(Fmt.number(sys.cpuPercent ?? 0)) %", (sys.cpuPercent ?? 0) / 100, .systemIndigo)
     }
 
-    // MARK: Prompt cache
+    // MARK: Conversation cache
 
     func paintCacheHead() {
         guard let s = snap, let c = s.cache else { return }
-        text("Prompt cache", x: pad, y: 8, size: 12, bold: true)
+        text("Conversation cache", x: pad, y: 8, size: 12, bold: true)
         text("\(Fmt.gib(c.usedBytes)) of \(Fmt.gib(c.budgetBytes)) GiB", x: 0, y: 8, size: 12, right: menuWidth - pad)
         bar(pad, 28, menuWidth - 2 * pad, 9, c.budgetBytes > 0 ? c.usedBytes / c.budgetBytes : 0,
             c.usedBytes / max(c.budgetBytes, 1) > 0.9 ? .systemRed : .systemMint)

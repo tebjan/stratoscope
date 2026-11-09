@@ -321,11 +321,7 @@ internal sealed class ReadoutApp : ApplicationContext
         if (path == null) return;
         try
         {
-            if (!File.Exists(path))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.WriteAllText(path, Config.Template, new System.Text.UTF8Encoding(false));
-            }
+            Config.WriteStarterIfMissing(path);
             Process.Start(new ProcessStartInfo("notepad.exe", "\"" + path + "\"") { UseShellExecute = true });
         }
         catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is System.ComponentModel.Win32Exception) { }

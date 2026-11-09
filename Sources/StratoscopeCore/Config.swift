@@ -40,30 +40,94 @@ public struct Config {
         if let r = server.router { router = r; url = nil } else if let u = server.url { url = u }
     }
 
-    /// Sets one key of the settings file, creating the file when it is missing. Everything else in the file stays. Returns false, and leaves
-    /// the file as it is, when it cannot be read as a JSON object or cannot be written.
+    /// Things in the settings file that could not be used, in English, for the menu.
+    public private(set) var problems: [String] = []
+
+    /// The file "Open settings file" creates when there is none: every setting as a commented example. Nothing in it is active, so the app
+    /// keeps looking for the server by itself until a line is switched on. The same conventions as the Windows file; comments are allowed
+    /// (JSON5 reading).
+    public static let template = """
+    {
+      // Stratoscope settings. To use a setting, delete the // in front of its line. The file is read again when you save it.
+
+      // Where your engine is. Without a line here Stratoscope looks for it by itself.
+      // "url": "http://127.0.0.1:8095",
+
+      // A router in front of the engine (llama-swap): it knows the model name and says when a model is loading.
+      // "router": "http://127.0.0.1:18080",
+
+      // The look of the menu: "system" (default), "light" or "dark". The menu bar item always matches macOS.
+      // "theme": "system",
+
+      // The token count at which your chat client summarises, drawn as a mark on the context bar. Only needed when Stratoscope cannot find it in the Kilo or OpenCode config.
+      // "compact_at": 60000
+    }
+
+    """
+
+    /// Writes the starter when there is no settings file yet, so the folder always holds a file that says what can be set. An existing file is
+    /// never touched. A folder that cannot be written to is left alone: the app works without the file.
+    public static func writeStarterIfMissing(home: String = NSHomeDirectory()) {
+        let path = settingsPath(home: home)
+        guard !FileManager.default.fileExists(atPath: path) else { return }
+        try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try? template.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    /// The settings the file understands; anything else in it is named as a problem.
+    private static let knownSettings: Set<String> = ["engine", "url", "router", "log", "webui", "client_model", "client_configs", "compact_at", "theme"]
+
+    /// Sets one setting of the settings file, for the menu. The file is edited as text, so its comments stay: an active line gets the new value, a
+    /// commented example is switched on, and otherwise a line is added at the top. The file is created from the commented starter when it is
+    /// missing. Returns false, and leaves the file as it is, when it cannot be read as a JSON object, cannot be written, or the value is not a plain word.
     @discardableResult
     public static func setValue(_ value: String, for key: String, home: String = NSHomeDirectory()) -> Bool {
+        guard plain(key), plain(value) else { return false }
         let path = settingsPath(home: home)
-        var json: [String: Any] = [:]
+        var text = template
         if let data = FileManager.default.contents(atPath: path) {
-            guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
-            json = object
+            guard (try? JSONSerialization.jsonObject(with: data, options: [.json5Allowed])) is [String: Any],
+                  let existing = String(data: data, encoding: .utf8) else { return false }
+            text = existing
         }
-        json[key] = value
-        guard let out = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) else { return false }
         do {
             try FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-            try out.write(to: URL(fileURLWithPath: path), options: .atomic)
+            try edit(text, key: key, value: value).write(toFile: path, atomically: true, encoding: .utf8)
             return true
         } catch { return false }
+    }
+
+    private static func plain(_ text: String) -> Bool {
+        !text.isEmpty && text.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+    }
+
+    /// The text with the setting set. A trailing comma after an added line is fine: the file is read with JSON5 rules.
+    static func edit(_ text: String, key: String, value: String) -> String {
+        let name = NSRegularExpression.escapedPattern(for: key)
+        let whole = NSRange(text.startIndex..., in: text)
+        for (pattern, template) in [
+            ("^([ \\t]*\"\(name)\"[ \\t]*:[ \\t]*)\"[^\"\\r\\n]*\"", "$1\"\(value)\""),                 // an active line gets the value
+            ("^([ \\t]*)//[ \\t]*(\"\(name)\"[ \\t]*:[ \\t]*)\"[^\"\\r\\n]*\"", "$1$2\"\(value)\""),    // a commented example is switched on
+        ] {
+            if let re = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]), let match = re.firstMatch(in: text, range: whole) {
+                return (text as NSString).replacingCharacters(in: match.range, with: re.replacementString(for: match, in: text, offset: 0, template: template))
+            }
+        }
+        if let re = try? NSRegularExpression(pattern: "^(?![ \\t]*//)[^\\r\\n]*?\\{", options: [.anchorsMatchLines]), let match = re.firstMatch(in: text, range: whole) {
+            return (text as NSString).replacingCharacters(in: NSRange(location: match.range.location + match.range.length, length: 0), with: "\n  \"\(key)\": \"\(value)\",")
+        }
+        return text
     }
 
     public static func load(environment: [String: String] = ProcessInfo.processInfo.environment,
                             home: String = NSHomeDirectory()) -> Config {
         var json: [String: Any] = [:]
-        if let data = FileManager.default.contents(atPath: settingsPath(home: home)),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { json = obj }
+        var problems: [String] = []
+        if let data = FileManager.default.contents(atPath: settingsPath(home: home)) {
+            if let obj = (try? JSONSerialization.jsonObject(with: data, options: [.json5Allowed])) as? [String: Any] { json = obj }
+            else if !data.isEmpty { problems.append("The settings file is not a JSON object: " + settingsPath(home: home)) }
+        }
+        problems += json.keys.sorted().filter { !knownSettings.contains($0) }.map { "Ignored \"\($0)\": there is no such setting." }
         func pick(_ envKeys: [String], _ key: String) -> String? {
             for k in envKeys { if let v = environment[k], !v.isEmpty { return v } }
             return json[key] as? String
@@ -81,7 +145,8 @@ public struct Config {
         else if let v = (json["compact_at"] as? NSNumber)?.doubleValue { c.compactAt = v }
         if let t = pick(["STRATOSCOPE_THEME"], "theme")?.lowercased() { c.theme = t == "auto" ? .system : (Theme(rawValue: t) ?? .system) }
         c.configured = ["STRATOSCOPE_ENGINE", "STRATOSCOPE_URL", "STRATOSCOPE_ROUTER_URL"].contains { !(environment[$0] ?? "").isEmpty }
-            || ["servers", "engine", "url", "router"].contains { json[$0] != nil }
+            || ["engine", "url", "router"].contains { json[$0] != nil }
+        c.problems = problems
         return c
     }
 }

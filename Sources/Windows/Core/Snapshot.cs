@@ -103,7 +103,7 @@ public sealed class SystemStats
     public double? GpuMemoryTotalBytes { get; set; }
 }
 
-/// <summary>One parked conversation in the engine's prompt cache.</summary>
+/// <summary>One parked conversation in the engine's conversation cache.</summary>
 public sealed class CacheEntry
 {
     public CacheEntry(int id, long tokens, double bytes, DateTime? parkedAt = null)

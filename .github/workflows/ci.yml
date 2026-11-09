@@ -1,5 +1,10 @@
 name: CI
-on: [push, pull_request]
+# Once per change: a pull request runs on its own, a push only on main. Not on every branch push (a pull request from a branch of this
+# repository would run twice) and not on tags (the release workflow tests those itself).
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 # A newer push to the same branch makes the older run pointless.
 concurrency:
