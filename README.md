@@ -46,7 +46,7 @@ Stratoscope shows what your local LLM inference engine is doing right now, in th
 
 ### With your agent (recommended)
 
-Give this prompt to an AI agent that runs on your computer and knows your local LLM setup, or can read its configs: Claude Code, Codex or similar. It installs Stratoscope on macOS or Windows and connects it to your setup, so you do nothing yourself.
+Give this prompt to an AI agent that runs on your computer and knows your local LLM setup, or can read its configs:
 
 ```text
 Install Stratoscope on this computer and set it up for my local LLM.
