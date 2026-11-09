@@ -46,7 +46,7 @@ internal sealed class ReadoutHost : IDisposable
     // Data handed in from the UI thread.
     private List<ReadoutItem> items = new List<ReadoutItem>();
     private bool wanted;
-    private ReadoutPosition position = ReadoutPosition.Clock;
+    private ReadoutPosition position = ReadoutPosition.Tray;
 
     // State of the host thread.
     private string lastSignature = "";

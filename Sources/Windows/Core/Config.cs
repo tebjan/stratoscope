@@ -43,7 +43,7 @@ public enum ReadoutPosition
     /// <summary>Centred in the free gap between the last task-button cluster and the notification area (default); next to the notification area when the gap is too small.</summary>
     Center,
     /// <summary>Directly left of the notification area.</summary>
-    Clock,
+    Tray,
     /// <summary>Right after the last task button, so it moves with the buttons.</summary>
     AfterButtons,
     /// <summary>At the left edge of the taskbar, in the free space left of centred buttons.</summary>
@@ -62,7 +62,7 @@ public enum ReadoutPosition
 ///                             (fallback for when no client config can be read)
 ///     STRATOSCOPE_CLIENT_MODEL    the model id your client config uses for this engine, if it differs from the name the engine reports
 ///     STRATOSCOPE_CLIENT_CONFIGS  "none" stops Stratoscope from reading the config files of clients such as Kilo and OpenCode
-///     STRATOSCOPE_READOUT_POSITION  center (default) | clock (next to the clock) | after-buttons | left
+///     STRATOSCOPE_READOUT_POSITION  center (default) | tray (next to the notification area) | after-buttons | left
 ///     STRATOSCOPE_UI_SCALE    auto (default) or 100 to 250
 ///     STRATOSCOPE_THEME       system (default) | light | dark: the look of the panel; the readout always matches the taskbar
 ///     STRATOSCOPE_CONFIG      path of the JSON file (default: %LOCALAPPDATA%\Stratoscope\config.json)
@@ -181,8 +181,8 @@ public sealed class Config
         var position = Get(settings, "readout_position")?.Trim().ToLowerInvariant();
         if (position == "after-buttons") config.ReadoutPosition = ReadoutPosition.AfterButtons;
         else if (position == "left") config.ReadoutPosition = ReadoutPosition.Left;
-        else if (position == "clock") config.ReadoutPosition = ReadoutPosition.Clock;
-        else if (position != null && position != "center") config.Problems.Add("Ignored readout_position \"" + position + "\": use center, clock, after-buttons or left.");
+        else if (position == "tray") config.ReadoutPosition = ReadoutPosition.Tray;
+        else if (position != null && position != "center") config.Problems.Add("Ignored readout_position \"" + position + "\": use center, tray, after-buttons or left.");
 
         var scale = Get(settings, "ui_scale")?.Trim().ToLowerInvariant();
         if (scale != null && scale != "auto")

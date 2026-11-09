@@ -10,7 +10,7 @@ internal readonly record struct PlaceAction(PlaceKind Kind, Rectangle Rect);
 /// Decides when the taskbar readout moves. The target rectangle comes from the taskbar geometry alone (never from what the readout shows),
 /// in the client coordinates of the taskbar window, so a taskbar that slides in or out takes the readout with it without a move.
 /// A new target is acted on only if it differs from the current rectangle by at least <see cref="MinimumMove"/> device pixels and has
-/// stayed there for <see cref="Settle"/>: an icon that comes and goes within a second, a clock that changes its width, or a button
+/// stayed there for <see cref="Settle"/>: a tray icon that comes and goes within a second, a clock that changes its width, or a button
 /// that is added never makes the readout jump around; one change gives one move. Pure and clocked from outside, so a taskbar simulator can
 /// replay sequences of changes in a unit test.
 /// </summary>

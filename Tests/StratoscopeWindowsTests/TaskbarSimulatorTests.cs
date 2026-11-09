@@ -5,7 +5,7 @@ using Stratoscope.Windows;
 namespace Stratoscope.Tests;
 
 /// <summary>
-/// A taskbar simulator: replays sequences of changes (notification icons, task buttons, clock width, alignment, DPI, auto-hide, content) and
+/// A taskbar simulator: replays sequences of changes (tray icons, task buttons, clock width, alignment, DPI, auto-hide, content) and
 /// checks what the readout would do. The placer sees the geometry every 500 ms, like the app; the clock is simulated.
 /// </summary>
 [Collection("ReadoutPainterState")]
@@ -188,7 +188,7 @@ public class TaskbarSimulatorTests
         sim.Tick();
         for (int i = 0; i < 10; i++)
         {
-            sim.NotificationWidth += 36; sim.Run(25);       // an icon appears and stays
+            sim.NotificationWidth += 36; sim.Run(25);       // a tray icon appears and stays
             sim.NotificationWidth -= 36; sim.Run(25);       // and goes again
         }
         Assert.True(sim.Placer.Moves <= 20, "moves " + sim.Placer.Moves);

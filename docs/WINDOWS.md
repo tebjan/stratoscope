@@ -48,7 +48,7 @@ Open `%LOCALAPPDATA%\Stratoscope\config.json` from the menu (Settings > Open set
 | `STRATOSCOPE_CLIENT_MODEL` | `client_model` | model id your client config uses, if it differs from the one the engine reports |
 | `STRATOSCOPE_CLIENT_CONFIGS` | `client_configs` | `none` stops reading client configs |
 | | `servers` | list of `{ name, engine, url, router, log, webui, client_model }` |
-| `STRATOSCOPE_READOUT_POSITION` | `readout_position` | `center` (default), `clock`, `after-buttons`, `left` |
+| `STRATOSCOPE_READOUT_POSITION` | `readout_position` | `center` (default), `tray`, `after-buttons`, `left` |
 | `STRATOSCOPE_UI_SCALE` | `ui_scale` | `auto` (default) or `100` to `250` |
 | `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the panel |
 | `STRATOSCOPE_CONFIG` | | path of the settings file |
