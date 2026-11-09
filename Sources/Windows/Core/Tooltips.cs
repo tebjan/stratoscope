@@ -116,10 +116,10 @@ public static class Tooltips
     /// <summary>The CPU row shows its load and nothing else is known.</summary>
     public static string? Cpu(SystemStats s) => null;
 
-    // MARK: Prompt cache
+    // MARK: Conversation cache
 
-    /// <summary>The prompt cache bar: the share of the budget, the tokens held and how many requests reused the cache.</summary>
-    public static string? PromptCache(CacheStats c)
+    /// <summary>The conversation cache bar: the share of the budget, the tokens held and how many requests reused the cache.</summary>
+    public static string? ConversationCache(CacheStats c)
     {
         var tokens = c.EntriesKnown && c.Entries.Count > 0 ? c.Entries.Sum(e => e.Tokens) : (long?)null;
         return Casing.Lines(
@@ -128,7 +128,7 @@ public static class Tooltips
             Has(c.Requests) && Has(c.RequestsReused) ? Fmt.Number(c.RequestsReused) + " of " + Fmt.Number(c.Requests) + " requests reused it" : null);
     }
 
-    /// <summary>A parked conversation of the prompt cache (index into the entries, newest first): its share of the budget. A free slot has nothing to add.</summary>
+    /// <summary>A parked conversation of the conversation cache (index into the entries, newest first): its share of the budget. A free slot has nothing to add.</summary>
     public static string? CacheSlot(CacheStats c, int index, DateTime now)
     {
         var list = Enumerable.Reverse(c.Entries).ToList();

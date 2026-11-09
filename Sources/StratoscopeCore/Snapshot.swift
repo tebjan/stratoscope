@@ -95,7 +95,7 @@ public struct SystemStats {
     }
 }
 
-/// One parked conversation in the engine's prompt cache.
+/// One parked conversation in the engine's conversation cache.
 public struct CacheEntry {
     public var id: Int
     public var tokens: Int

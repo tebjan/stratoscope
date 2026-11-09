@@ -53,11 +53,11 @@ Install Stratoscope on this computer and set it up for my local LLM.
 
 1. Check whether this is macOS or Windows.
 2. Download the latest release from
-   https://github.com/yosephyne/stratoscope/releases/latest and check it against
-   its .sha256 file. macOS: the .dmg; open it, copy Stratoscope to Applications,
-   start it. If macOS warns that the app is not notarized, tell me and wait, and
-   change no security settings. Windows: Stratoscope-<version>-windows-setup.exe;
-   run it.
+   https://github.com/yosephyne/stratoscope/releases/latest and check its sha256
+   against the digest shown there. macOS: Stratoscope-<version>-macos.dmg; open
+   it, copy Stratoscope to Applications, start it. If macOS warns that the app is
+   not notarized, tell me and wait, and change no security settings. Windows:
+   Stratoscope-<version>-windows-setup.exe; run it.
 3. Look for my local LLM setup: a Strata server (default http://127.0.0.1:8095),
    a llama-swap router in front of it, Strata's log folder, and the Kilo or
    OpenCode config. On Windows, `Stratoscope.exe --detect` shows what Stratoscope
@@ -75,7 +75,7 @@ Install Stratoscope on this computer and set it up for my local LLM.
 
 ### macOS
 
-1. Download the latest `Stratoscope-<version>.dmg` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest).
+1. Download the latest `Stratoscope-<version>-macos.dmg` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest).
 2. Open it and drag Stratoscope to Applications.
 3. Start it. On the first launch macOS warns you, because the app isn't notarized yet. Open System Settings → Privacy & Security, scroll down and click **Open Anyway**.
 
@@ -141,7 +141,7 @@ Strata listens on port 8095 unless it is started with `--port`, so the default w
 
 ## Settings
 
-Environment variables win over `~/.config/stratoscope.json`, which wins over the defaults. If you start the app from the Finder on macOS, use the JSON file, because the Finder doesn't pass your shell variables on. On Windows the file is `%LOCALAPPDATA%\Stratoscope\config.json`, see [docs/WINDOWS.md](docs/WINDOWS.md#settings).
+Environment variables win over `~/.config/stratoscope.json`, which wins over the defaults. If you start the app from the Finder on macOS, use the JSON file, because the Finder doesn't pass your shell variables on. On Windows the file is `%LOCALAPPDATA%\Stratoscope\config.json`, see [docs/WINDOWS.md](docs/WINDOWS.md#settings). There is no file until you need one: "Open settings file" in the menu creates it with every setting as a commented example; `//` comments are allowed.
 
 | Variable | JSON key | Does |
 |---|---|---|

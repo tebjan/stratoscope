@@ -25,7 +25,7 @@ written once, in [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md#shared-behavi
 | `recent` | number of finished requests |
 | `last_request_hit` | cache verdict of the newest finished request: `hit`, `partial`, `miss`, `small` |
 | `running_cache_hit` | cache verdict of the running request (approximate), while reading |
-| `cache_slots`, `cache_parked` | the prompt cache numbers |
+| `cache_slots`, `cache_parked` | the conversation cache numbers |
 | `batch_slots` | number of entries in `live.slots` |
 | `has_system`, `has_totals` | whether those sections are drawn |
 

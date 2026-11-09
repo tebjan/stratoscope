@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Tests and builds Stratoscope for Windows: Sources\Windows\artifacts\Stratoscope-<version>-windows.zip (and a framework-dependent zip), each with a .sha256.
+  Tests and builds Stratoscope for Windows: Sources\Windows\artifacts\Stratoscope-<version>-windows.zip (and a framework-dependent zip) and Stratoscope-<version>-windows-setup.exe.
 .DESCRIPTION
   Needs the .NET SDK 10 (see Sources\Windows\global.json) and Windows. Everything is `dotnet test` and `dotnet publish`; packages come from
   nuget.org through the project files. The zips hold the published output plus install.cmd, install.ps1 and uninstall.ps1.
@@ -52,9 +52,7 @@ try {
         $zip = Join-Path $windows "artifacts/$($flavour.Name).zip"
         if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
         Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
-        $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-        [IO.File]::WriteAllText("$zip.sha256", "$hash  $($flavour.Name).zip`n", (New-Object Text.UTF8Encoding($false)))
-        Write-Host ('{0}  {1:N1} MB  sha256 {2}' -f $zip, ((Get-Item -LiteralPath $zip).Length / 1MB), $hash)
+        Write-Host ('{0}  {1:N1} MB' -f $zip, ((Get-Item -LiteralPath $zip).Length / 1MB))
     }
 
     # The installer users download: one Setup.exe (scripts\windows\stratoscope.iss, built with Inno Setup).
@@ -65,8 +63,6 @@ try {
     & $iscc "/DAppVersion=$Version" ("/DSourceDir=" + (Join-Path $publish 'self-contained')) '/Q' (Join-Path $PSScriptRoot 'stratoscope.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed.' }
     $setup = Join-Path $windows "artifacts/Stratoscope-$Version-windows-setup.exe"
-    $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
-    [IO.File]::WriteAllText("$setup.sha256", "$hash  Stratoscope-$Version-windows-setup.exe`n", (New-Object Text.UTF8Encoding($false)))
-    Write-Host ('{0}  {1:N1} MB  sha256 {2}' -f $setup, ((Get-Item -LiteralPath $setup).Length / 1MB), $hash)
+    Write-Host ('{0}  {1:N1} MB' -f $setup, ((Get-Item -LiteralPath $setup).Length / 1MB))
 }
 finally { Pop-Location }

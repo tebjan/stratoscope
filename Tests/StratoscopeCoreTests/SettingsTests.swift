@@ -124,5 +124,78 @@ private func temporaryHome() throws -> String {
         #expect(try String(contentsOfFile: Config.settingsPath(home: home), encoding: .utf8) == "[1, 2]")
     }
 
+    @Test func testTheStarterChangesNothingAndKeepsTheServerSearchOn() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        try Config.template.write(toFile: Config.settingsPath(home: home), atomically: true, encoding: .utf8)
+        let config = Config.load(environment: [:], home: home)
+        #expect(config.problems.isEmpty)
+        #expect(!config.configured)
+        #expect(config.theme == .system)
+    }
+
+    @Test func testTheStarterIsWrittenOnceAndAnExistingFileIsNeverTouched() throws {
+        let home = NSTemporaryDirectory() + "stratoscope-test-" + UUID().uuidString
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        Config.writeStarterIfMissing(home: home)
+        #expect(try String(contentsOfFile: Config.settingsPath(home: home), encoding: .utf8) == Config.template)
+        try #"{"url": "http://127.0.0.1:9"}"#.write(toFile: Config.settingsPath(home: home), atomically: true, encoding: .utf8)
+        Config.writeStarterIfMissing(home: home)
+        #expect(try String(contentsOfFile: Config.settingsPath(home: home), encoding: .utf8) == #"{"url": "http://127.0.0.1:9"}"#)
+    }
+
+    @Test func testCommentsAndTrailingCommasAreAllowed() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        try "{ // a note\n  \"url\": \"http://127.0.0.1:9\", // another\n  \"theme\": \"dark\",\n}".write(toFile: Config.settingsPath(home: home), atomically: true, encoding: .utf8)
+        let config = Config.load(environment: [:], home: home)
+        #expect(config.url == "http://127.0.0.1:9")
+        #expect(config.theme == .dark)
+        #expect(config.problems.isEmpty)
+    }
+
+    @Test func testASettingThatDoesNotExistIsNamed() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        try #"{"display": "both", "theme": "dark"}"#.write(toFile: Config.settingsPath(home: home), atomically: true, encoding: .utf8)
+        let config = Config.load(environment: [:], home: home)
+        #expect(config.problems.contains { $0.contains("display") })
+        #expect(!config.problems.contains { $0.contains("theme") })
+        #expect(config.theme == .dark)
+    }
+
+    @Test func testChoosingTheThemeSwitchesOnItsExampleAndKeepsEveryComment() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        #expect(Config.setValue("dark", for: "theme", home: home))
+        var text = try String(contentsOfFile: Config.settingsPath(home: home), encoding: .utf8)
+        #expect(text.contains("// Stratoscope settings"))
+        #expect(text.contains("  \"theme\": \"dark\","))
+        #expect(!text.contains("// \"theme\""))
+        #expect(text.contains("// \"url\""))
+        let config = Config.load(environment: [:], home: home)
+        #expect(config.theme == .dark)
+        #expect(config.problems.isEmpty)
+        #expect(!config.configured)
+
+        #expect(Config.setValue("light", for: "theme", home: home))
+        text = try String(contentsOfFile: Config.settingsPath(home: home), encoding: .utf8)
+        #expect(text.contains("  \"theme\": \"light\","))
+        #expect(Config.load(environment: [:], home: home).theme == .light)
+    }
+
+    @Test func testWithoutAnExampleALineIsAddedAtTheTopAndTheCommentsStay() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(atPath: home) }
+        try "{ // my own note\n  \"url\": \"http://127.0.0.1:9\" // and another\n}".write(toFile: Config.settingsPath(home: home), atomically: true, encoding: .utf8)
+        #expect(Config.setValue("dark", for: "theme", home: home))
+        let text = try String(contentsOfFile: Config.settingsPath(home: home), encoding: .utf8)
+        #expect(text.contains("// my own note"))
+        #expect(text.contains("// and another"))
+        let config = Config.load(environment: [:], home: home)
+        #expect(config.theme == .dark)
+        #expect(config.url == "http://127.0.0.1:9")
+    }
+
     private func temporaryHomeOrEmpty() -> String { NSTemporaryDirectory() + "stratoscope-none-" + UUID().uuidString }
 }
