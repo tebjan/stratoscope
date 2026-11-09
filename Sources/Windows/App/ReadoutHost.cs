@@ -295,6 +295,7 @@ internal sealed class ReadoutHost : IDisposable
         if (!buttonsKnown && (DateTime.UtcNow - startedAt).TotalSeconds < 6) return;
         info.Buttons = info.Buttons.Concat(uiaButtons).ToList();
 
+        SeeTaskbar();
         var m = controller.ForDpi(info.Dpi);
         lock (gate) metrics = m;
         // The size comes from the reserved widths (never from the content) and the target from the geometry alone.
@@ -387,6 +388,21 @@ internal sealed class ReadoutHost : IDisposable
             statusText = text;
             statusUntil = DateTime.UtcNow.AddMinutes(1);
         }
+    }
+
+    /// <summary>
+    /// Looks at the colour really on screen behind the readout: the corner of its own window, which is transparent there, shows the taskbar. A tinted
+    /// or translucent taskbar is not the plain colour its theme suggests, and the glyph and text are checked against what is seen. The colour is
+    /// rounded, so a slow fade does not repaint the readout every half second.
+    /// </summary>
+    private void SeeTaskbar()
+    {
+        Rectangle own;
+        lock (gate) own = currentScreenRect;
+        if (own.IsEmpty || readout.IsNull || !IsWindowVisible(readout)) return;
+        if (LayeredWindows.ColorAt(new Point(own.X + 1, own.Y + 2)) is not Color seen) return;
+        int Round(int v) => Math.Min(255, (v + 4) / 8 * 8);
+        controller.TaskbarSeen = Color.FromArgb(255, Round(seen.R), Round(seen.G), Round(seen.B));
     }
 
     private void UpdateStatus()

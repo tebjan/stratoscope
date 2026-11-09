@@ -44,7 +44,7 @@ internal enum TipKind { Server, Request, CacheResult, Context, ContextRequest, R
 /// <summary>An area of the panel with a data tooltip. The text is built on hover (<see cref="PanelPainter.TipText"/>), never while painting.</summary>
 internal readonly record struct TipArea(RectangleF Rect, TipKind Kind, int Index);
 
-internal enum PanelAction { SelectTab, OpenLink, Quit }
+internal enum PanelAction { SelectTab, OpenLink, Settings, CheckForUpdates, Quit }
 
 internal sealed class PanelHit
 {
@@ -262,13 +262,16 @@ internal sealed class PanelPainter
             }
         }
 
-        // The menu rows below the sections: links, version, quit.
+        // The menu rows below the sections, as in the Mac menu: links, settings, updates, version, quit.
         var links = s?.Links ?? new List<EngineLink>();
         if (links.Count > 0)
         {
             y = Separator(y);
             for (int i = 0; i < links.Count; i++) y += MenuRow(y, links[i].Title, null, false, PanelAction.OpenLink, i);
         }
+        y = Separator(y);
+        y += MenuRow(y, MenuText.Settings, "›", false, PanelAction.Settings, 0);
+        y += MenuRow(y, MenuText.CheckForUpdates, null, false, PanelAction.CheckForUpdates, 0);
         y = Separator(y);
         y += MenuRow(y, model.VersionLabel, null, true, null, 0);
         y += MenuRow(y, MenuText.Quit, "Ctrl+Q", false, PanelAction.Quit, 0);

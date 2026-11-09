@@ -80,7 +80,7 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>
-    /// Where the panel opens after a click on the tray icon: at the cursor when the cursor is on the taskbar (a mouse click), otherwise
+    /// Where the panel opens after a click on the readout: at the cursor when the cursor is on the taskbar (a mouse click), otherwise
     /// at the notification area (the icon was activated with the keyboard).
     /// </summary>
     private Rectangle TrayAnchor()
@@ -248,6 +248,8 @@ internal sealed class TrayApp : ApplicationContext
                 var links = SelectedLinks();
                 if (index < links.Count) Open(links[index]);
                 break;
+            case PanelAction.Settings: ShowSettingsMenu(); break;
+            case PanelAction.CheckForUpdates: OpenUrl(AppInfo.ReleasesUrl); break;
             case PanelAction.Quit: ExitThread(); break;
         }
     }
@@ -270,24 +272,38 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
 
         var settings = new ToolStripMenuItem(MenuText.Settings);
+        FillSettings(settings.DropDownItems);
+        menu.Items.Add(settings);
+        menu.Items.Add(MenuText.CheckForUpdates, null, (s, e) => OpenUrl(AppInfo.ReleasesUrl));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem(AppInfo.Label) { Enabled = false });
+        menu.Items.Add(MenuText.Quit, null, (s, e) => ExitThread());
+    }
+
+    /// <summary>The entries under Settings: in the right-click menu as a submenu, and from the panel's Settings row as a menu of their own.</summary>
+    private void FillSettings(ToolStripItemCollection items)
+    {
         var start = new ToolStripMenuItem(MenuText.StartWithWindows) { Checked = Autostart.IsEnabled, CheckOnClick = false };
         start.Click += (s, e) => { if (!Autostart.Set(!Autostart.IsEnabled)) MessageBox.Show("Windows did not let Stratoscope change its Startup shortcut.", AppInfo.Name); };
-        settings.DropDownItems.Add(start);
+        items.Add(start);
         var theme = new ToolStripMenuItem(MenuText.Theme);
         foreach (var (title, choice) in new[] { (MenuText.ThemeSystem, ThemeChoice.System), (MenuText.ThemeLight, ThemeChoice.Light), (MenuText.ThemeDark, ThemeChoice.Dark) })
         {
             var picked = choice;
             theme.DropDownItems.Add(new ToolStripMenuItem(title, null, (s, e) => SetTheme(picked)) { Checked = config.Theme == picked });
         }
-        settings.DropDownItems.Add(theme);
-        settings.DropDownItems.Add(new ToolStripSeparator());
-        settings.DropDownItems.Add(MenuText.OpenSettingsFile, null, (s, e) => OpenSettingsFile());
-        settings.DropDownItems.Add(MenuText.ReloadSettings, null, (s, e) => LoadConfig());
-        menu.Items.Add(settings);
-        menu.Items.Add(MenuText.CheckForUpdates, null, (s, e) => OpenUrl(AppInfo.ReleasesUrl));
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem(AppInfo.Label) { Enabled = false });
-        menu.Items.Add(MenuText.Quit, null, (s, e) => ExitThread());
+        items.Add(theme);
+        items.Add(new ToolStripSeparator());
+        items.Add(MenuText.OpenSettingsFile, null, (s, e) => OpenSettingsFile());
+        items.Add(MenuText.ReloadSettings, null, (s, e) => LoadConfig());
+    }
+
+    private void ShowSettingsMenu()
+    {
+        var strip = new ContextMenuStrip();
+        FillSettings(strip.Items);
+        strip.Closed += (s, e) => BeginInvokeOnUi(strip.Dispose);
+        strip.Show(Cursor.Position);
     }
 
     /// <summary>The choice is stored in the settings file; the file watcher reloads it, like any other edit.</summary>

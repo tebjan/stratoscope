@@ -12,7 +12,7 @@ namespace Stratoscope.Windows;
 internal static class Program
 {
     private const string HelpText =
-        "Stratoscope for Windows. Without arguments it runs in the notification area and the taskbar.\r\n" +
+        "Stratoscope for Windows. Without arguments it shows its readout in the taskbar.\r\n" +
         "\r\n" +
         "  --dump [--config FILE]                   poll once and print the title and a few fields\r\n" +
         "  --detect                                 find the servers of this computer and print them as the settings entries (read-only)\r\n" +

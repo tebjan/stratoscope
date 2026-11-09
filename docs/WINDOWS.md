@@ -51,7 +51,7 @@ Open `%LOCALAPPDATA%\Stratoscope\config.json` from the menu (Settings > Open set
 | | `servers` | list of `{ name, engine, url, router, log, webui, client_model }` |
 | `STRATOSCOPE_READOUT_POSITION` | `readout_position` | `center` (default), `tray`, `after-buttons`, `left` |
 | `STRATOSCOPE_UI_SCALE` | `ui_scale` | `auto` (default) or `100` to `250` |
-| `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the panel. Also in the menu under Settings > Theme. The readout always matches the taskbar |
+| `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the panel |
 | `STRATOSCOPE_CONFIG` | | path of the settings file |
 
 - **Tick on the context bar**: context minus output of the running model, read from the Kilo or OpenCode config that points at the same server (`%USERPROFILE%\.config\kilo` and `\opencode`, or `%XDG_CONFIG_HOME%`). Nothing found: `compact_at`. Still nothing: no tick.
@@ -74,7 +74,7 @@ A server on another machine is reached through an SSH forward or a VPN address. 
 | | Mac | Windows |
 |---|---|---|
 | Speed | text beside the icon | number in the taskbar readout and the panel |
-| Server not answering | item hides (stays when no server is set up) | grey ring, the item stays |
+| Server not answering | item hides | grey ring, the item stays |
 | Several servers | no | tabs, one readout item each |
 | Parallel requests | one request | sum bar plus one bar per request |
 | Metrics via a router | `proxy` address from `/running` | `/upstream/<model>/metrics` of the router |

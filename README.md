@@ -131,7 +131,7 @@ Strata listens on port 8095 unless it is started with `--port`, so the default w
 | Your setup | What you see | What to do |
 |---|---|---|
 | Strata only, no router | Everything works. The model name is the one Strata reports. There is no "Loading" state, because only a router knows it | Nothing |
-| Strata on another port | Found by itself on the usual ports and on the addresses your Kilo or OpenCode config uses. Otherwise a dimmed item says "No engine found" | Set `url` (Settings → Open settings file in the menu). To check the address: `curl <url>/metrics` should answer with JSON |
+| Strata on another port | Found by itself on the usual ports. Otherwise "No engine found" for a minute | Set `url` (Settings → Open settings file). To check: `curl <url>/metrics` answers with JSON |
 | Strata behind a router | Model name and loading state come from the router | Set `router` |
 | Strata's log is somewhere else | The parked conversations show "In use" without details, and there is no "Open log" entry | Set `log` |
 | A client other than Kilo or OpenCode | No line on the context bar | Set `compact_at` to the token count where that client summarises |
@@ -153,7 +153,7 @@ Environment variables win over `~/.config/stratoscope.json`, which wins over the
 | `STRATOSCOPE_COMPACT_AT` | `compact_at` | Optional. Token count where your client summarises the chat, drawn as a line on the context bar. Used when Stratoscope can't find the value itself (see below) |
 | `STRATOSCOPE_CLIENT_MODEL` | `client_model` | The model id your client config uses for this engine, if it differs from the name the engine reports |
 | `STRATOSCOPE_CLIENT_CONFIGS` | `client_configs` | `none` stops Stratoscope from reading client configs |
-| `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the look of the menu. Also in the menu under Settings → Theme |
+| `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the look of the menu |
 
 Example `~/.config/stratoscope.json`:
 

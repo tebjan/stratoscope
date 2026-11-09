@@ -416,9 +416,11 @@ internal static class ReadoutPainter
             case ServerState.Loading:
             {
                 // A ring of the same diameter: closed for "nothing there", four arcs for "on its way".
-                var stroke = Math.Max(1f, m.Px(1) * 1.5f);
+                // The grey ring is all there is to see while nothing answers: two pixels wide and at text contrast on the taskbar as it really looks.
+                var stroke = Math.Max(2f, m.Px(1) * 2f);
                 var ring = RectangleF.Inflate(box, -stroke / 2, -stroke / 2);
-                using (var pen = new Pen(state, stroke))
+                var ringColor = palette.HighContrast || item.State == ServerState.Loading ? state : Contrast.Ensure(state, palette.Background, Contrast.SmallText);
+                using (var pen = new Pen(ringColor, stroke))
                 {
                     if (item.State == ServerState.Loading)
                         for (int i = 0; i < 4; i++) g.DrawArc(pen, ring, i * 90 + 20, 50);

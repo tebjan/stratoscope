@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let finder = JSONFetcher(timeout: 1.0)
     private var lastDetection: Date?
     private var detecting = false
+    private var offlineSince: Date?          // when the first "No engine found" was shown; the item hides a minute later
     private var settingsStamp: Date?
     private var loginItem: NSMenuItem?
     private var themeItems: [NSMenuItem] = []
@@ -63,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsStamp = settingsModified()
         provider = makeProvider()
         lastDetection = nil
+        offlineSince = nil
         layout = []
         applyTheme()
         poll()
@@ -95,16 +97,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// With nothing named and nothing found the item stays, so the settings can be reached; a named server that does not answer hides it, as before.
+    /// With nothing named and nothing found the item stays for the first minute, dimmed and saying so, so the settings can be reached; then it
+    /// hides like any item without an engine, and the search goes on. A named server that does not answer hides it at once, as before.
     private func showOffline() {
         guard !config.configured else { item.isVisible = false; return }
+        detectIfDue()
+        let since = offlineSince ?? Date()
+        offlineSince = since
+        guard Date().timeIntervalSince(since) < 60 else { item.isVisible = false; return }
         item.isVisible = true
         item.button?.image = NSImage(systemSymbolName: "cpu", accessibilityDescription: AppInfo.name)
         item.button?.title = ""
         item.button?.toolTip = "No engine found"
         item.button?.appearsDisabled = true
         rebuildOfflineMenu()
-        detectIfDue()
     }
 
     // MARK: Updating the UI
@@ -112,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func apply(_ snap: EngineSnapshot?) {
         panels.snap = snap
         guard let s = snap else { showOffline(); return }
+        offlineSince = nil
         item.isVisible = true
         item.button?.appearsDisabled = false
         updateMenuBarItem(s)
