@@ -1,0 +1,21 @@
+[
+ {
+  "id": 0,
+  "n_ctx": 131072,
+  "is_processing": true,
+  "state": "decoding",
+  "api": "openai",
+  "model": "qwen3.8-flash-next-gsq-rco-coder",
+  "tok_s": 146.6,
+  "generated": 1002,
+  "max_tokens": 32000,
+  "prompt_tokens": 56967,
+  "prefill_done": 56967,
+  "reused": 0,
+  "ttft_s": 13.63,
+  "draft_len": null,
+  "ctx_used": 57969,
+  "drafts_offered": 617,
+  "drafts_accepted": 492
+ }
+]

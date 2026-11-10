@@ -3,6 +3,8 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using Stratoscope.Core.Engines;
+using Stratoscope.Core.Engines.Basalt;
 
 namespace Stratoscope.Core;
 
@@ -32,6 +34,10 @@ public static class Json
 
     public static JsonTypeInfo<RunningResponse> RunningType => StratoscopeJson.Default.RunningResponse;
     public static JsonTypeInfo<StrataMetrics> MetricsType => StratoscopeJson.Default.StrataMetrics;
+    public static JsonTypeInfo<BasaltMetrics> BasaltMetricsType => StratoscopeJson.Default.BasaltMetrics;
+    /// <summary>Basalt's <c>/slots</c> is a top-level array.</summary>
+    public static JsonTypeInfo<List<BasaltSlotDto?>> BasaltSlotsType => StratoscopeJson.Default.ListBasaltSlotDto;
+    public static JsonTypeInfo<EngineHealth> HealthType => StratoscopeJson.Default.EngineHealth;
 }
 
 /// <summary>The generated serializer metadata for every document the app reads.</summary>
@@ -42,6 +48,9 @@ public static class Json
     Converters = [typeof(TolerantNumberConverter), typeof(TolerantStringConverter)])]
 [JsonSerializable(typeof(RunningResponse))]
 [JsonSerializable(typeof(StrataMetrics))]
+[JsonSerializable(typeof(BasaltMetrics))]
+[JsonSerializable(typeof(List<BasaltSlotDto?>))]
+[JsonSerializable(typeof(EngineHealth))]
 internal sealed partial class StratoscopeJson : JsonSerializerContext;
 
 /// <summary>A number into a <c>double?</c>. Text, booleans, objects, arrays and numbers a double cannot hold give null.</summary>

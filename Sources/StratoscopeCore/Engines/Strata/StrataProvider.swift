@@ -6,12 +6,14 @@ import Foundation
 ///  - the router's `/running` (optional, when a llama-swap style router sits in front of Strata)
 ///  - the Strata server's `/metrics`
 ///  - the Strata log, for the parked-conversation list that `/metrics` does not name
+/// A Basalt engine answers at the same addresses; its document is recognised and translated by `BasaltReader`.
 public final class StrataProvider: EngineProvider {
     public static let id = "strata"
 
     private let config: Config
     private let http = JSONFetcher()
     private let cacheLog = StrataCacheLog()
+    private let basalt = BasaltReader()      // for the Basalt engines that answer at the same addresses
     private var proxy = "http://127.0.0.1:8095"
     private var lastRead: (Double, Date)?
     private let clients: ClientConfigReader?
@@ -35,6 +37,7 @@ public final class StrataProvider: EngineProvider {
             }
             self.http.get(self.proxy + "/metrics") { m in
                 guard let m = m else { completion(self.placeholder(model: name, status: .loading("Server not responding"))); return }
+                if BasaltReader.recognises(m) { self.readBasalt(m, model: name, completion); return }
                 completion(self.snapshot(from: m, model: name))
             }
         }
@@ -46,8 +49,14 @@ public final class StrataProvider: EngineProvider {
         http.get(base + "/metrics") { [weak self] m in
             guard let self = self, let m = m, let eng = m["engine"] as? [String: Any] else { completion(nil); return }
             self.proxy = base
+            if BasaltReader.recognises(m) { self.readBasalt(m, model: eng["model"] as? String ?? "Basalt", completion); return }
             completion(self.snapshot(from: m, model: eng["model"] as? String ?? "Strata"))
         }
+    }
+
+    /// The server behind this address is a Basalt: its document is translated by `BasaltReader`.
+    private func readBasalt(_ m: [String: Any], model: String, _ completion: @escaping (EngineSnapshot?) -> Void) {
+        basalt.read(m, base: proxy, model: model, compactAt: compactAt(model: model), links: links(engine: "Basalt"), completion)
     }
 
     private func placeholder(model: String, status: EngineStatus) -> EngineSnapshot {
@@ -56,9 +65,9 @@ public final class StrataProvider: EngineProvider {
 
     // MARK: Translation
 
-    private func links() -> [EngineLink] {
+    private func links(engine: String = "Strata") -> [EngineLink] {
         var out: [EngineLink] = []
-        if let u = URL(string: proxy + "/") { out.append(EngineLink(title: "Open Strata UI", url: u)) }
+        if let u = URL(string: proxy + "/") { out.append(EngineLink(title: "Open \(engine) UI", url: u)) }
         if let r = config.router, let u = URL(string: r + "/ui/") { out.append(EngineLink(title: "Open router UI", url: u)) }
         if let w = config.webui, let u = URL(string: w) { out.append(EngineLink(title: "Open chat UI", url: u)) }
         if let l = currentLogPath() { out.append(EngineLink(title: "Open log", url: URL(fileURLWithPath: l))) }

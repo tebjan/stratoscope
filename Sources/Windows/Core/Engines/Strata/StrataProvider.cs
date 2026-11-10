@@ -8,135 +8,37 @@ namespace Stratoscope.Core.Engines.Strata;
 ///  - the Strata server's /metrics, reached through the router at /upstream/&lt;model&gt;/metrics
 ///  - the Strata log, for the parked-conversation list that /metrics does not name
 /// </summary>
-public sealed class StrataProvider : IEngineProvider
+public sealed class StrataProvider : RoutedProvider
 {
     public const string Id = "strata";
 
-    private readonly EngineConfig config;
-    private readonly IJsonSource http;
     private readonly StrataCacheLog cacheLog;
     private readonly Func<DateTime> clock;
     private (double Read, DateTime At)? lastRead;
-    private string? lastModelId;
-    private EngineSnapshot? lastSnapshot;
-    private string baseForLinks;
-    private readonly ClientConfigReader? clients;
 
     /// <param name="clients">Where to look for the summarise threshold of the AI clients that use this engine. Null (the default) reads no client config.</param>
     public StrataProvider(EngineConfig config, IJsonSource http, Func<DateTime>? clock = null, ClientConfigReader? clients = null)
+        : base(config, http, clients)
     {
-        this.config = config;
-        this.http = http;
-        this.clients = clients;
         this.clock = clock ?? (() => DateTime.UtcNow);
         cacheLog = new StrataCacheLog(this.clock);
-        baseForLinks = config.Url ?? config.Router ?? Config.DefaultUrl;
     }
 
-    public string? LastError { get; private set; }
+    public override string Brand => "Strata";
 
     // MARK: Polling
 
-    public async Task<EngineSnapshot?> PollAsync(CancellationToken cancellation)
+    internal override async Task<EngineRead> ReadAsync(string engineBase, string? routedId, CancellationToken cancellation)
     {
-        LastError = null;
-        if (config.Router is null) return await PollDirect(cancellation).ConfigureAwait(false);
-
-        var router = config.Router;
-        var running = await http.GetAsync(Endpoints.Join(router, "running"), Json.RunningType, cancellation).ConfigureAwait(false);
-        if (!running.Ok)
-        {
-            // Without an explicitly configured server address there is nothing else to ask: no guessing at localhost.
-            if (config.Url != null) return await PollDirect(cancellation).ConfigureAwait(false);
-            LastError = Describe(running.Failure, running.Detail, router);
-            return null;
-        }
-        var first = running.Body!.Running?.FirstOrDefault(r => r != null);
-        if (first is null)
-        {
-            if (config.Url != null)
-            {
-                var direct = await PollDirect(cancellation).ConfigureAwait(false);
-                if (direct != null) return direct;
-                LastError = null;
-            }
-            lastSnapshot = null; lastModelId = null;
-            return Placeholder("-", EngineStatus.NoModel, null);
-        }
-        var id = first.Model ?? "Model";          // what the router's URLs and the clients' configs use
-        var title = Title(first);                 // what the user sees: the friendly name from the router's config, else the id
-        var state = first.State ?? "?";
-        if (state != "ready") return Placeholder(title, EngineStatus.Loading, "State: " + state);
-
-        var metricsUrl = Endpoints.Join(router, "upstream", id, "metrics");
-        baseForLinks = Endpoints.Join(router, "upstream", id).AbsoluteUri.TrimEnd('/');
-        var metrics = await http.GetAsync(metricsUrl, Json.MetricsType, cancellation).ConfigureAwait(false);
-        if (metrics.Status == 429)
-        {
-            // The router's per-model request limit is reached. Keep the last data and say so.
-            if (lastSnapshot != null && lastModelId == id) return lastSnapshot.WithRouterLimited();
-            return Placeholder(title, EngineStatus.Loading, "Router request limit reached");
-        }
-        if (!metrics.Ok) return Placeholder(title, EngineStatus.Error, "Server not responding");
-        var snapshot = Translate(metrics.Body!, id);   // the id finds the client config of this model
-        snapshot.Model = title;
-        lastSnapshot = snapshot; lastModelId = id;
-        return snapshot;
+        BaseForLinks = engineBase;
+        var metrics = await http.GetAsync(Endpoints.Join(engineBase, "metrics"), Json.MetricsType, cancellation).ConfigureAwait(false);
+        if (!metrics.Ok) return new EngineRead(metrics.Status, false, metrics.Failure, metrics.Detail, null);
+        if (routedId is null)
+            return new EngineRead(metrics.Status, true, FetchFailure.None, null, IsEmpty(metrics.Body!.Engine) ? null : Translate(metrics.Body, metrics.Body.Engine!.Model ?? "Strata"));
+        return new EngineRead(metrics.Status, true, FetchFailure.None, null, Translate(metrics.Body!, routedId));   // the id finds the client config of this model
     }
-
-    /// <summary>The model's name as the router shows it: llama-swap's <c>name</c> from its config, and the model id when it has none.</summary>
-    internal static string Title(RunningModel running) =>
-        !string.IsNullOrWhiteSpace(running.Name) ? running.Name.Trim() : running.Model ?? "Model";
-
-    /// <summary>Without a router: ask the Strata server directly. If nothing answers, the engine counts as not running.</summary>
-    private async Task<EngineSnapshot?> PollDirect(CancellationToken cancellation)
-    {
-        var address = config.Url ?? Config.DefaultUrl;
-        var metrics = await http.GetAsync(Endpoints.Join(address, "metrics"), Json.MetricsType, cancellation).ConfigureAwait(false);
-        if (!metrics.Ok || IsEmpty(metrics.Body!.Engine))
-        {
-            LastError = metrics.Ok ? "The answer from " + address + "/metrics is not a Strata metrics document." : Describe(metrics.Failure, metrics.Detail, address);
-            return null;
-        }
-        baseForLinks = address;
-        var snapshot = Translate(metrics.Body!, metrics.Body.Engine!.Model ?? "Strata");
-        lastSnapshot = snapshot; lastModelId = null;
-        return snapshot;
-    }
-
-    private EngineSnapshot Placeholder(string model, EngineStatus status, string? reason) =>
-        new EngineSnapshot("Strata", model, status) { LoadingReason = reason, Links = Links(engineUi: false) };
-
-    /// <summary>Short English reason, independent of the Windows display language.</summary>
-    public static string Describe(FetchFailure failure, string? detail, string target) =>
-        failure switch
-        {
-            FetchFailure.Refused => "Connection refused at " + target + ". Is the engine, or the SSH forward to it, running?",
-            FetchFailure.Timeout => "No answer from " + target + " in time.",
-            FetchFailure.NameNotResolved => "Host name not found: " + target,
-            FetchFailure.Status => target + " answered with " + detail + ".",
-            FetchFailure.NotJson => "The answer from " + target + " is not JSON.",
-            _ => "Cannot read " + target + (detail != null ? ": " + detail : "."),
-        };
 
     // MARK: Translation
-
-    private List<EngineLink> Links(bool engineUi = true)
-    {
-        var links = new List<EngineLink>();
-        if (engineUi) links.Add(new EngineLink("Open Strata UI", baseForLinks + "/"));
-        if (config.Router != null) links.Add(new EngineLink("Open router UI", config.Router + "/ui/"));
-        if (!string.IsNullOrEmpty(config.Webui)) links.Add(new EngineLink("Open chat UI", config.Webui!));
-        var log = CurrentLogPath();
-        if (log != null) links.Add(new EngineLink("Open log", log));
-        return links;
-    }
-
-    /// <summary>The engine's log: the configured path, otherwise none (there is no standard place on Windows).</summary>
-    internal string? CurrentLogPath() => string.IsNullOrEmpty(config.Log) ? null : config.Log;
-
-    /// <summary>A section the engine sent as {} (or not at all) is no section: records compare by value, so it equals a fresh one.</summary>
-    private static bool IsEmpty<T>(T? section) where T : class, new() => section is null || section.Equals(new T());
 
     private readonly Dictionary<int, List<(DateTime At, double Generated)>> slotHistory = new();
     private static readonly TimeSpan SlotWindow = TimeSpan.FromSeconds(4), SlotMinSpan = TimeSpan.FromSeconds(1);
@@ -162,16 +64,6 @@ public sealed class StrataProvider : IEngineProvider
             if (now - oldest.At >= SlotMinSpan && generated >= oldest.Generated) rates[id] = (generated - oldest.Generated) / (now - oldest.At).TotalSeconds;
         }
         return rates;
-    }
-
-    /// <summary>
-    /// Strata's /metrics has no such value. It comes from the configs of the clients that talk to this server and use this model; where those
-    /// say nothing (or disagree), the user's own <c>compact_at</c> is the fallback.
-    /// </summary>
-    private double? CompactAt(string model)
-    {
-        var endpoints = new[] { config.Router, config.Url ?? Config.DefaultUrl, baseForLinks }.Where(e => e != null).Select(e => e!);
-        return clients?.CompactAt(endpoints, config.ClientModel ?? model) ?? config.CompactAt;
     }
 
     /// <summary>Translates one /metrics document into a snapshot. Public so tests can feed recorded payloads.</summary>
@@ -262,7 +154,7 @@ public sealed class StrataProvider : IEngineProvider
             PromptTokens = q.PromptTokens, ReusedTokens = q.Reused, PromptRead = q.PromptRead,
             PromptMilliseconds = q.PromptMilliseconds, OutputTokens = q.OutputTokens,
             DecodeTokensPerSecond = q.DecodeTokensPerSecond, DurationSeconds = q.DurationSeconds,
-            FinishedAt = q.Time is double time && double.IsFinite(time) && time > 0 && time < 253_402_300_000 ? DateTime.UnixEpoch.AddSeconds(time) : null,
+            FinishedAt = FinishedAt(q.Time),
             Finish = q.Finish, ExpertHitRate = q.HitRate,
         }).ToList();
 

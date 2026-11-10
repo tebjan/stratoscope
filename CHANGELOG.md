@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Basalt engines (verified against Basalt 0.3.2): state, prefill progress and speed, decode speed, context, finished requests with their cache verdict, engine details (version, KV format, draft window, expert cache), RAM, CPU, and the video card's load, temperature, power and memory, each only where Basalt reports it. The kind of engine is asked of the engine itself (`/health`), so one router can serve Strata and Basalt. New setting value `engine: basalt` reads Basalt only. The Swift core recognises a Basalt document and shows state, speeds, context, requests, RAM, GPU load and CPU.
+
 ## v0.2.0 · 2026-11-09
 
 - Windows 10 and 11 (x64): a readout in the taskbar and the same panel, released as `Stratoscope-<version>-windows.zip`. See [docs/WINDOWS.md](docs/WINDOWS.md).

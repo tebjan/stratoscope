@@ -1,0 +1,349 @@
+using System.IO;
+using Stratoscope.Core.Engines;
+using Stratoscope.Core.Engines.Basalt;
+
+namespace Stratoscope.Tests;
+
+// Basalt 0.3.2 (CUDA) behind a llama-swap router, recorded read-only with GET requests while a long coding session ran. The recordings are the
+// unpatched engine's shape: the video card is only in hardware.gpus[], without the flat gpu_* fields that a patched engine adds.
+
+public class BasaltSnapshotTests
+{
+    private static BasaltProvider Provider() => new(new EngineConfig(), new FakeSource());
+
+    private static BasaltMetrics Metrics(string fixture) =>
+        Json.Deserialize(Fixtures.Text(fixture), Json.BasaltMetricsType) ?? throw new InvalidDataException(fixture);
+
+    private static List<BasaltSlotDto?>? Slots(string fixture) => Json.Deserialize(Fixtures.Text(fixture), Json.BasaltSlotsType);
+
+    [Fact]
+    public void PrefillShowsTheProgressFromSlotsAndTheEnginesOwnSpeed()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-prefill.json"), Slots("basalt-0.3.2-prefill.slots.json"), "m");
+        Assert.Equal("Basalt", s.Engine);
+        Assert.Equal(EngineStatus.Prefill, s.Status);
+        Assert.Equal(2, s.Queued);
+        Assert.Equal(56967, s.Live!.PromptTotal);
+        Assert.Equal(33771, s.Live.PromptRead);
+        Assert.Equal(59, s.Live.Percent);
+        Assert.Equal(4706.7, s.Live.PrefillTokensPerSecond);
+        Assert.Equal(7.9, s.Live.ElapsedSeconds);
+        Assert.Null(s.Live.DecodeTokensPerSecond);          // live.tok_s is null while reading: not 0
+        Assert.Equal(32000, s.Live.MaxTokens);
+        Assert.Null(s.Live.ReusedEstimate);                 // the engine has not said yet
+        Assert.Equal(56967, s.Context.Used);
+        Assert.Equal(131072, s.Context.Max);
+    }
+
+    [Fact]
+    public void PrefillWithoutSlotsHasTheSizeButNoProgress()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-prefill.json"), null, "m");
+        Assert.Equal(56967, s.Live!.PromptTotal);
+        Assert.Null(s.Live.PromptRead);
+        Assert.Null(s.Live.Percent);
+    }
+
+    [Fact]
+    public void TheRunningRequestComesFromTheSlotWhenMetricsDescribeAnotherOne()
+    {
+        // At the start of a read /metrics still names the newest request (41,198 tokens); the slot holds the one that is read (56,967).
+        var s = Provider().Translate(Metrics("basalt-0.3.2-prefill-start.json"), Slots("basalt-0.3.2-prefill-start.slots.json"), "m");
+        Assert.Equal(56967, s.Live!.PromptTotal);
+        Assert.Equal(404, s.Live.PromptRead);
+        Assert.Null(s.Live.PrefillTokensPerSecond);         // the engine has no mean yet
+    }
+
+    [Fact]
+    public void DecodeShowsSpeedGeneratedCountAndTheContextOfTheSlot()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-decode.json"), Slots("basalt-0.3.2-decode.slots.json"), "m");
+        Assert.Equal(EngineStatus.Decode, s.Status);
+        Assert.Equal(147.2, s.Live!.DecodeTokensPerSecond);
+        Assert.Equal(1002, s.Live.Generated);
+        Assert.Null(s.Live.PrefillTokensPerSecond);         // Basalt keeps sending the last read's mean while it generates; it is not a speed now
+        Assert.Equal(57969, s.Context.Used);                // the slot's prompt plus what it has generated
+        Assert.Equal(0, s.Live.ReusedEstimate);
+    }
+
+    [Fact]
+    public void IdleHasNoRunningRequestAndTheContextOfTheNewestFinishedOne()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-idle.json"), Slots("basalt-0.3.2-idle.slots.json"), "m");
+        Assert.Equal(EngineStatus.Idle, s.Status);
+        Assert.Equal(0, s.Queued);
+        Assert.Null(s.Live);
+        Assert.NotEmpty(s.Recent);
+        Assert.Equal(s.Recent[0].PromptTokens + s.Recent[0].OutputTokens, s.Context.Used);
+        Assert.Equal(131072, s.Context.Max);
+        Assert.NotNull(s.System!.GpuMemoryTotalBytes);
+    }
+
+    [Fact]
+    public void SystemIsReadFromTheNestedVideoCardOfTheUnpatchedEngine()
+    {
+        var m = Metrics("basalt-0.3.2-decode.json");
+        Assert.DoesNotContain("gpu_util", Fixtures.Text("basalt-0.3.2-decode.json"));     // the premise: no flat fields
+        var system = Provider().Translate(m, null, "m").System!;
+        var gpu = m.Hardware!.Gpus![0]!;
+        Assert.Equal(gpu.Util, system.GpuPercent);
+        Assert.Equal(gpu.Temp, system.GpuTemperatureCelsius);
+        Assert.Equal(gpu.Power, system.GpuPowerWatts);
+        Assert.Equal(gpu.PowerLimit, system.GpuPowerLimitWatts);
+        Assert.Equal(gpu.MemUsed, system.GpuMemoryUsedBytes);
+        Assert.Equal(gpu.MemTotal, system.GpuMemoryTotalBytes);
+        Assert.Equal(m.Hardware.RamUsed, system.RamUsedBytes);
+        Assert.Equal(m.Hardware.RamTotal, system.RamTotalBytes);
+        Assert.Equal(m.Hardware.Cpu, system.CpuPercent);
+        Assert.NotNull(system.GpuPercent);
+    }
+
+    [Fact]
+    public void EngineDetailsAreTheEnginesOwnAndSectionsItDoesNotHaveAreNotDrawn()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-decode.json"), null, "m");
+        Assert.Equal("0.3.2", s.Info!.Version);
+        Assert.Equal("int8", s.Info.KvFormat);
+        Assert.Equal("8", s.Info.DraftWindow);
+        Assert.Equal(17086, s.Info.ExpertCacheMib);
+        Assert.Equal(1, s.Info.BatchSlots);
+        Assert.Equal(0.92, s.Info.ExpertHitRate);            // the newest request's expert cache hit rate: an engine detail, not the cache dots
+        Assert.Null(s.Cache);                                // conversation_cache_mib is 0: the cache is switched off
+        Assert.Null(s.Totals);
+        Assert.Null(s.Slots);
+    }
+
+    [Fact]
+    public void RequestRowsCarryTheCacheVerdictFromPromptAndReusedNotFromTheExpertHitRate()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-decode.json"), null, "m");
+        Assert.Equal(12, s.Recent.Count);
+        var partial = s.Recent.Single(r => r.PromptTokens == 38964);       // 19,435 of 38,964 came from the conversation cache
+        Assert.Equal(19435, partial.ReusedTokens);
+        Assert.Equal(CacheHit.Partial, partial.Hit);
+        Assert.Equal(19529, partial.PromptRead);
+        var miss = s.Recent.Single(r => r.PromptTokens == 90494);          // nothing reused
+        Assert.Equal(0, miss.ReusedTokens);
+        Assert.Equal(CacheHit.Miss, miss.Hit);
+        Assert.Equal(CacheHit.Small, s.Recent.Single(r => r.PromptTokens == 53).Hit);
+        Assert.All(s.Recent, r => Assert.NotNull(r.FinishedAt));
+        Assert.Equal(s.Recent[0].ExpertHitRate, s.Info!.ExpertHitRate);
+    }
+
+    [Theory]
+    [InlineData(38964, 19435, CacheHit.Partial)]
+    [InlineData(90494, 0, CacheHit.Miss)]
+    [InlineData(40000, 38000, CacheHit.Hit)]
+    public void TheRunningRequestsBarGetsItsVerdictFromTheSlotsReusedCount(int prompt, int reused, CacheHit expected)
+    {
+        var slots = Slots("basalt-0.3.2-prefill.slots.json")!;
+        slots[0] = slots[0]! with { PromptTokens = prompt, Reused = reused };      // as the engine reports it once it knows the reused part
+        var s = Provider().Translate(Metrics("basalt-0.3.2-prefill.json"), slots, "m");
+        Assert.Equal(expected, CacheHits.Classify(s.Live!.PromptTotal, s.Live.ReusedEstimate));
+        Assert.Equal(expected, Display.Progress(s)!.Value.Hit);
+    }
+
+    [Fact]
+    public void ARequestWithoutReusedGetsNoVerdict()
+    {
+        var m = Json.Deserialize(@"{""engine"":{""max_context"":8192},""live"":{""state"":""idle""},""requests"":[{""prompt_tokens"":9000,""output_tokens"":5}]}", Json.BasaltMetricsType)!;
+        var s = Provider().Translate(m, null, "m");
+        Assert.Null(s.Recent[0].Hit);
+        Assert.Null(s.Recent[0].PromptRead);
+    }
+
+    [Fact]
+    public void ConversationCacheIsDrawnOnlyWhenItHasABudget()
+    {
+        BasaltMetrics With(string engine) => Json.Deserialize(@"{""engine"":" + engine + @",""live"":{""state"":""idle""}}", Json.BasaltMetricsType)!;
+        var on = Provider().Translate(With(@"{""conversation_cache_mib"":8192,""conversation_cache_slots"":4}"), null, "m").Cache!;
+        Assert.Equal(8192.0 * 1_048_576, on.BudgetBytes);
+        Assert.Equal(4, on.Slots);
+        Assert.Null(on.UsedBytes);                          // Basalt does not say what is parked
+        Assert.Null(on.Parked);
+        Assert.False(on.EntriesKnown);
+        Assert.Null(Provider().Translate(With(@"{""conversation_cache_mib"":0,""conversation_cache_slots"":4}"), null, "m").Cache);
+        Assert.Null(Provider().Translate(With("{}"), null, "m").Cache);
+    }
+
+    [Fact]
+    public void ParallelRequestsAreCountedOnlyWithMoreThanOneSlot()
+    {
+        BasaltMetrics With(string slots) => Json.Deserialize(@"{""engine"":{},""live"":{""state"":""generating"",""slots"":" + slots + @",""tok_s"":50}}", Json.BasaltMetricsType)!;
+        Assert.Equal(2, Provider().Translate(With(@"{""total"":4,""active"":2,""queue_depth"":1}"), null, "m").Live!.Running);
+        Assert.Null(Provider().Translate(With(@"{""total"":1,""active"":1,""queue_depth"":0}"), null, "m").Live!.Running);
+        Assert.Equal(1, Provider().Translate(With(@"{""total"":4,""active"":2,""queue_depth"":1}"), null, "m").Queued);   // queue_depth stands in for queued
+    }
+
+    [Theory]
+    [InlineData(@"{""state"":""loading"",""load"":{""kind"":""weights"",""percent"":37.4}}", "Loading weights 37 %")]
+    [InlineData(@"{""state"":""loading"",""load"":{""kind"":""wake""}}", "Waking up")]
+    [InlineData(@"{""state"":""loading""}", "Loading weights")]
+    [InlineData(@"{""state"":""asleep""}", "Asleep")]
+    [InlineData(@"{""state"":""unloaded""}", "Weights not loaded")]
+    [InlineData(@"{}", "State not reported")]
+    public void AnEngineThatCannotTakeARequestIsLoadingWithItsOwnReason(string live, string reason)
+    {
+        var m = Json.Deserialize(@"{""engine"":{""max_context"":8192},""live"":" + live + "}", Json.BasaltMetricsType)!;
+        var s = Provider().Translate(m, null, "m");
+        Assert.Equal(EngineStatus.Loading, s.Status);
+        Assert.Equal(reason, s.LoadingReason);
+    }
+
+    [Fact]
+    public void MissingFieldsAreUnknownNotZero()
+    {
+        var m = Json.Deserialize(@"{""engine"":{},""live"":{""state"":""reading""},""hardware"":{""gpus"":[null,{""util"":""high""}]}}", Json.BasaltMetricsType)!;
+        var s = Provider().Translate(m, null, "m");
+        Assert.Equal(EngineStatus.Prefill, s.Status);
+        Assert.Null(s.Live!.PromptTotal);
+        Assert.Null(s.Live.Percent);
+        Assert.Null(s.Context.Used);
+        Assert.Null(s.Context.Max);
+        Assert.Null(s.Info);
+        Assert.Null(s.System!.GpuPercent);                  // "high" is not a number
+        Assert.Empty(s.Recent);
+    }
+}
+
+public class BasaltFlowTests
+{
+    private const string Router = "http://router:1";
+    private const string Upstream = Router + "/upstream/demo-model";
+
+    private static FakeSource Basalt(string state = "prefill") =>
+        new FakeSource().Json(Router + "/running", "router-running-ready.json")
+            .Json(Upstream + "/health", "basalt-0.3.2-" + state + ".health.json")
+            .Json(Upstream + "/metrics", "basalt-0.3.2-" + state + ".json")
+            .Json(Upstream + "/slots", "basalt-0.3.2-" + state + ".slots.json");
+
+    private static AutoEngineProvider Auto(FakeSource source, string? url = null) => new(new EngineConfig { Router = Router, Url = url }, source);
+
+    [Fact]
+    public async Task ABasaltBehindTheRouterIsRecognisedByItsHealthAndReadWithGetRequestsOnly()
+    {
+        var source = Basalt();
+        var provider = Auto(source);
+        var s = await provider.PollAsync(CancellationToken.None);
+        Assert.Equal("Basalt", s!.Engine);
+        Assert.Equal(EngineStatus.Prefill, s.Status);
+        Assert.Equal("Demo Model (4 parallel)", s.Model);   // the router's friendly name
+        Assert.Equal(59, s.Live!.Percent);
+        Assert.Equal(new[] { Router + "/running", Upstream + "/health", Upstream + "/metrics", Upstream + "/slots" }, source.Requested);
+        Assert.Contains(s.Links, l => l.Title == "Open Basalt UI" && l.Target == Upstream + "/");
+
+        source.Requested.Clear();
+        await provider.PollAsync(CancellationToken.None);
+        Assert.Equal(new[] { Router + "/running", Upstream + "/metrics", Upstream + "/slots" }, source.Requested);   // the kind is asked once
+    }
+
+    [Fact]
+    public async Task SlotsAreOnlyAskedWhileARequestRuns()
+    {
+        var source = new FakeSource().Json(Router + "/running", "router-running-ready.json")
+            .Json(Upstream + "/health", "basalt-0.3.2-decode.health.json")
+            .Text(Upstream + "/metrics", @"{""engine"":{""max_context"":8192},""live"":{""state"":""idle""}}");
+        var s = await Auto(source).PollAsync(CancellationToken.None);
+        Assert.Equal(EngineStatus.Idle, s!.Status);
+        Assert.DoesNotContain(Upstream + "/slots", source.Requested);
+    }
+
+    [Fact]
+    public async Task SlotsThatCannotBeReadLeaveTheProgressUnknownAndTheRestShown()
+    {
+        var source = Basalt().Status(Upstream + "/slots", 429);
+        var s = await Auto(source).PollAsync(CancellationToken.None);
+        Assert.Equal(EngineStatus.Prefill, s!.Status);
+        Assert.False(s.RouterLimited);
+        Assert.Null(s.Live!.PromptRead);
+        Assert.Equal(56967, s.Live.PromptTotal);
+    }
+
+    [Fact]
+    public async Task AStrataBehindTheSameRouterIsStillReadAsStrata()
+    {
+        var source = new FakeSource().Json(Router + "/running", "router-running-ready.json")
+            .Text(Upstream + "/health", @"{""status"":""ok"",""service"":""strata""}")
+            .Json(Upstream + "/metrics", "strata-0.1.56-idle.json");
+        var s = await Auto(source).PollAsync(CancellationToken.None);
+        Assert.Equal("Strata", s!.Engine);
+        Assert.Equal(EngineStatus.Idle, s.Status);
+        Assert.Equal(new[] { Router + "/running", Upstream + "/health", Upstream + "/metrics" }, source.Requested);
+    }
+
+    [Fact]
+    public async Task AnEngineWithoutHealthIsReadAsStrata()
+    {
+        var source = new FakeSource().Json(Router + "/running", "router-running-ready.json").Status(Upstream + "/health", 404)
+            .Json(Upstream + "/metrics", "strata-0.1.56-idle.json");
+        Assert.Equal("Strata", (await Auto(source).PollAsync(CancellationToken.None))!.Engine);
+    }
+
+    [Fact]
+    public async Task RouterLimitKeepsTheLastBasaltData()
+    {
+        var limited = false;
+        var source = Basalt().Route(Upstream + "/metrics", () => limited ? new FakeAnswer(429, null, FetchFailure.Status) : new FakeAnswer(200, Fixtures.Text("basalt-0.3.2-prefill.json")));
+        var provider = Auto(source);
+        Assert.False((await provider.PollAsync(CancellationToken.None))!.RouterLimited);
+        limited = true;
+        var second = await provider.PollAsync(CancellationToken.None);
+        Assert.True(second!.RouterLimited);
+        Assert.Equal("Basalt", second.Engine);
+    }
+
+    [Fact]
+    public async Task ABasaltThatStopsAnsweringIsAnErrorStateAndIsAskedAgainWhichKindItIs()
+    {
+        var up = true;
+        var source = Basalt().Route(Upstream + "/metrics", () => up ? new FakeAnswer(200, Fixtures.Text("basalt-0.3.2-prefill.json")) : new FakeAnswer(0, null, FetchFailure.Refused));
+        var provider = Auto(source);
+        await provider.PollAsync(CancellationToken.None);
+        up = false;
+        Assert.Equal(EngineStatus.Error, (await provider.PollAsync(CancellationToken.None))!.Status);
+        up = true;
+        source.Requested.Clear();
+        await provider.PollAsync(CancellationToken.None);
+        Assert.Contains(Upstream + "/health", source.Requested);
+    }
+
+    [Fact]
+    public async Task WithoutARouterBasaltIsReadDirectlyAndNamedByItsModel()
+    {
+        const string address = "http://127.0.0.1:8095";
+        var source = new FakeSource().Json(address + "/health", "basalt-0.3.2-decode.health.json")
+            .Json(address + "/metrics", "basalt-0.3.2-decode.json").Json(address + "/slots", "basalt-0.3.2-decode.slots.json");
+        var s = await new AutoEngineProvider(new EngineConfig { Url = address }, source).PollAsync(CancellationToken.None);
+        Assert.Equal("Basalt", s!.Engine);
+        Assert.Equal("qwen3.8-flash-next-gsq-rco-coder", s.Model);
+        Assert.Equal(EngineStatus.Decode, s.Status);
+    }
+
+    [Fact]
+    public async Task ADocumentThatIsNoEnginesIsNotARunningBasalt()
+    {
+        const string address = "http://127.0.0.1:8095";
+        var source = new FakeSource().Text(address + "/metrics", "{}");
+        var provider = new BasaltProvider(new EngineConfig { Url = address }, source);
+        Assert.Null(await provider.PollAsync(CancellationToken.None));
+        Assert.Contains("not a Basalt metrics document", provider.LastError);
+    }
+
+    [Fact]
+    public void TheRegistryChoosesTheProviderFromTheEngineSetting()
+    {
+        var source = new FakeSource();
+        Assert.IsType<BasaltProvider>(EngineRegistry.Make(new EngineConfig { Engine = "basalt" }, source));
+        Assert.IsType<AutoEngineProvider>(EngineRegistry.Make(new EngineConfig { Engine = "strata" }, source));
+        Assert.Contains("basalt", EngineRegistry.Available);
+    }
+
+    [Fact]
+    public async Task ServerDetectionFindsABasaltServerByItsMetrics()
+    {
+        const string address = "http://127.0.0.1:8095";
+        var source = new FakeSource().Json(address + "/metrics", "basalt-0.3.2-decode.json");
+        var found = await ServerDetection.FindAsync(source, null, CancellationToken.None);
+        Assert.Contains(found, e => e.Url == address && e.Router == null);
+    }
+}

@@ -20,17 +20,25 @@ public interface IEngineProvider
 
 public static class EngineRegistry
 {
-    public static readonly string[] Available = { Engines.Strata.StrataProvider.Id, Engines.Demo.DemoProvider.Id };
+    public static readonly string[] Available = { Engines.Strata.StrataProvider.Id, Engines.Basalt.BasaltProvider.Id, Engines.Demo.DemoProvider.Id };
 
+    /// <summary>
+    /// "demo" is the demo engine, "basalt" reads Basalt only. Anything else, "strata" (the default) included, asks the engine which kind it is
+    /// and reads Strata or Basalt accordingly, so one router can serve both.
+    /// </summary>
     public static IEngineProvider Make(EngineConfig config, IJsonSource source)
     {
         switch (config.Engine.ToLowerInvariant())
         {
             case Engines.Demo.DemoProvider.Id:
                 return new Engines.Demo.DemoProvider(config.Scenario);
+            case Engines.Basalt.BasaltProvider.Id:
+                return new Engines.Basalt.BasaltProvider(config, source, ClientsFor(config));
             default:
-                var clients = config.ReadClientConfigs ? new ClientConfigReader(configHome: Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")) : null;
-                return new Engines.Strata.StrataProvider(config, source, clients: clients);
+                return new Engines.AutoEngineProvider(config, source, clients: ClientsFor(config));
         }
     }
+
+    private static ClientConfigReader? ClientsFor(EngineConfig config) =>
+        config.ReadClientConfigs ? new ClientConfigReader(configHome: Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")) : null;
 }

@@ -1,0 +1,12 @@
+{
+ "status": "ok",
+ "max_context": 131072,
+ "model": "qwen3.8-flash-next-gsq-rco-coder",
+ "images": false,
+ "api_key": false,
+ "loaded": true,
+ "loading": false,
+ "service": "basalt",
+ "percent": null,
+ "swap": null
+}

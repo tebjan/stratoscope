@@ -127,6 +127,15 @@ internal static class Program
             Console.WriteLine("  server: " + m.Name + " | status: " + Display.Word(m.State) + " | queued: " + s.Queued + (s.RouterLimited ? " | router limit reached" : ""));
             Console.WriteLine("  context: " + Fmt.Number(s.Context.Used) + " of " + Fmt.Number(s.Context.Max) + " | recent requests: " + s.Recent.Count);
             if (s.System != null) Console.WriteLine("  system: RAM " + Fmt.Gib(s.System.RamUsedBytes) + " of " + Fmt.Gib(s.System.RamTotalBytes) + " GB | GPU " + Fmt.Number(s.System.GpuPercent) + " % | CPU " + Fmt.Number(s.System.CpuPercent) + " %");
+            if (s.System is { } sys) Console.WriteLine("  gpu: " + Fmt.Number(sys.GpuTemperatureCelsius) + " C | " + Fmt.Number(sys.GpuPowerWatts) + " of " + Fmt.Number(sys.GpuPowerLimitWatts) + " W | VRAM " + Fmt.Gib(sys.GpuMemoryUsedBytes) + " of " + Fmt.Gib(sys.GpuMemoryTotalBytes) + " GB");
+            if (s.Live is { } live)
+                Console.WriteLine("  live: read " + Fmt.Number(live.PromptRead) + " of " + Fmt.Number(live.PromptTotal) + " (" + (live.Percent.HasValue ? live.Percent + " %" : Fmt.Missing) + ") | prefill " + Fmt.Number(live.PrefillTokensPerSecond)
+                    + " t/s | decode " + Fmt.Number(live.DecodeTokensPerSecond) + " t/s | generated " + Fmt.Number(live.Generated) + " of " + Fmt.Number(live.MaxTokens) + " | reused " + Fmt.Number(live.ReusedEstimate)
+                    + " | cache " + (Display.Progress(s)?.Hit?.Label() ?? Fmt.Missing));
+            Console.WriteLine("  finished: " + string.Join(", ", s.Recent.Take(5).Select(r => Fmt.Number(r.PromptTokens) + "/" + Fmt.Number(r.ReusedTokens) + " " + (r.Hit?.Label() ?? Fmt.Missing))));
+            if (s.Info is { } info)
+                Console.WriteLine("  engine: " + s.Engine + " " + (info.Version ?? Fmt.Missing) + " | KV " + (info.KvFormat ?? Fmt.Missing) + " | draft " + (info.DraftWindow ?? Fmt.Missing) + " | expert cache " + Fmt.Number(info.ExpertCacheMib) + " MiB | expert hit " + Fmt.Number(info.ExpertHitRate * 100) + " %");
+            if (s.Cache is { } cache) Console.WriteLine("  conversation cache: budget " + Fmt.Gib(cache.BudgetBytes) + " GB | slots " + Fmt.Number(cache.Slots));
             var readout = Display.Readout(s);
             Console.WriteLine("  readout: " + (readout.Value.Length > 0 ? readout.Value + " " + readout.Unit : "(glyph only)"));
         }

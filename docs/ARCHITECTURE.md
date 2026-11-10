@@ -76,6 +76,8 @@ The images in `docs/img` are rendered from `DemoProvider`'s fixed data by `./scr
 3. Add a test that feeds a recorded metrics payload through your translation, like `StrataSnapshotTests`.
 4. Document the engine's defaults in the README.
 
+On Windows an engine behind a llama-swap router derives from `RoutedProvider` (`Sources/Windows/Core/Engines/`), which owns the router flow; the engine only reads and translates its `/metrics` (`StrataProvider`, `BasaltProvider`). `AutoEngineProvider`, the default, asks the engine's `/health` for its `service` and hands the read to the right one. Basalt's `/slots` is asked only while a request runs: `/metrics` has the prompt size, `/slots` the read progress. Basalt's per-request `hit_rate` is the expert cache's; the cache verdict (dots, bar colour) comes from `prompt_tokens` and `reused`.
+
 Guidelines:
 
 - **Report only what the engine knows.** Prefer `nil` over a guess. Where you must estimate (Strata does not report cache reuse of a running request), say so in a comment.

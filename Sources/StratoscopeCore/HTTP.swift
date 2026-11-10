@@ -17,4 +17,13 @@ public final class JSONFetcher {
             DispatchQueue.main.async { done(obj) }
         }.resume()
     }
+
+    /// Like `get`, for an answer that is a top-level array of objects (Basalt's `/slots`).
+    public func getArray(_ url: String, _ done: @escaping ([[String: Any]]?) -> Void) {
+        guard let u = URL(string: url) else { done(nil); return }
+        session.dataTask(with: u) { data, _, _ in
+            let rows = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] }
+            DispatchQueue.main.async { done(rows) }
+        }.resume()
+    }
 }

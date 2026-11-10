@@ -145,7 +145,7 @@ Environment variables win over `~/.config/stratoscope.json`, which wins over the
 
 | Variable | JSON key | Does |
 |---|---|---|
-| `STRATOSCOPE_ENGINE` | `engine` | Which inference engine to read: `strata` (default) or `demo` |
+| `STRATOSCOPE_ENGINE` | `engine` | Which inference engine to read: `strata` (default; Basalt engines are recognised as well), `basalt` or `demo` |
 | `STRATOSCOPE_URL` | `url` | Inference engine address. Strata default: `http://127.0.0.1:8095` |
 | `STRATOSCOPE_ROUTER_URL` | `router` | Router in front of the inference engine. `none` turns it off |
 | `STRATOSCOPE_LOG` | `log` | Inference engine log file. Strata default: newest `*.log` in `~/.local/share/strata/install` |
