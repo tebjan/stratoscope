@@ -50,6 +50,13 @@ import Testing
         #expect(s.cache == nil)
     }
 
+    @Test func testTheEngineNameAndVersionComeFromTheEngineAndAreNilWhenUnknown() {
+        #expect(snapshot(metrics(state: "idle")).engineLabel == "Basalt 0.3.2")
+        let unknown = object(#"{"engine": {"max_context": 8192}, "live": {"state": "idle"}}"#)
+        #expect(snapshot(unknown).engineVersion == nil)
+        #expect(snapshot(unknown).engineLabel == nil)
+    }
+
     @Test func testDecodeUsesTheSlotContextAndDropsTheStalePrefillMean() {
         let m = metrics(state: "generating", live: #", "prompt_tokens": 56967, "generated": 993, "elapsed_s": 20.7, "tok_s": 147.2, "prefill_tok_s_mean": 4186.0"#)
         let row = slot(#"{"state": "decoding", "prompt_tokens": 56967, "prefill_done": 56967, "generated": 1002, "max_tokens": 32000, "reused": 0, "ctx_used": 57969}"#)

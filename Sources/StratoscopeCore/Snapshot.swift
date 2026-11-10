@@ -156,14 +156,19 @@ public struct EngineSnapshot {
     public var cache: CacheStats?
     public var totals: Totals?
     public var links: [EngineLink]
+    /// The version the engine reports about itself, or nil when it does not say.
+    public var engineVersion: String?
 
     public init(engine: String, model: String, status: EngineStatus = .idle, queued: Int = 0, live: LiveRequest? = nil,
                 recent: [RequestStats] = [], context: ContextUsage, system: SystemStats? = nil,
-                cache: CacheStats? = nil, totals: Totals? = nil, links: [EngineLink] = []) {
+                cache: CacheStats? = nil, totals: Totals? = nil, links: [EngineLink] = [], engineVersion: String? = nil) {
         self.engine = engine; self.model = model; self.status = status; self.queued = queued; self.live = live
         self.recent = recent; self.context = context; self.system = system; self.cache = cache
-        self.totals = totals; self.links = links
+        self.totals = totals; self.links = links; self.engineVersion = engineVersion
     }
+
+    /// "Basalt 0.3.2": the engine's name and version, or nil while the version is unknown (then nothing is shown).
+    public var engineLabel: String? { engineVersion.map { "\(engine) \($0)" } }
 
     public var isLoading: Bool { if case .loading = status { return true }; return false }
     public var isBusy: Bool { switch status { case .prefill, .thinking, .decode: return true; default: return false } }

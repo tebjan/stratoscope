@@ -56,6 +56,7 @@ final class Panels {
         let inner = menuWidth - 2 * pad, col = Panels.color(s)
         dot(pad, 14, col)
         text(s.model, x: pad + 18, y: 11, size: 13, bold: true)
+        if let label = s.engineLabel { text(label, x: pad + 18, y: 27, size: 10, color: .secondaryLabelColor) }
         text(Panels.word(s) + (s.queued > 0 ? " · Queue \(s.queued)" : ""), x: 0, y: 11, size: 12, bold: true, color: col, right: menuWidth - pad)
         if case .loading(let why) = s.status { text(why, x: pad, y: 44, size: 12); return }
 

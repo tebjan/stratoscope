@@ -67,6 +67,18 @@ public class BasaltSnapshotTests
     }
 
     [Fact]
+    public void TheEngineNameAndVersionComeFromTheEngineAndAreHiddenWhenUnknown()
+    {
+        // The Engine block of the panel draws Engine + " " + Info.Version, and nothing when the version is null.
+        var basalt = Provider().Translate(Metrics("basalt-0.3.2-idle.json"), null, "m");
+        Assert.Equal("Basalt 0.3.2", basalt.Engine + " " + basalt.Info!.Version);
+        var strata = new Stratoscope.Core.Engines.Strata.StrataProvider(new EngineConfig(), new FakeSource()).Translate(Fixtures.Metrics("strata-0.1.56-idle.json"), "m");
+        Assert.Equal("Strata 0.1.56", strata.Engine + " " + strata.Info!.Version);
+        var unknown = Json.Deserialize(@"{""engine"":{""max_context"":8192},""live"":{""state"":""idle""}}", Json.BasaltMetricsType)!;
+        Assert.Null(Provider().Translate(unknown, null, "m").Info!.Version);
+    }
+
+    [Fact]
     public void IdleHasNoRunningRequestAndTheContextOfTheNewestFinishedOne()
     {
         var s = Provider().Translate(Metrics("basalt-0.3.2-idle.json"), Slots("basalt-0.3.2-idle.slots.json"), "m");

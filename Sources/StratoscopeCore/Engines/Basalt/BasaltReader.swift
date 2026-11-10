@@ -98,6 +98,6 @@ public final class BasaltReader {
         let queue = num(live, "queued") ?? ((live["slots"] as? [String: Any]).flatMap { num($0, "queue_depth") }) ?? 0
         return EngineSnapshot(engine: "Basalt", model: model, status: status, queued: Int(queue), live: liveRequest, recent: recent,
                               context: ContextUsage(used: ctxUsed, max: num(eng, "max_context") ?? 0, compactAt: compactAt),
-                              system: system, links: links)
+                              system: system, links: links, engineVersion: eng["version"] as? String)
     }
 }

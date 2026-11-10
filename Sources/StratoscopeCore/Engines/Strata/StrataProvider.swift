@@ -169,6 +169,7 @@ public final class StrataProvider: EngineProvider {
                               live: liveRequest, recent: recent,
                               context: ContextUsage(used: ctxUsed, max: num(eng, "max_context") ?? 0,   // 0 = the engine did not say
                                                     compactAt: compactAt(model: model)),
-                              system: system, cache: cache, totals: totals, links: links())
+                              system: system, cache: cache, totals: totals, links: links(),
+                              engineVersion: eng["version"] as? String)
     }
 }
