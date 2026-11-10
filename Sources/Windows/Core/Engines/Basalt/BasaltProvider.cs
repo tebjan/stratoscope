@@ -28,9 +28,10 @@ public sealed class BasaltProvider : RoutedProvider
         var body = metrics.Body!;
         if (routedId is null && IsEmpty(body.Engine)) return new EngineRead(metrics.Status, true, FetchFailure.None, null, null);
 
-        // Only a running request has a row worth asking for. A refused or failed /slots just leaves the progress unknown.
+        // A running request has a row worth asking for, and so has an engine with several slots (an idle slot says what it holds). A refused
+        // or failed /slots just leaves the progress and the slot list unknown.
         List<BasaltSlotDto?>? slots = null;
-        if (body.Live?.State is "reading" or "generating")
+        if (body.Live?.State is "reading" or "generating" || body.Live?.Slots?.Total > 1)
             slots = (await http.GetAsync(Endpoints.Join(engineBase, "slots"), Json.BasaltSlotsType, cancellation).ConfigureAwait(false)).Body;
 
         var model = routedId ?? body.Engine?.Model ?? "Basalt";
@@ -57,26 +58,61 @@ public sealed class BasaltProvider : RoutedProvider
 
         // The running request: the slot row when /slots was asked (it is the request that holds the engine; /metrics describes the newest
         // one, which may still wait in the queue), otherwise /metrics.
-        var row = slotRows?.FirstOrDefault(s => s is { State: "prefill" or "decoding" });
+        // With several requests running together, the headline is their total, like Strata's: reading slots add up their prompts, generating
+        // slots their counts, and the speed is live.tok_s (the engine already sums it over the slots).
+        var rows = (slotRows ?? new List<BasaltSlotDto?>()).Where(s => s != null).Select(s => s!).ToList();
+        var running = rows.Where(s => s.State is "prefill" or "decoding").ToList();
+        var together = running.Count > 1;
+        var row = running.FirstOrDefault();
         var reading = status == EngineStatus.Prefill;
         LiveRequest? liveRequest = null;
         if (status != EngineStatus.Idle)
         {
             var speed = live.TokensPerSecond;
+            double? total = row?.PromptTokens ?? live.PromptTokens, read = row?.PrefillDone, generated = row?.Generated ?? live.Generated;
+            if (together)
+            {
+                var readers = running.Where(s => s.State == "prefill").ToList();
+                var writers = running.Where(s => s.State == "decoding").ToList();
+                if (reading)
+                {
+                    total = readers.All(s => s.PromptTokens.HasValue) ? readers.Sum(s => s.PromptTokens!.Value) : null;
+                    read = readers.All(s => s.PrefillDone.HasValue) ? readers.Sum(s => s.PrefillDone!.Value) : null;   // several readers: Basalt says nothing
+                    generated = 0;
+                }
+                else
+                {
+                    generated = writers.All(s => s.Generated.HasValue) ? writers.Sum(s => s.Generated!.Value) : null;
+                    total = read = null;
+                }
+            }
             liveRequest = new LiveRequest
             {
-                PromptTotal = row?.PromptTokens ?? live.PromptTokens,
-                PromptRead = row?.PrefillDone,
-                Generated = row?.Generated ?? live.Generated,
-                MaxTokens = row?.MaxTokens,
+                PromptTotal = total, PromptRead = read, Generated = generated,
+                MaxTokens = together ? null : row?.MaxTokens,
                 ElapsedSeconds = live.ElapsedSeconds,
                 PrefillTokensPerSecond = reading && (live.PrefillTokensPerSecondMean ?? 0) > 0 ? live.PrefillTokensPerSecondMean : null,
                 DecodeTokensPerSecond = (speed ?? 0) > 0 ? speed : null,
-                ReusedEstimate = row?.Reused,      // the engine's own number once it knows it; the field also carries Strata's estimates
-                // Several requests at once only when Basalt has more than one slot; the per-slot rows are not shown.
-                Running = live.Slots is { Total: > 1, Active: > 1 } s ? (int)s.Active!.Value : null,
+                ReusedEstimate = together ? null : row?.Reused,      // the engine's own number once it knows it; the field also carries Strata's estimates
+                // Several requests at once only when Basalt has more than one slot.
+                Running = together ? (int?)running.Count : live.Slots is { Total: > 1, Active: > 1 } s ? (int)s.Active!.Value : null,
             };
         }
+
+        // One entry per slot, for an engine with more than one: what each holds or runs. A single slot has nothing to tell apart.
+        List<BatchSlot>? batchSlots = null;
+        if (rows.Count > 1)
+            batchSlots = rows.Select((s, position) => new BatchSlot
+            {
+                Index = (int)(s.Id ?? position),
+                State = s.State switch { "prefill" => "reading", "decoding" => "decoding", "idle" => "idle", _ => null },
+                HeldTokens = s.State == "idle" ? s.CtxUsed : null,        // an idle slot keeps its last conversation
+                PromptTokens = s.State is "prefill" or "decoding" ? s.PromptTokens : null,
+                PromptRead = s.State is "prefill" or "decoding" ? s.PrefillDone : null,
+                Generated = s.State is "prefill" or "decoding" ? s.Generated : null,
+                TokensPerSecond = s.State == "decoding" && (s.TokensPerSecond ?? 0) > 0 ? s.TokensPerSecond : null,
+                MaxTokens = s.State is "prefill" or "decoding" ? s.MaxTokens : null,
+            }).ToList();
 
         var recent = reqs.Select(q => new RequestStats
         {
@@ -88,7 +124,8 @@ public sealed class BasaltProvider : RoutedProvider
             FinishedAt = FinishedAt(q.Time), Finish = q.Finish, ExpertHitRate = q.HitRate,
         }).ToList();
 
-        double? ctxUsed = row?.CtxUsed;
+        // The slot closest to the limit when several run (the context bar shows how full the fullest is).
+        double? ctxUsed = running.Select(s => s.CtxUsed).Where(c => c.HasValue).DefaultIfEmpty(null).Max();
         if (ctxUsed is null && live.PromptTokens is double pt && status != EngineStatus.Idle) ctxUsed = pt + (live.Generated ?? 0);
         if (ctxUsed is null && recent.Count > 0 && recent[0].PromptTokens is double p0 && recent[0].OutputTokens is double o0) ctxUsed = p0 + o0;
 
@@ -125,7 +162,7 @@ public sealed class BasaltProvider : RoutedProvider
             Queued = (int)(live.Queued ?? live.Slots?.QueueDepth ?? 0),
             Live = liveRequest, Recent = recent,
             Context = new ContextUsage { Used = ctxUsed, Max = eng.MaxContext, CompactAt = CompactAt(model) },
-            System = system, Cache = cache, Info = info, Links = Links(),
+            System = system, Cache = cache, Info = info, Slots = batchSlots, Links = Links(),
         };
     }
 

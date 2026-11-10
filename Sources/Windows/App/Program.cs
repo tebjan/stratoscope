@@ -132,6 +132,11 @@ internal static class Program
                 Console.WriteLine("  live: read " + Fmt.Number(live.PromptRead) + " of " + Fmt.Number(live.PromptTotal) + " (" + (live.Percent.HasValue ? live.Percent + " %" : Fmt.Missing) + ") | prefill " + Fmt.Number(live.PrefillTokensPerSecond)
                     + " t/s | decode " + Fmt.Number(live.DecodeTokensPerSecond) + " t/s | generated " + Fmt.Number(live.Generated) + " of " + Fmt.Number(live.MaxTokens) + " | reused " + Fmt.Number(live.ReusedEstimate)
                     + " | cache " + (Display.Progress(s)?.Hit?.Label() ?? Fmt.Missing));
+            if (s.Slots is { } slots)
+                foreach (var slot in slots)
+                    Console.WriteLine("  slot " + (slot.Index + 1) + ": " + (slot.State ?? Fmt.Missing) + " | tokens " + Fmt.Number(slot.Tokens)
+                        + (slot.IsReading ? " | read " + Fmt.Number(slot.PromptRead) + " of " + Fmt.Number(slot.PromptTokens) : "")
+                        + (slot.IsDecoding ? " | generated " + Fmt.Number(slot.Generated) + " of " + Fmt.Number(slot.MaxTokens) + " | " + Fmt.Number(slot.TokensPerSecond) + " t/s" : ""));
             Console.WriteLine("  finished: " + string.Join(", ", s.Recent.Take(5).Select(r => Fmt.Number(r.PromptTokens) + "/" + Fmt.Number(r.ReusedTokens) + " " + (r.Hit?.Label() ?? Fmt.Missing))));
             if (s.Info is { } info)
                 Console.WriteLine("  engine: " + s.Engine + " " + (info.Version ?? Fmt.Missing) + " | KV " + (info.KvFormat ?? Fmt.Missing) + " | draft " + (info.DraftWindow ?? Fmt.Missing) + " | expert cache " + Fmt.Number(info.ExpertCacheMib) + " MiB | expert hit " + Fmt.Number(info.ExpertHitRate * 100) + " %");

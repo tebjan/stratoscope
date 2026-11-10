@@ -66,6 +66,90 @@ public class BasaltSnapshotTests
         Assert.Equal(0, s.Live.ReusedEstimate);
     }
 
+    // Four slots (--parallel 4), recorded while requests of about 20,000 tokens ran together with a long conversation in slot 1.
+
+    [Fact]
+    public void SlotsAreListedOneEntryEachWithTheirStateAndNumbers()
+    {
+        var m = Metrics("basalt-0.3.2-parallel-mixed.json");
+        var rows = Slots("basalt-0.3.2-parallel-mixed.slots.json")!;
+        var s = Provider().Translate(m, rows, "m");
+        Assert.Equal(new[] { "decoding", "decoding", "reading", "idle" }, s.Slots!.Select(x => x.State));
+        Assert.Equal(new[] { 0, 1, 2, 3 }, s.Slots!.Select(x => x.Index));
+        var reading = s.Slots[2];
+        Assert.Equal(rows[2]!.PromptTokens, reading.PromptTokens);
+        Assert.Equal(rows[2]!.PrefillDone, reading.PromptRead);
+        Assert.Equal(rows[2]!.MaxTokens, reading.MaxTokens);
+        Assert.Null(reading.TokensPerSecond);                       // not generating: no speed
+        var decoding = s.Slots[1];
+        Assert.Equal(rows[1]!.Generated, decoding.Generated);
+        Assert.Equal(rows[1]!.TokensPerSecond, decoding.TokensPerSecond);
+        Assert.Null(decoding.HeldTokens);
+        Assert.Equal(decoding.PromptTokens + decoding.Generated, decoding.Tokens);
+        var idle = s.Slots[3];
+        Assert.Equal(rows[3]!.CtxUsed, idle.HeldTokens);            // an idle slot says what it still holds
+        Assert.False(idle.IsActive);
+        Assert.Equal(4, s.Info!.BatchSlots);
+    }
+
+    [Fact]
+    public void RequestsRunningTogetherGetTheirTotalInTheHeadline()
+    {
+        var rows = Slots("basalt-0.3.2-parallel-mixed.slots.json")!;
+        var m = Metrics("basalt-0.3.2-parallel-mixed.json");
+        var s = Provider().Translate(m, rows, "m");
+        Assert.Equal(EngineStatus.Decode, s.Status);                // generating while any slot decodes
+        Assert.Equal(3, s.Live!.Running);
+        Assert.True(s.Live.IsParallel);
+        Assert.Equal(rows[0]!.Generated + rows[1]!.Generated, s.Live.Generated);
+        Assert.Equal(m.Live!.TokensPerSecond, s.Live.DecodeTokensPerSecond);     // the engine's own total over the slots
+        Assert.Null(s.Live.MaxTokens);
+        Assert.Equal(rows.Max(r => r!.CtxUsed), s.Context.Used);    // the fullest slot
+        Assert.Equal(2, s.Queued);
+    }
+
+    [Fact]
+    public void ADecodingSlotAndAReadingOneAreBothShown()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-parallel-reading.json"), Slots("basalt-0.3.2-parallel-reading.slots.json"), "m");
+        Assert.Equal(new[] { "decoding", "reading", "idle", "idle" }, s.Slots!.Select(x => x.State));
+        Assert.Equal(2, s.Live!.Running);
+        Assert.True(s.Slots[1].IsReading);
+        Assert.True(s.Slots[1].PromptRead < s.Slots[1].PromptTokens);
+    }
+
+    [Fact]
+    public void SeveralReadingSlotsAddUpTheirPromptsAndSayNothingWhenBasaltSaysNoProgress()
+    {
+        var m = Json.Deserialize(@"{""engine"":{""max_context"":8192},""live"":{""state"":""reading"",""slots"":{""total"":4,""active"":2,""queue_depth"":0},""prefill_tok_s_mean"":900}}", Json.BasaltMetricsType)!;
+        var rows = Json.Deserialize(@"[{""id"":0,""state"":""prefill"",""prompt_tokens"":1000,""prefill_done"":null},{""id"":1,""state"":""prefill"",""prompt_tokens"":3000,""prefill_done"":null},{""id"":2,""state"":""idle"",""ctx_used"":0},{""id"":3,""state"":""idle"",""ctx_used"":0}]", Json.BasaltSlotsType)!;
+        var s = Provider().Translate(m, rows, "m");
+        Assert.Equal(EngineStatus.Prefill, s.Status);
+        Assert.Equal(4000, s.Live!.PromptTotal);
+        Assert.Null(s.Live.PromptRead);                             // never 0: the engine does not say how far each has read
+        Assert.Null(s.Live.Percent);
+        Assert.Equal(900, s.Live.PrefillTokensPerSecond);
+        Assert.Equal(0, s.Slots![2].HeldTokens);
+    }
+
+    [Fact]
+    public void ASingleSlotHasNoSlotList()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-decode.json"), Slots("basalt-0.3.2-decode.slots.json"), "m");
+        Assert.Null(s.Slots);
+        Assert.Null(s.Live!.Running);
+    }
+
+    [Fact]
+    public void IdleWithFourSlotsListsWhatEachHolds()
+    {
+        var s = Provider().Translate(Metrics("basalt-0.3.2-parallel-idle.json"), Slots("basalt-0.3.2-parallel-idle.slots.json"), "m");
+        Assert.Equal(EngineStatus.Idle, s.Status);
+        Assert.Null(s.Live);
+        Assert.Equal(4, s.Slots!.Count);
+        Assert.All(s.Slots, x => { Assert.Equal("idle", x.State); Assert.NotNull(x.HeldTokens); });
+    }
+
     [Fact]
     public void TheEngineNameAndVersionComeFromTheEngineAndAreHiddenWhenUnknown()
     {
@@ -258,6 +342,18 @@ public class BasaltFlowTests
         var s = await Auto(source).PollAsync(CancellationToken.None);
         Assert.Equal(EngineStatus.Idle, s!.Status);
         Assert.DoesNotContain(Upstream + "/slots", source.Requested);
+    }
+
+    [Fact]
+    public async Task AnIdleEngineWithSeveralSlotsIsAskedForItsSlots()
+    {
+        var source = new FakeSource().Json(Router + "/running", "router-running-ready.json")
+            .Json(Upstream + "/health", "basalt-0.3.2-decode.health.json")
+            .Json(Upstream + "/metrics", "basalt-0.3.2-parallel-idle.json").Json(Upstream + "/slots", "basalt-0.3.2-parallel-idle.slots.json");
+        var s = await Auto(source).PollAsync(CancellationToken.None);
+        Assert.Equal(EngineStatus.Idle, s!.Status);
+        Assert.Equal(4, s.Slots!.Count);
+        Assert.Contains(Upstream + "/slots", source.Requested);
     }
 
     [Fact]

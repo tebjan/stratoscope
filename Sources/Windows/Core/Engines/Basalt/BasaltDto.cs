@@ -98,8 +98,11 @@ public sealed record BasaltGpuDto
 /// <summary>One row of Basalt's <c>GET /slots</c> (the llama.cpp shape): the request a slot runs right now.</summary>
 public sealed record BasaltSlotDto
 {
+    [JsonPropertyName("id")] public double? Id { get; init; }
     /// <summary>"idle", "prefill" or "decoding".</summary>
     [JsonPropertyName("state")] public string? State { get; init; }
+    /// <summary>The slot's generation speed over the last seconds (the engine's own window).</summary>
+    [JsonPropertyName("tok_s")] public double? TokensPerSecond { get; init; }
     [JsonPropertyName("max_tokens")] public double? MaxTokens { get; init; }
     [JsonPropertyName("prompt_tokens")] public double? PromptTokens { get; init; }
     /// <summary>How much of the prompt is read. Null while the engine cannot say (several requests reading).</summary>
@@ -107,6 +110,6 @@ public sealed record BasaltSlotDto
     /// <summary>The prompt tokens served from the conversation cache; null until the engine knows.</summary>
     [JsonPropertyName("reused")] public double? Reused { get; init; }
     [JsonPropertyName("generated")] public double? Generated { get; init; }
-    /// <summary>The slot's prompt plus what it has generated.</summary>
+    /// <summary>The slot's prompt plus what it has generated; for an idle slot, the conversation it still holds.</summary>
     [JsonPropertyName("ctx_used")] public double? CtxUsed { get; init; }
 }
