@@ -23,18 +23,29 @@ public class LlamaCppSnapshotTests
         var s = Provider().Translate(Slots("llamacpp-prefill.slots.json"), Props(), Metrics("llamacpp-prefill.metrics.txt"), "m");
         Assert.Equal("llama.cpp", s.Engine);
         Assert.Equal(EngineStatus.Prefill, s.Status);
-        Assert.Equal(2, s.Queued);
-        Assert.Equal(14336, s.Live!.PromptRead);
+        Assert.Equal(0, s.Queued);
+        Assert.Equal(26889, s.Live!.PromptRead);
         Assert.Null(s.Live.PromptTotal);                    // llama-server does not say how long the prompt is
         Assert.Null(s.Live.Percent);                        // so there is no percentage, not 0
-        Assert.Equal(1423.5, s.Live.PrefillTokensPerSecond);
+        Assert.Null(s.Live.PrefillTokensPerSecond);         // the engine counts a prompt into its speed gauge only when it is read: 0 during a long read, unknown here
         Assert.Null(s.Live.DecodeTokensPerSecond);          // the gauge is 0 when nothing was generated: unknown, not 0
         Assert.Equal(0, s.Live.Generated);
-        Assert.Equal(8192, s.Live.ReusedEstimate);
-        Assert.Equal(32000, s.Live.MaxTokens);
+        Assert.Equal(0, s.Live.ReusedEstimate);             // the engine counted tokens and reused none: a real 0
+        Assert.Equal(400, s.Live.MaxTokens);
         Assert.Null(s.Live.Running);
-        Assert.Equal(14336, s.Context.Used);
+        Assert.Equal(26889, s.Context.Used);
         Assert.Equal(98304, s.Context.Max);
+    }
+
+    [Fact]
+    public void ThePromptSpeedGaugeIsShownWhileReadingAndOnlyWhenItIsAboveZero()
+    {
+        var rows = Slots("llamacpp-prefill.slots.json");
+        var read = Provider().Translate(rows, Props(), LlamaCppMetrics.Parse("llamacpp:prompt_tokens_seconds 1423.5\nllamacpp:predicted_tokens_seconds 90\n"), "m");
+        Assert.Equal(1423.5, read.Live!.PrefillTokensPerSecond);
+        Assert.Null(read.Live.DecodeTokensPerSecond);       // nothing is generated yet: the generation gauge is not this request's
+        var idle = Provider().Translate(Slots("llamacpp-idle.slots.json"), Props(), Metrics("llamacpp-idle.metrics.txt"), "m");
+        Assert.Null(idle.Live);                             // the gauges still hold the last window while idle: not shown as a speed
     }
 
     [Fact]
@@ -53,12 +64,12 @@ public class LlamaCppSnapshotTests
     {
         var s = Provider().Translate(Slots("llamacpp-decode.slots.json"), Props(), Metrics("llamacpp-decode.metrics.txt"), "m");
         Assert.Equal(EngineStatus.Decode, s.Status);
-        Assert.Equal(572, s.Live!.Generated);
-        Assert.Equal(84.2, s.Live.DecodeTokensPerSecond);
+        Assert.Equal(316, s.Live!.Generated);
+        Assert.Equal(236.42, s.Live.DecodeTokensPerSecond);
         Assert.Null(s.Live.PrefillTokensPerSecond);
         Assert.Null(s.Live.PromptRead);
-        Assert.Equal(14336, s.Live.ReusedEstimate);
-        Assert.Equal(21112, s.Context.Used);                // the slot's memory: prompt plus what it has written
+        Assert.Equal(447, s.Live.ReusedEstimate);
+        Assert.Equal(782, s.Context.Used);                // the slot's memory: prompt plus what it has written
         Assert.Equal(0, s.Queued);
     }
 
@@ -69,7 +80,7 @@ public class LlamaCppSnapshotTests
         Assert.Equal(EngineStatus.Idle, s.Status);
         Assert.Null(s.Live);
         Assert.Null(s.Slots);                               // one slot has nothing to tell apart
-        Assert.Equal(20540, s.Context.Used);
+        Assert.Equal(1010, s.Context.Used);
         Assert.Equal(98304, s.Context.Max);
         Assert.Empty(s.Recent);                             // a slot resets its counters when a request ends: nothing to list
     }
@@ -101,12 +112,12 @@ public class LlamaCppSnapshotTests
     [Fact]
     public void TotalsAreTheCountersSinceTheServerStartedAndTheCacheShareComesFromThem()
     {
-        var t = Provider().Translate(Slots("llamacpp-idle.slots.json"), Props(), Metrics("llamacpp-idle.metrics.txt"), "m").Totals!;
-        Assert.Equal(91648 + 183296, t.PromptTokens);       // what was read plus what was reused
-        Assert.Equal(183296, t.ReusedTokens);
-        Assert.Equal(18240, t.OutputTokens);
-        Assert.Equal(64500, t.PromptMilliseconds);
-        Assert.Equal(152000, t.DecodeMilliseconds);
+        var t = Provider().Translate(Slots("llamacpp-idle.slots.json"), Props(), Metrics("llamacpp-decode.metrics.txt"), "m").Totals!;
+        Assert.Equal(29304 + 53713, t.PromptTokens);        // what was read plus what was reused
+        Assert.Equal(53713, t.ReusedTokens);
+        Assert.Equal(2343, t.OutputTokens);
+        Assert.Equal(18536.5, t.PromptMilliseconds);
+        Assert.Equal(9880.73, t.DecodeMilliseconds);
         Assert.Null(t.Requests);                            // no request count in the metrics
         Assert.Null(t.Since);
     }
@@ -127,7 +138,7 @@ public class LlamaCppSnapshotTests
     public void TheBuildAndTheSlotCountComeFromProps()
     {
         var info = Provider().Translate(Slots("llamacpp-idle.slots.json"), Props(), null, "m").Info!;
-        Assert.Equal("b6789-1a2b3c4d5", info.Version);
+        Assert.Equal("b1-d493f84", info.Version);
         Assert.Equal(1, info.BatchSlots);
         Assert.Null(info.KvFormat);
     }
@@ -193,7 +204,7 @@ public class LlamaCppFlowTests
         Assert.Equal("llama.cpp", provider.Brand);
         Assert.Equal(EngineStatus.Prefill, s.Status);
         Assert.Equal("Demo Model (4 parallel)", s.Model);   // the router's friendly name
-        Assert.Equal(1423.5, s.Live!.PrefillTokensPerSecond);
+        Assert.Equal(26889, s.Live!.PromptRead);
         Assert.Equal(new[] { Router + "/running", Upstream + "/health", Upstream + "/props", Upstream + "/props", Upstream + "/slots", Upstream + "/metrics" }, source.Requested);
         Assert.Contains(s.Links, l => l.Title == "Open llama.cpp UI" && l.Target == Upstream + "/");
 
@@ -222,7 +233,7 @@ public class LlamaCppFlowTests
         var s = await Auto(source).PollAsync(CancellationToken.None);
         Assert.Equal("llama.cpp", s!.Engine);
         Assert.DoesNotContain(Upstream + "/metrics", source.Requested);
-        Assert.Null(s.Live!.PrefillTokensPerSecond);
+        Assert.Null(s.Totals);
     }
 
     [Fact]
@@ -232,7 +243,7 @@ public class LlamaCppFlowTests
         var s = await Auto(source).PollAsync(CancellationToken.None);
         Assert.Equal(EngineStatus.Prefill, s!.Status);
         Assert.Null(s.Live!.PrefillTokensPerSecond);
-        Assert.Equal(14336, s.Live.PromptRead);
+        Assert.Equal(26889, s.Live.PromptRead);
         Assert.Null(s.Totals);
     }
 
@@ -310,7 +321,7 @@ public class LlamaCppFlowTests
             .Json(address + "/slots", "llamacpp-decode.slots.json").Route(address + "/metrics", () => new FakeAnswer(200, Fixtures.Text("llamacpp-decode.metrics.txt")));
         var s = await new AutoEngineProvider(new EngineConfig { Url = address }, source).PollAsync(CancellationToken.None);
         Assert.Equal("llama.cpp", s!.Engine);
-        Assert.Equal("qwen-27b-llamacpp", s.Model);
+        Assert.Equal("qwen3.8-27b-ud-q4_k_m", s.Model);
         Assert.Equal(EngineStatus.Decode, s.Status);
     }
 
