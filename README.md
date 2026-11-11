@@ -111,8 +111,9 @@ The inference engine adapters and all the numbers are platform-neutral. Only the
 | Inference engine | Status |
 |---|---|
 | Strata | Works |
+| llama.cpp (`llama-server`) | Works on Windows: state, slots, cache reuse and context from `/slots`, speeds and totals from `/metrics` (start the server with `--metrics`); a build with `--sleep-idle-seconds` is shown as asleep, never woken. macOS: not yet |
 | Demo (fake data, to try the menu without an inference engine) | Works: `STRATOSCOPE_ENGINE=demo` |
-| llama.cpp, MLX, Uzu, BaseRT | Not yet |
+| MLX, Uzu, BaseRT | Not yet |
 
 Each inference engine has a small adapter that turns its metrics into one common format. The menu only knows that format. If your inference engine exposes metrics over HTTP, writing an adapter is usually one file. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), or open an "Engine request" issue.
 
@@ -145,7 +146,7 @@ Environment variables win over `~/.config/stratoscope.json`, which wins over the
 
 | Variable | JSON key | Does |
 |---|---|---|
-| `STRATOSCOPE_ENGINE` | `engine` | Which inference engine to read: `strata` (default; Basalt engines are recognised as well), `basalt` or `demo` |
+| `STRATOSCOPE_ENGINE` | `engine` | Which inference engine to read: `strata` (default; on Windows Basalt and llama.cpp engines are recognised as well), `basalt`, `llamacpp` (Windows) or `demo` |
 | `STRATOSCOPE_URL` | `url` | Inference engine address. Strata default: `http://127.0.0.1:8095` |
 | `STRATOSCOPE_ROUTER_URL` | `router` | Router in front of the inference engine. `none` turns it off |
 | `STRATOSCOPE_LOG` | `log` | Inference engine log file. Strata default: newest `*.log` in `~/.local/share/strata/install` |

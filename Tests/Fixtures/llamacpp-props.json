@@ -1,0 +1,18 @@
+{
+  "default_generation_settings": {"params": {"seed": 4294967295, "temperature": 0.6, "max_tokens": -1}, "n_ctx": 98304},
+  "total_slots": 1,
+  "model_alias": "qwen-27b-llamacpp",
+  "model_ftype": 15,
+  "model_path": "model.gguf",
+  "modalities": {"vision": false, "video": false, "audio": false},
+  "media_marker": "<__media__>",
+  "endpoint_slots": true,
+  "endpoint_props": false,
+  "endpoint_metrics": true,
+  "ui": true,
+  "chat_template": "{% for message in messages %}{{ message.content }}{% endfor %}",
+  "bos_token": "<s>",
+  "eos_token": "</s>",
+  "build_info": "b6789-1a2b3c4d5",
+  "is_sleeping": false
+}

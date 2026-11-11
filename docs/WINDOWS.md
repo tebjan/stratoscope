@@ -39,7 +39,7 @@ Open `%LOCALAPPDATA%\Stratoscope\config.json` from the menu (Settings > Open set
 
 | Variable | Key | Does |
 |---|---|---|
-| `STRATOSCOPE_ENGINE` | `engine` | `strata` (default: asks the engine whether it is a Strata or a Basalt), `basalt` (Basalt only) or `demo` |
+| `STRATOSCOPE_ENGINE` | `engine` | `strata` (default: asks the engine whether it is a Strata, a Basalt or a llama.cpp), `basalt` (Basalt only), `llamacpp` (llama-server only) or `demo` |
 | `STRATOSCOPE_URL` | `url` | engine address, default `http://127.0.0.1:8095` |
 | `STRATOSCOPE_ROUTER_URL` | `router` | router in front of the engine, `none` turns it off |
 | `STRATOSCOPE_LOG` | `log` | engine log file; no default on Windows |

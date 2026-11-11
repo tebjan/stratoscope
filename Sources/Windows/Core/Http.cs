@@ -29,12 +29,26 @@ public sealed class JsonResponse<T> where T : class
     public bool Ok => Failure == FetchFailure.None && Body != null;
 }
 
+/// <summary>The outcome of one GET request for a text document (llama-server's <c>/metrics</c> is Prometheus text, not JSON).</summary>
+public sealed class TextResponse
+{
+    public int Status { get; init; }
+    public string? Body { get; init; }
+    public FetchFailure Failure { get; init; }
+    public string? Detail { get; init; }
+    public bool Ok => Failure == FetchFailure.None && Body != null;
+}
+
 /// <summary>
-/// How an adapter reads JSON from its engine. The only operation is GET: Stratoscope never changes anything on the engine.
+/// How an adapter reads from its engine: JSON, and text for the one engine whose metrics are not JSON. The only operation is GET:
+/// Stratoscope never changes anything on the engine.
 /// </summary>
 public interface IJsonSource
 {
     Task<JsonResponse<T>> GetAsync<T>(Uri url, JsonTypeInfo<T> type, CancellationToken cancellation) where T : class;
+
+    /// <summary>GET a document and return it as text, without parsing it.</summary>
+    Task<TextResponse> GetTextAsync(Uri url, CancellationToken cancellation);
 }
 
 /// <summary>Builds the addresses of an engine's endpoints from its base address, with the framework's <see cref="Uri"/>: segments are escaped, never concatenated.</summary>
@@ -87,6 +101,29 @@ public sealed class HttpJsonSource : IJsonSource, IDisposable
         catch (HttpRequestException e)
         {
             return new JsonResponse<T> { Failure = Classify(e), Detail = e.InnerException?.Message ?? e.Message };
+        }
+    }
+
+    public async Task<TextResponse> GetTextAsync(Uri url, CancellationToken cancellation)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        limit.CancelAfter(timeout);
+        try
+        {
+            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseContentRead, limit.Token).ConfigureAwait(false);
+            var status = (int)response.StatusCode;
+            if (status < 200 || status > 299)
+                return new TextResponse { Status = status, Failure = FetchFailure.Status, Detail = "HTTP " + status };
+            var text = await response.Content.ReadAsStringAsync(limit.Token).ConfigureAwait(false);
+            return new TextResponse { Status = status, Body = text };
+        }
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+        {
+            return new TextResponse { Failure = FetchFailure.Timeout };
+        }
+        catch (HttpRequestException e)
+        {
+            return new TextResponse { Failure = Classify(e), Detail = e.InnerException?.Message ?? e.Message };
         }
     }
 

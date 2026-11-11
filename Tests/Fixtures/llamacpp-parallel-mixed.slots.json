@@ -1,0 +1,6 @@
+[
+  {"id": 0, "n_ctx": 32768, "speculative": false, "is_processing": true, "id_task": 57, "n_prompt_tokens": 9321, "n_prompt_tokens_processed": 1200, "n_prompt_tokens_cache": 7500, "params": {"max_tokens": 4096, "n_predict": 4096}, "next_token": [{"has_next_token": true, "has_new_line": true, "n_remain": 3718, "n_decoded": 378}]},
+  {"id": 1, "n_ctx": 32768, "speculative": false, "is_processing": true, "id_task": 58, "n_prompt_tokens": 5120, "n_prompt_tokens_processed": 5120, "n_prompt_tokens_cache": 0, "params": {"max_tokens": -1, "n_predict": -1}, "next_token": [{"has_next_token": true, "has_new_line": false, "n_remain": -1, "n_decoded": 0}]},
+  {"id": 2, "n_ctx": 32768, "speculative": false, "is_processing": false, "id_task": 55, "n_prompt_tokens": 18000, "n_prompt_tokens_processed": 0, "n_prompt_tokens_cache": 0, "params": {"max_tokens": 4096, "n_predict": 4096}, "next_token": [{"has_next_token": false, "has_new_line": false, "n_remain": 4096, "n_decoded": 0}]},
+  {"id": 3, "n_ctx": 32768, "speculative": false, "is_processing": false}
+]

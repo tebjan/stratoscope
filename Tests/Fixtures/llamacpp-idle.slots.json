@@ -1,0 +1,3 @@
+[
+  {"id": 0, "n_ctx": 98304, "speculative": true, "is_processing": false, "id_task": 41, "n_prompt_tokens": 20540, "n_prompt_tokens_processed": 0, "n_prompt_tokens_cache": 0, "params": {"seed": 4294967295, "temperature": 0.6, "max_tokens": 32000, "n_predict": 32000, "stream": true}, "next_token": [{"has_next_token": false, "has_new_line": false, "n_remain": 32000, "n_decoded": 0}]}
+]

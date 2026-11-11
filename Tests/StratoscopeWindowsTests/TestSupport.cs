@@ -55,6 +55,15 @@ internal sealed class FakeSource : IJsonSource
     public FakeSource Status(string url, int status) => Route(url, () => new FakeAnswer(status, null, FetchFailure.Status));
     public FakeSource Down(string url) => Route(url, () => new FakeAnswer(0, null, FetchFailure.Refused));
 
+    public Task<TextResponse> GetTextAsync(Uri url, CancellationToken cancellation)
+    {
+        Requested.Add(url.AbsoluteUri);
+        var answer = routes.TryGetValue(url.AbsoluteUri, out var make) ? make() : new FakeAnswer(0, null, FetchFailure.Refused);
+        return Task.FromResult(answer.Failure != FetchFailure.None
+            ? new TextResponse { Status = answer.Status, Failure = answer.Failure, Detail = answer.Status > 0 ? "HTTP " + answer.Status : null }
+            : new TextResponse { Status = answer.Status, Body = answer.Body });
+    }
+
     public Task<JsonResponse<T>> GetAsync<T>(Uri url, JsonTypeInfo<T> type, CancellationToken cancellation) where T : class
     {
         Requested.Add(url.AbsoluteUri);
