@@ -118,6 +118,7 @@ import Testing
     @Test func testTheBuildAndTheSlotCountComeFromProps() {
         let info = translate(slots("llamacpp-idle.slots.json"), props(), nil).info!
         #expect(info.version == "b1-d493f84")
+        #expect(translate(slots("llamacpp-idle.slots.json"), props(), nil).engineVersion == "b1-d493f84")   // build_info in llamacpp-props.json
         #expect(info.batchSlots == 1)
         #expect(info.kvFormat == nil)
         #expect(info.totalPromptTokens == nil)              // no metrics: no totals

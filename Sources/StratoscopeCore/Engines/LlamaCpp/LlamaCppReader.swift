@@ -268,6 +268,6 @@ public final class LlamaCppReader {
         return EngineSnapshot(engine: Self.brand, model: model, status: status,
                               queued: Int(Swift.max(0, Swift.min(metrics?.requestsDeferred ?? 0, 1e9))),
                               live: live, recent: [], context: ContextUsage(used: used, max: max, compactAt: compactAt),
-                              links: links, info: hasInfo ? info : nil, slots: batchSlots)
+                              links: links, engineVersion: props?.buildInfo, info: hasInfo ? info : nil, slots: batchSlots)
     }
 }
