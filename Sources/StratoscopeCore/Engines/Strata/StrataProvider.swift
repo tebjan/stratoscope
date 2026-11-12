@@ -14,7 +14,9 @@ public final class StrataProvider: EngineProvider {
     private let http = JSONFetcher()
     private let cacheLog = StrataCacheLog()
     private let basalt = BasaltReader()      // for the Basalt engines that answer at the same addresses
-    private var proxy = "http://127.0.0.1:8095"
+    private let llama = LlamaCppReader()     // for llama-server, whose /metrics (with --metrics) is Prometheus text and which names itself in /props
+    private let custom = CustomReader()      // for the custom server, whose /metrics is Prometheus text
+    private var proxy ="http://127.0.0.1:8095"
     private var lastRead: (Double, Date)?
     private let clients: ClientConfigReader?
 
@@ -36,7 +38,14 @@ public final class StrataProvider: EngineProvider {
                 completion(self.placeholder(model: name, status: .loading("State: \(state)"))); return
             }
             self.http.get(self.proxy + "/metrics") { m in
-                guard let m = m else { completion(self.placeholder(model: name, status: .loading("Server not responding"))); return }
+                guard let m = m else {
+                    // No JSON: llama-server and the custom server send Prometheus text. Read through the router's /upstream/<model>/, like the Windows app.
+                    let id = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+                    self.readText(base: router + "/upstream/" + id, routedModel: name) {
+                        completion($0 ?? self.placeholder(model: name, status: .loading("Server not responding")))
+                    }
+                    return
+                }
                 if BasaltReader.recognises(m) { self.readBasalt(m, model: name, completion); return }
                 completion(self.snapshot(from: m, model: name))
             }
@@ -47,7 +56,12 @@ public final class StrataProvider: EngineProvider {
     private func pollDirect(_ completion: @escaping (EngineSnapshot?) -> Void) {
         let base = config.url ?? "http://127.0.0.1:8095"
         http.get(base + "/metrics") { [weak self] m in
-            guard let self = self, let m = m, let eng = m["engine"] as? [String: Any] else { completion(nil); return }
+            guard let self = self else { return }
+            guard let m = m, let eng = m["engine"] as? [String: Any] else {
+                // Not a Strata or Basalt document: llama-server (checked by its /props) and the custom server answer /metrics in text. Hidden when it is none of these.
+                self.readText(base: base, routedModel: nil, completion)
+                return
+            }
             self.proxy = base
             if BasaltReader.recognises(m) { self.readBasalt(m, model: eng["model"] as? String ?? "Basalt", completion); return }
             completion(self.snapshot(from: m, model: eng["model"] as? String ?? "Strata"))
@@ -59,15 +73,35 @@ public final class StrataProvider: EngineProvider {
         basalt.read(m, base: proxy, model: model, compactAt: compactAt(model: model), links: links(engine: "Basalt"), completion)
     }
 
+    /// The JSON reads failed: ask whether llama-server sits at `base` (its `/props` names it), else whether the custom server does (nil when
+    /// none does). `routedModel` is the router's name for the model; nil without a router.
+    private func readText(base: String, routedModel: String?, _ completion: @escaping (EngineSnapshot?) -> Void) {
+        let model = routedModel ?? CustomReader.brand
+        llama.read(base: base, model: routedModel, compactAt: compactAt(model: routedModel ?? LlamaCppReader.brand),
+                   links: links(engine: LlamaCppReader.brand, base: base)) { [weak self] outcome in
+            guard let self = self else { return }
+            switch outcome {
+            case .read(let snapshot): completion(snapshot)
+            case .notLlama: self.readCustom(base: base, model: model, completion)
+            }
+        }
+    }
+
+    /// The JSON reads failed: ask whether the custom server sits at `base` (nil when none does).
+    private func readCustom(base: String, model: String, _ completion: @escaping (EngineSnapshot?) -> Void) {
+        custom.read(base: base, model: model, compactAt: compactAt(model: model), links: links(engine: CustomReader.brand), completion)
+    }
+
     private func placeholder(model: String, status: EngineStatus) -> EngineSnapshot {
         EngineSnapshot(engine: "Strata", model: model, status: status, context: ContextUsage(max: 0), links: links())
     }
 
     // MARK: Translation
 
-    private func links(engine: String = "Strata") -> [EngineLink] {
+    /// `base`: the engine's own address when it is not `proxy` (llama-server is read before `proxy` is set).
+    private func links(engine: String = "Strata", base: String? = nil) -> [EngineLink] {
         var out: [EngineLink] = []
-        if let u = URL(string: proxy + "/") { out.append(EngineLink(title: "Open \(engine) UI", url: u)) }
+        if let u = URL(string: (base ?? proxy) + "/") { out.append(EngineLink(title: "Open \(engine) UI", url: u)) }
         if let r = config.router, let u = URL(string: r + "/ui/") { out.append(EngineLink(title: "Open router UI", url: u)) }
         if let w = config.webui, let u = URL(string: w) { out.append(EngineLink(title: "Open chat UI", url: u)) }
         if let l = currentLogPath() { out.append(EngineLink(title: "Open log", url: URL(fileURLWithPath: l))) }

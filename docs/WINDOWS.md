@@ -26,6 +26,7 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 
 - **Readout**, one item per server: a glyph and the speed (`[bar] 247 t/s`, `[dot] 26 t/s`). While nothing runs, only the glyph.
 - **Glyph**: bar while a prompt is read, colored like on the Mac by how much came from the cache (green, yellow, orange, gray); blue dot while it writes; green dot when ready; grey ring when offline or no model; dotted ring while loading; red mark on an error.
+- **Custom engine**: shows "running" only, until it reports per-request phases (see the to-do in ops `tasks/todo.md`, section "Custom engine: per-request phase for Stratoscope"). No reading, no writing, no speed.
 - **Speed**: plain digits, `10k` from 9,999.5 t/s. With parallel requests it is the total.
 - **Position**: centred in the free gap of the taskbar. It moves only when the taskbar geometry changes, then once.
 - **Panel**: the Mac menu, with tabs for several servers. Two or more parallel requests show a sum bar with one smaller bar per request.
@@ -39,7 +40,7 @@ Open `%LOCALAPPDATA%\Stratoscope\config.json` from the menu (Settings > Open set
 
 | Variable | Key | Does |
 |---|---|---|
-| `STRATOSCOPE_ENGINE` | `engine` | `strata` (default: asks the engine whether it is a Strata, a Basalt or a llama.cpp), `basalt` (Basalt only), `llamacpp` (llama-server only) or `demo` |
+| `STRATOSCOPE_ENGINE` | `engine` | `strata` (default: asks the engine whether it is a Strata, a Basalt, a llama.cpp or a custom 27B server), `basalt` (Basalt only), `llamacpp` (llama-server only), `custom` (custom 27B server only) or `demo` |
 | `STRATOSCOPE_URL` | `url` | engine address, default `http://127.0.0.1:8095` |
 | `STRATOSCOPE_ROUTER_URL` | `router` | router in front of the engine, `none` turns it off |
 | `STRATOSCOPE_LOG` | `log` | engine log file; no default on Windows |

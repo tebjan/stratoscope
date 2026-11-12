@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Stratoscope.Core.Engines.Basalt;
 using Stratoscope.Core.Engines.LlamaCpp;
+using Stratoscope.Core.Engines.Custom;
 using Stratoscope.Core.Engines.Strata;
 
 namespace Stratoscope.Core.Engines;
@@ -19,11 +20,12 @@ public sealed record EngineHealth
 /// </summary>
 public sealed class AutoEngineProvider : RoutedProvider
 {
-    private enum Kind { Strata, Basalt, LlamaCpp }
+    private enum Kind { Strata, Basalt, LlamaCpp, Custom }
 
     private readonly StrataProvider strata;
     private readonly BasaltProvider basalt;
     private readonly LlamaCppProvider llamaCpp;
+    private readonly CustomProvider custom;
     private readonly Dictionary<string, Kind> kinds = new();
     private RoutedProvider current;
 
@@ -33,6 +35,7 @@ public sealed class AutoEngineProvider : RoutedProvider
         strata = new StrataProvider(config, http, clock, clients);
         basalt = new BasaltProvider(config, http, clients);
         llamaCpp = new LlamaCppProvider(config, http, clients);
+        custom = new CustomProvider(config, http, clients);
         current = strata;
     }
 
@@ -54,7 +57,15 @@ public sealed class AutoEngineProvider : RoutedProvider
                     // Unnamed: a llama-server, or an engine that does not name itself. A refused or timed-out probe says nothing, so it is asked again.
                     var props = await http.GetAsync(Endpoints.Join(engineBase, "props"), Json.LlamaPropsType, cancellation).ConfigureAwait(false);
                     if (props.Ok && props.Body!.IsLlamaServer) kind = Kind.LlamaCpp;
-                    else cacheable = props.Ok || props.Failure is FetchFailure.Status or FetchFailure.NotJson;
+                    else
+                    {
+                        cacheable = props.Ok || props.Failure is FetchFailure.Status or FetchFailure.NotJson;
+                        // Not a llama-server: the custom 27B server answers /metrics in Prometheus text with q27: series, where Strata sends JSON. A GET on an existing
+                        // endpoint, which does not wake the engine.
+                        var metrics = await http.GetTextAsync(Endpoints.Join(engineBase, "metrics"), cancellation).ConfigureAwait(false);
+                        if (metrics.Ok && CustomMetrics.Parse(metrics.Body) != null) { kind = Kind.Custom; cacheable = true; }
+                        else if (!metrics.Ok && metrics.Failure is not FetchFailure.Status) cacheable = false;
+                    }
                 }
             }
             if (cacheable)
@@ -63,7 +74,7 @@ public sealed class AutoEngineProvider : RoutedProvider
                 kinds[engineBase] = kind;
             }
         }
-        current = kind switch { Kind.Basalt => basalt, Kind.LlamaCpp => llamaCpp, _ => strata };
+        current = kind switch { Kind.Basalt => basalt, Kind.LlamaCpp => llamaCpp, Kind.Custom => custom, _ => strata };
         var read = await current.ReadAsync(engineBase, routedId, cancellation).ConfigureAwait(false);
         if (!read.Ok) kinds.Remove(engineBase);     // the engine behind this address may have been replaced: ask again next time
         return read;

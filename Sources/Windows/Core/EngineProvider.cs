@@ -20,7 +20,7 @@ public interface IEngineProvider
 
 public static class EngineRegistry
 {
-    public static readonly string[] Available = { Engines.Strata.StrataProvider.Id, Engines.Basalt.BasaltProvider.Id, Engines.LlamaCpp.LlamaCppProvider.Id, Engines.Demo.DemoProvider.Id };
+    public static readonly string[] Available = { Engines.Strata.StrataProvider.Id, Engines.Basalt.BasaltProvider.Id, Engines.LlamaCpp.LlamaCppProvider.Id, Engines.Custom.CustomProvider.Id, Engines.Demo.DemoProvider.Id };
 
     /// <summary>
     /// "demo" is the demo engine, "basalt" reads Basalt only, "llamacpp" reads llama-server only. Anything else, "strata" (the default) included,
@@ -36,6 +36,8 @@ public static class EngineRegistry
                 return new Engines.Basalt.BasaltProvider(config, source, ClientsFor(config));
             case Engines.LlamaCpp.LlamaCppProvider.Id:
                 return new Engines.LlamaCpp.LlamaCppProvider(config, source, ClientsFor(config));
+            case Engines.Custom.CustomProvider.Id:
+                return new Engines.Custom.CustomProvider(config, source, ClientsFor(config));
             default:
                 return new Engines.AutoEngineProvider(config, source, clients: ClientsFor(config));
         }

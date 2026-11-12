@@ -37,6 +37,7 @@ final class Panels {
         case .prefill: return "Reading"
         case .thinking: return "Thinking"
         case .decode: return "Writing"
+        case .running: return "running"
         }
     }
 
@@ -46,6 +47,7 @@ final class Panels {
         case .idle: return .systemGreen
         case .prefill: return .systemOrange
         case .thinking, .decode: return .systemBlue
+        case .running: return .systemGray
         }
     }
 
@@ -61,20 +63,28 @@ final class Panels {
         if case .loading(let why) = s.status { text(why, x: pad, y: 44, size: 12); return }
 
         if let l = s.live, s.isReading {
-            text("Prefill  \(l.percent) %", x: pad, y: 40, size: 13, bold: true)
-            text(l.prefillTokensPerSecond != nil ? "\(Fmt.number(l.prefillTokensPerSecond)) t/s" : "0 t/s", x: 0, y: 40, size: 13, bold: true, right: menuWidth - pad)
-            bar(pad, 60, inner, 9, l.promptTotal > 0 ? l.promptRead / l.promptTotal : 0, .systemOrange)
+            text("Prefill  \(l.percent.map { "\($0)" } ?? "–") %", x: pad, y: 40, size: 13, bold: true)
+            text("\(l.prefillTokensPerSecond != nil ? Fmt.number(l.prefillTokensPerSecond) : "–") t/s", x: 0, y: 40, size: 13, bold: true, right: menuWidth - pad)
+            bar(pad, 60, inner, 9, (l.promptTotal ?? 0) > 0 ? (l.promptRead ?? 0) / (l.promptTotal ?? 1) : 0, .systemOrange)
             var line = "\(Fmt.number(l.promptRead)) of \(Fmt.number(l.promptTotal)) tokens"
-            if let sp = l.prefillTokensPerSecond, sp > 0, l.promptTotal > l.promptRead { line += " · \(Fmt.duration((l.promptTotal - l.promptRead) / sp)) left" }
+            if let sp = l.prefillTokensPerSecond, sp > 0, let total = l.promptTotal, let read = l.promptRead, total > read { line += " · \(Fmt.duration((total - read) / sp)) left" }
             text(line, x: pad, y: 73, size: 11)
             text("\(Fmt.number(l.elapsedSeconds)) s", x: 0, y: 73, size: 11, right: menuWidth - pad)
-            let hit = CacheHit.classify(prompt: l.promptTotal, reused: l.reusedEstimate)
-            dot(pad, 92, hit.color)
-            text("Cache \(hit.label): ≈ \(Fmt.number((l.reusedEstimate / 100).rounded() * 100)) of \(Fmt.number(l.promptTotal)) tokens", x: pad + 16, y: 90, size: 11, bold: true)
+            if let total = l.promptTotal, let reused = l.reusedEstimate {
+                let hit = CacheHit.classify(prompt: total, reused: reused)
+                dot(pad, 92, hit.color)
+                text("Cache \(hit.label): ≈ \(Fmt.number((reused / 100).rounded() * 100)) of \(Fmt.number(total)) tokens", x: pad + 16, y: 90, size: 11, bold: true)
+            } else {
+                text("Cache –", x: pad, y: 90, size: 11, bold: true)
+            }
+        } else if let l = s.live, s.status == .running {
+            // The engine does not say whether the requests read or write: no phase, no speed.
+            text("Running", x: pad, y: 40, size: 13, bold: true)
+            text(l.running.map { "\($0) requests" } ?? "–", x: 0, y: 40, size: 13, bold: true, right: menuWidth - pad)
         } else if let l = s.live {
             text("Decode", x: pad, y: 40, size: 13, bold: true)
-            text("\(l.decodeTokensPerSecond != nil ? Fmt.number(l.decodeTokensPerSecond, 1) : "0") t/s", x: 0, y: 40, size: 13, bold: true, right: menuWidth - pad)
-            bar(pad, 60, inner, 9, l.generated / max(l.maxTokens, 1), .systemBlue)
+            text("\(l.decodeTokensPerSecond != nil ? Fmt.number(l.decodeTokensPerSecond, 1) : "–") t/s", x: 0, y: 40, size: 13, bold: true, right: menuWidth - pad)
+            bar(pad, 60, inner, 9, (l.generated ?? 0) / max(l.maxTokens ?? 1, 1), .systemBlue)
             text("\(Fmt.number(l.generated)) of at most \(Fmt.number(l.maxTokens)) tokens", x: pad, y: 73, size: 11)
             text("\(Fmt.number(l.elapsedSeconds)) s", x: 0, y: 73, size: 11, right: menuWidth - pad)
         } else if let r = s.recent.first {
@@ -140,11 +150,11 @@ final class Panels {
         row(80, "CPU", "\(Fmt.number(sys.cpuPercent ?? 0)) %", (sys.cpuPercent ?? 0) / 100, .systemIndigo)
     }
 
-    // MARK: Prompt cache
+    // MARK: Conversation cache
 
     func paintCacheHead() {
         guard let s = snap, let c = s.cache else { return }
-        text("Prompt cache", x: pad, y: 8, size: 12, bold: true)
+        text("Conversation cache", x: pad, y: 8, size: 12, bold: true)
         text("\(Fmt.gib(c.usedBytes)) of \(Fmt.gib(c.budgetBytes)) GiB", x: 0, y: 8, size: 12, right: menuWidth - pad)
         bar(pad, 28, menuWidth - 2 * pad, 9, c.budgetBytes > 0 ? c.usedBytes / c.budgetBytes : 0,
             c.usedBytes / max(c.budgetBytes, 1) > 0.9 ? .systemRed : .systemMint)

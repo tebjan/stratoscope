@@ -9,6 +9,8 @@ public enum EngineStatus
     /// <summary>The model is starting; <see cref="EngineSnapshot.LoadingReason"/> says why we are waiting.</summary>
     Loading,
     Idle,
+    /// <summary>Requests run, and the engine reports neither reading nor writing (no evidence of the phase, no speed).</summary>
+    Running,
     /// <summary>Reading the prompt.</summary>
     Prefill,
     /// <summary>Generating reasoning tokens.</summary>
@@ -103,7 +105,7 @@ public sealed class SystemStats
     public double? GpuMemoryTotalBytes { get; set; }
 }
 
-/// <summary>One parked conversation in the engine's prompt cache.</summary>
+/// <summary>One parked conversation in the engine's conversation cache.</summary>
 public sealed class CacheEntry
 {
     public CacheEntry(int id, long tokens, double bytes, DateTime? parkedAt = null)
@@ -159,6 +161,14 @@ public sealed class EngineInfo
     public double? BatchSlots { get; set; }
     /// <summary>Hit rate (0..1) of the newest finished request.</summary>
     public double? ExpertHitRate { get; set; }
+    /// <summary>KV cache pages not in use (custom 27B server), or null.</summary>
+    public double? KvFreePages { get; set; }
+    /// <summary>KV pages that only a prefix cache checkpoint holds (custom 27B server), or null.</summary>
+    public double? KvCheckpointOnlyPages { get; set; }
+    /// <summary>Checkpoints in the prefix cache (custom 27B server), or null.</summary>
+    public double? PrefixCheckpoints { get; set; }
+    /// <summary>Why the scheduler holds a waiting request back: "kv", "speed", or "none" when it reports no block. Null when unknown.</summary>
+    public string? AdmissionBlocked { get; set; }
 }
 
 /// <summary>One slot of a batching engine.</summary>
@@ -224,7 +234,7 @@ public sealed class EngineSnapshot
     /// <summary>False while there is nothing to show numbers for: no model, or the engine is not responding.</summary>
     public bool HasModel => Status != EngineStatus.NoModel;
     public bool IsError => Status == EngineStatus.Error;
-    public bool IsBusy => Status == EngineStatus.Prefill || Status == EngineStatus.Thinking || Status == EngineStatus.Decode;
+    public bool IsBusy => Status == EngineStatus.Running || Status == EngineStatus.Prefill || Status == EngineStatus.Thinking || Status == EngineStatus.Decode;
     public bool IsReading => Status == EngineStatus.Prefill;
 
     /// <summary>A hash of everything the panel, the readout and the icon show. Two polls with the same hash look the same.</summary>
@@ -251,7 +261,7 @@ public sealed class EngineSnapshot
             foreach (var e in c.Entries) { h.Add(e.Id); h.Add(e.Tokens); h.Add(e.ParkedAt); }
         }
         if (Totals is { } t) { h.Add(t.Requests); h.Add(t.OutputTokens); h.Add(t.PromptTokens); h.Add(t.ReusedTokens); }
-        if (Info is { } i) { h.Add(i.Version); h.Add(i.BatchSlots); h.Add(i.ExpertHitRate); }
+        if (Info is { } i) { h.Add(i.Version); h.Add(i.BatchSlots); h.Add(i.ExpertHitRate); h.Add(i.KvFreePages); h.Add(i.KvCheckpointOnlyPages); h.Add(i.PrefixCheckpoints); h.Add(i.AdmissionBlocked); }
         if (Slots != null) foreach (var s2 in Slots) { h.Add(s2.State); h.Add(s2.HeldTokens); h.Add(s2.PromptRead); h.Add(s2.Generated); h.Add(s2.TokensPerSecond); h.Add(s2.ElapsedSeconds is double e2 ? Math.Floor(e2) : (double?)null); h.Add(s2.MaxTokens); }
         return h.ToHashCode();
     }

@@ -6,6 +6,7 @@ using System.Text.Json.Serialization.Metadata;
 using Stratoscope.Core.Engines;
 using Stratoscope.Core.Engines.Basalt;
 using Stratoscope.Core.Engines.LlamaCpp;
+using Stratoscope.Core.Engines.Custom;
 
 namespace Stratoscope.Core;
 
@@ -42,6 +43,7 @@ public static class Json
     /// <summary>llama-server's <c>/slots</c> is a top-level array.</summary>
     public static JsonTypeInfo<List<LlamaSlotDto?>> LlamaSlotsType => StratoscopeJson.Default.ListLlamaSlotDto;
     public static JsonTypeInfo<LlamaProps> LlamaPropsType => StratoscopeJson.Default.LlamaProps;
+    public static JsonTypeInfo<CustomHealth> CustomHealthType => StratoscopeJson.Default.CustomHealth;
 }
 
 /// <summary>The generated serializer metadata for every document the app reads.</summary>
@@ -57,6 +59,7 @@ public static class Json
 [JsonSerializable(typeof(EngineHealth))]
 [JsonSerializable(typeof(List<LlamaSlotDto?>))]
 [JsonSerializable(typeof(LlamaProps))]
+[JsonSerializable(typeof(CustomHealth))]
 internal sealed partial class StratoscopeJson : JsonSerializerContext;
 
 /// <summary>A number into a <c>double?</c>. Text, booleans, objects, arrays and numbers a double cannot hold give null.</summary>

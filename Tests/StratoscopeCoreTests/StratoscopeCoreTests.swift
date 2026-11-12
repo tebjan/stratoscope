@@ -329,7 +329,7 @@ import Testing
     }
 
     @Test func testRegistryKnowsBothEngines() {
-        #expect(EngineRegistry.available == ["strata", "demo"])
+        #expect(EngineRegistry.available == ["strata", "llamacpp", "custom", "demo"])
         var c = Config(); c.engine = "demo"
         #expect(EngineRegistry.make(c) is DemoProvider)
     }

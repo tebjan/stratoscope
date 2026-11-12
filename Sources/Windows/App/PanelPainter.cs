@@ -50,7 +50,7 @@ internal sealed class PanelModel
 }
 
 /// <summary>What a tooltip of the panel is about.</summary>
-internal enum TipKind { Server, Request, CacheResult, Context, ContextRequest, Ram, Gpu, Vram, Cpu, PromptCache, CacheSlot, BatchSlot, Engine, Totals }
+internal enum TipKind { Server, Request, CacheResult, Context, ContextRequest, Ram, Gpu, Vram, Cpu, ConversationCache, CacheSlot, BatchSlot, Engine, Totals }
 
 /// <summary>An area of the panel with a data tooltip. The text is built on hover (<see cref="PanelPainter.TipText"/>), never while painting.</summary>
 internal readonly record struct TipArea(RectangleF Rect, TipKind Kind, int Index);
@@ -157,7 +157,7 @@ internal sealed class PanelPainter
             case TipKind.Gpu: return s.System is null ? null : Tooltips.Gpu(s.System);
             case TipKind.Vram: return s.System is null ? null : Tooltips.Vram(s.System);
             case TipKind.Cpu: return s.System is null ? null : Tooltips.Cpu(s.System);
-            case TipKind.PromptCache: return s.Cache is null ? null : Tooltips.PromptCache(s.Cache);
+            case TipKind.ConversationCache: return s.Cache is null ? null : Tooltips.ConversationCache(s.Cache);
             case TipKind.CacheSlot: return s.Cache is null ? null : Tooltips.CacheSlot(s.Cache, area.Index, model.Now);
             case TipKind.BatchSlot: return s.Slots != null && area.Index < s.Slots.Count ? Tooltips.BatchSlot(s.Slots[area.Index], s.Context) : null;
             case TipKind.Totals: return s.Totals is null ? null : Tooltips.Totals(s.Totals, model.Now);
@@ -261,7 +261,7 @@ internal sealed class PanelPainter
             var groups = new List<(string, Func<float, float>)>();
             if (s.Recent.Count > 0) groups.Add(("Speed", yy => Speed(s, yy)));
             if (s.System != null && HasSystemRows(s.System)) groups.Add(("System", yy => SystemBlock(s.System, yy)));
-            if (s.Cache != null) groups.Add(("Prompt cache", yy => CacheBlock(s, yy)));
+            if (s.Cache != null) groups.Add(("Conversation cache", yy => CacheBlock(s, yy)));
             if (s.Info != null && HasEngineLines(s.Info, s)) groups.Add(("Engine", yy => EngineBlock(s, yy)));
             if (s.Slots != null && s.Slots.Count > 0) groups.Add(("Batch slots", yy => SlotBlock(s, yy)));
             if (s.Totals != null) groups.Add(("Totals", yy => TotalsBlock(s.Totals, yy)));
@@ -475,6 +475,12 @@ internal sealed class PanelPainter
                 T(hit.Label() + "  ≈ " + Fmt.Number(Math.Round(ru / 100) * 100) + " / " + Fmt.Number(pt), Pad + 16, y + 86, Body, true);
             }
         }
+        else if (l != null && s.Status == EngineStatus.Running)
+        {
+            // Requests run; the engine does not say whether it reads or writes, so no phase, speed or bar is drawn.
+            T("Running", Pad, y + 40, Body, true);
+            T(Fmt.Missing, 0, y + 40, Body, true, null, Width - Pad);
+        }
         else if (l != null)
         {
             T("Decode", Pad, y + 40, Body, true);
@@ -623,18 +629,18 @@ internal sealed class PanelPainter
         return row - y - 4;
     }
 
-    // MARK: Prompt cache
+    // MARK: Conversation cache
 
     private float CacheBlock(EngineSnapshot s, float y)
     {
         var c = s.Cache!;
         var inner = Width - 2 * Pad;
-        T("Prompt cache", Pad, y + 8, Body, true);
+        T("Conversation cache", Pad, y + 8, Body, true);
         T(Fmt.Gib(c.UsedBytes) + " / " + Fmt.Gib(c.BudgetBytes) + " GiB", 0, y + 8, Body, false, null, Width - Pad);
         var frac = c.BudgetBytes > 0 && c.UsedBytes.HasValue ? c.UsedBytes.Value / c.BudgetBytes.Value : 0;
         Bar(Pad, y + 28, inner, 9, frac, frac > 0.9 ? pal.Red : pal.Mint);
         T((c.Parked.HasValue ? c.Parked.ToString() : Fmt.Missing) + " / " + (c.Slots.HasValue ? c.Slots.ToString() : Fmt.Missing), Pad, y + 42, Body);
-        AddTip(Pad, y + 4, inner, 54, TipKind.PromptCache);
+        AddTip(Pad, y + 4, inner, 54, TipKind.ConversationCache);
         var rate = c.Requests > 0 && c.RequestsReused.HasValue ? Fmt.Number(c.RequestsReused.Value / c.Requests.Value * 100) : Fmt.Missing;
         T("Hit rate " + rate + " % · evicted " + Fmt.Number(c.Evictions), 0, y + 42, Body, false, null, Width - Pad);
         var recent = s.Recent.Take(12).Reverse().ToList();
@@ -698,6 +704,9 @@ internal sealed class PanelPainter
         if (e.ExpertCacheMib.HasValue) parts.Add("expert cache " + Fmt.Number(e.ExpertCacheMib.Value / 1024, 1) + " GiB");
         if (e.BatchSlots.HasValue && e.BatchSlots.Value > 1) parts.Add(Fmt.Number(e.BatchSlots) + " parallel");      // batch_slots: requests that run together (not the prompt cache slots)
         if (e.ExpertHitRate.HasValue) parts.Add("expert hit " + Fmt.Number(e.ExpertHitRate.Value * 100) + " %");
+        if (e.KvFreePages.HasValue) parts.Add(Fmt.Number(e.KvFreePages) + " KV pages free");
+        if (e.PrefixCheckpoints.HasValue) parts.Add(Fmt.Number(e.PrefixCheckpoints) + " prefix " + (e.PrefixCheckpoints == 1 ? "checkpoint" : "checkpoints"));
+        if (e.AdmissionBlocked is "kv" or "speed") parts.Add("admission held by " + e.AdmissionBlocked);
         return parts;
     }
 

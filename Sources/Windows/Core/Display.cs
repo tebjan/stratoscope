@@ -12,6 +12,8 @@ public enum ServerState
     /// <summary>The router answers but the engine behind it does not, or the app hit an unexpected error.</summary>
     Error,
     Ready,
+    /// <summary>Requests run and the engine does not say whether it reads or writes.</summary>
+    Running,
     Reading,
     Thinking,
     Writing,
@@ -50,6 +52,7 @@ public static class Display
             case EngineStatus.Loading: return ServerState.Loading;
             case EngineStatus.NoModel: return ServerState.NoModel;
             case EngineStatus.Error: return ServerState.Error;
+            case EngineStatus.Running: return ServerState.Running;
             case EngineStatus.Prefill: return ServerState.Reading;
             case EngineStatus.Thinking: return ServerState.Thinking;
             case EngineStatus.Decode: return ServerState.Writing;
@@ -66,6 +69,7 @@ public static class Display
             case ServerState.Loading: return "Loading";
             case ServerState.NoModel: return "No model";
             case ServerState.Error: return "Error";
+            case ServerState.Running: return "Running";
             case ServerState.Reading: return "Reading";
             case ServerState.Thinking: return "Thinking";
             case ServerState.Writing: return "Writing";
@@ -83,6 +87,7 @@ public static class Display
             case EngineStatus.NoModel: return "No model";
             case EngineStatus.Error: return "Error";
             case EngineStatus.Idle: return "Ready";
+            case EngineStatus.Running: return "Running" + queue;
             case EngineStatus.Prefill: return Fmt.Speed(s.Live?.PrefillTokensPerSecond) + queue;
             default: return Fmt.Speed(s.Live?.DecodeTokensPerSecond) + queue;
         }
@@ -105,6 +110,7 @@ public static class Display
         var queue = s.Queued > 0 ? " +" + s.Queued : "";
         switch (s.Status)
         {
+            case EngineStatus.Running: return "Running" + queue;
             case EngineStatus.Prefill: return "Reading " + Fmt.Number(s.Live?.PrefillTokensPerSecond) + " t/s" + queue;
             case EngineStatus.Thinking: return "Thinking " + Fmt.Number(s.Live?.DecodeTokensPerSecond) + " t/s" + queue;
             case EngineStatus.Decode: return "Writing " + Fmt.Number(s.Live?.DecodeTokensPerSecond) + " t/s" + queue;
@@ -140,6 +146,7 @@ public static class Display
             case EngineStatus.Prefill:
                 var pct = s.Live?.Percent;
                 return name + ", reading the prompt" + (pct.HasValue ? " " + pct + " percent" : "") + (s.Live?.PrefillTokensPerSecond.HasValue == true ? ", " + Fmt.Number(s.Live!.PrefillTokensPerSecond) + " tokens per second" : "");
+            case EngineStatus.Running: return name + ", running";
             case EngineStatus.Thinking: return name + ", thinking" + SpokenSpeed(s);
             case EngineStatus.Decode: return name + ", writing" + SpokenSpeed(s);
             case EngineStatus.Loading: return name + ", loading the model";

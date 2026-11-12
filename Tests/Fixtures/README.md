@@ -33,4 +33,4 @@ written once, in [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md#shared-behavi
 | `batch_slots` | number of entries in `live.slots` |
 | `has_system`, `has_totals` | whether those sections are drawn |
 
-The C# tests in `Tests/StratoscopeWindowsTests` read these files. The Swift tests do not use them yet.
+The C# tests in `Tests/StratoscopeWindowsTests` read these files. The Swift tests read the Basalt files through the `Fixture` loader in `Tests/StratoscopeCoreTests/BasaltFixtureTests.swift`; the Strata files are not read by them yet.

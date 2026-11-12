@@ -139,13 +139,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .idle: return "Ready"
         case .prefill: return Fmt.speed(s.live?.prefillTokensPerSecond) + (s.queued > 0 ? " +\(s.queued)" : "")
         case .thinking, .decode: return Fmt.speed(s.live?.decodeTokensPerSecond) + (s.queued > 0 ? " +\(s.queued)" : "")
+        case .running: return "running" + (s.queued > 0 ? " +\(s.queued)" : "")
         }
     }
 
     /// While a prompt is read: (fraction, cache quality) for the little bar in the menu bar.
     private func progress(_ s: EngineSnapshot) -> (Double, CacheHit)? {
-        guard s.isReading, let l = s.live else { return nil }
-        return (Double(l.percent) / 100, CacheHit.classify(prompt: l.promptTotal, reused: l.reusedEstimate))
+        guard s.isReading, let l = s.live, let percent = l.percent else { return nil }
+        return (Double(percent) / 100, CacheHit.classify(prompt: l.promptTotal ?? 0, reused: l.reusedEstimate ?? 0))
     }
 
     private func updateMenuBarItem(_ s: EngineSnapshot) {
@@ -201,6 +202,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
         let sub = NSMenu(title: "Settings")
+        for problem in config.problems {
+            let note = NSMenuItem(title: problem, action: nil, keyEquivalent: ""); note.isEnabled = false
+            sub.addItem(note)
+        }
+        if !config.problems.isEmpty { sub.addItem(.separator()) }
         let login = NSMenuItem(title: "Start at login", action: #selector(toggleLoginItem), keyEquivalent: "")
         login.target = self; loginItem = login
         sub.addItem(login)
@@ -253,11 +259,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openSettingsFile() {
+        Config.writeStarterIfMissing()
         let path = Config.settingsPath()
-        if !FileManager.default.fileExists(atPath: path) {
-            try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-            try? "{}\n".write(toFile: path, atomically: true, encoding: .utf8)
-        }
         let url = URL(fileURLWithPath: path)
         if !NSWorkspace.shared.open(url) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
     }

@@ -18,6 +18,17 @@ public final class JSONFetcher {
         }.resume()
     }
 
+    /// Calls `done` on the main queue with the HTTP status and the body as text (the custom server's Prometheus `/metrics` and its `/health`).
+    /// Both are nil when nothing answered; the body is nil when it is not UTF-8.
+    public func getText(_ url: String, _ done: @escaping (Int?, String?) -> Void) {
+        guard let u = URL(string: url) else { done(nil, nil); return }
+        session.dataTask(with: u) { data, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode
+            let body = data.flatMap { String(data: $0, encoding: .utf8) }
+            DispatchQueue.main.async { done(status, body) }
+        }.resume()
+    }
+
     /// Like `get`, for an answer that is a top-level array of objects (Basalt's `/slots`).
     public func getArray(_ url: String, _ done: @escaping ([[String: Any]]?) -> Void) {
         guard let u = URL(string: url) else { done(nil); return }

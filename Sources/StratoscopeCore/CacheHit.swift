@@ -1,6 +1,6 @@
 import Foundation
 
-/// How well a request used the prompt cache. Drives the colour of the progress bar and the dots.
+/// How well a request used the conversation cache. Drives the colour of the progress bar and the dots.
 public enum CacheHit {
     case hit, partial, miss
     case small   // prompt too short for the cache to matter

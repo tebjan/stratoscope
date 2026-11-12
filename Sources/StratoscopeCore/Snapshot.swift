@@ -10,32 +10,40 @@ public enum EngineStatus: Equatable {
     case prefill           // reading the prompt
     case thinking          // generating reasoning tokens
     case decode            // generating the answer
+    case running           // requests run, but the engine does not say whether they read or write
 }
 
 /// The request that is running right now.
 public struct LiveRequest {
-    public var promptRead: Double
-    public var promptTotal: Double
-    public var generated: Double
-    public var maxTokens: Double
-    public var elapsedSeconds: Double
+    // nil means the engine did not report the value; it is drawn as "–", never as 0.
+    public var promptRead: Double?
+    public var promptTotal: Double?
+    public var generated: Double?
+    public var maxTokens: Double?
+    public var elapsedSeconds: Double?
     public var prefillTokensPerSecond: Double?
     public var decodeTokensPerSecond: Double?
     /// Prompt tokens served from cache, as far as the engine lets us tell.
-    public var reusedEstimate: Double
+    public var reusedEstimate: Double?
+    /// How many requests run together (nil for a single request or when the engine does not say). With several, the numbers above are totals.
+    public var running: Int?
 
-    public init(promptRead: Double = 0, promptTotal: Double = 0, generated: Double = 0, maxTokens: Double = 0,
-                elapsedSeconds: Double = 0, prefillTokensPerSecond: Double? = nil,
-                decodeTokensPerSecond: Double? = nil, reusedEstimate: Double = 0) {
+    public init(promptRead: Double? = nil, promptTotal: Double? = nil, generated: Double? = nil, maxTokens: Double? = nil,
+                elapsedSeconds: Double? = nil, prefillTokensPerSecond: Double? = nil,
+                decodeTokensPerSecond: Double? = nil, reusedEstimate: Double? = nil, running: Int? = nil) {
         self.promptRead = promptRead; self.promptTotal = promptTotal; self.generated = generated
         self.maxTokens = maxTokens; self.elapsedSeconds = elapsedSeconds
         self.prefillTokensPerSecond = prefillTokensPerSecond
         self.decodeTokensPerSecond = decodeTokensPerSecond; self.reusedEstimate = reusedEstimate
+        self.running = running
     }
 
-    /// Prefill progress, 0...100.
-    public var percent: Int {
-        promptTotal > 0 ? min(100, Int(promptRead / promptTotal * 100)) : 0
+    public var isParallel: Bool { (running ?? 0) > 1 }
+
+    /// Prefill progress, 0...100; nil when the read or the total is unknown.
+    public var percent: Int? {
+        guard let read = promptRead, let total = promptTotal, total > 0 else { return nil }
+        return min(100, Int(read / total * 100))
     }
 }
 
@@ -48,13 +56,21 @@ public struct RequestStats {
     public var outputTokens: Double
     public var decodeTokensPerSecond: Double?
     public var durationSeconds: Double
+    /// When the request finished, if the engine says.
+    public var finishedAt: Date?
+    /// How it ended ("stop", "length", ...), as the engine names it.
+    public var finish: String?
+    /// Expert-cache hit rate of this request, 0...1.
+    public var expertHitRate: Double?
 
     public init(promptTokens: Double = 0, reusedTokens: Double = 0, promptRead: Double = 0,
                 promptMilliseconds: Double = 0, outputTokens: Double = 0,
-                decodeTokensPerSecond: Double? = nil, durationSeconds: Double = 0) {
+                decodeTokensPerSecond: Double? = nil, durationSeconds: Double = 0,
+                finishedAt: Date? = nil, finish: String? = nil, expertHitRate: Double? = nil) {
         self.promptTokens = promptTokens; self.reusedTokens = reusedTokens; self.promptRead = promptRead
         self.promptMilliseconds = promptMilliseconds; self.outputTokens = outputTokens
         self.decodeTokensPerSecond = decodeTokensPerSecond; self.durationSeconds = durationSeconds
+        self.finishedAt = finishedAt; self.finish = finish; self.expertHitRate = expertHitRate
     }
 
     /// Size of the conversation after this request: the prompt plus the answer.
@@ -89,13 +105,93 @@ public struct SystemStats {
     public var ramTotalBytes: Double?
     public var gpuPercent: Double?
     public var cpuPercent: Double?
-    public init(ramUsedBytes: Double? = nil, ramTotalBytes: Double? = nil, gpuPercent: Double? = nil, cpuPercent: Double? = nil) {
+    public var gpuTemperatureCelsius: Double?
+    public var gpuPowerWatts: Double?
+    public var gpuPowerLimitWatts: Double?
+    public var gpuMemoryUsedBytes: Double?
+    public var gpuMemoryTotalBytes: Double?
+    public init(ramUsedBytes: Double? = nil, ramTotalBytes: Double? = nil, gpuPercent: Double? = nil, cpuPercent: Double? = nil,
+                gpuTemperatureCelsius: Double? = nil, gpuPowerWatts: Double? = nil, gpuPowerLimitWatts: Double? = nil,
+                gpuMemoryUsedBytes: Double? = nil, gpuMemoryTotalBytes: Double? = nil) {
         self.ramUsedBytes = ramUsedBytes; self.ramTotalBytes = ramTotalBytes
         self.gpuPercent = gpuPercent; self.cpuPercent = cpuPercent
+        self.gpuTemperatureCelsius = gpuTemperatureCelsius; self.gpuPowerWatts = gpuPowerWatts
+        self.gpuPowerLimitWatts = gpuPowerLimitWatts
+        self.gpuMemoryUsedBytes = gpuMemoryUsedBytes; self.gpuMemoryTotalBytes = gpuMemoryTotalBytes
     }
 }
 
-/// One parked conversation in the engine's prompt cache.
+/// Engine settings worth showing (optional; an engine that reports none gets no such section).
+public struct EngineInfo {
+    public var version: String?
+    public var kvFormat: String?
+    /// The draft window. Basalt sends a number; it is kept as text.
+    public var draftWindow: String?
+    public var expertCacheMib: Double?
+    public var batchSlots: Double?
+    /// Hit rate (0...1) of the newest finished request.
+    public var expertHitRate: Double?
+    /// The conversation cache's budget and slot count as the engine reports them. nil when the cache is switched off or unreported.
+    /// Not a `CacheStats`: Basalt does not say what is parked, and a `CacheStats` would show used and parked as 0.
+    public var conversationCacheBudgetBytes: Double?
+    public var conversationCacheSlots: Int?
+    /// The custom server's free KV pages, pages held only by prefix checkpoints, prefix cache checkpoints, and which admission block holds a
+    /// waiting request back ("kv", "speed" or "none"). Carried in the snapshot only; the Mac panel draws none of them.
+    public var kvFreePages: Double?
+    public var kvCheckpointOnlyPages: Double?
+    public var prefixCheckpoints: Double?
+    public var admissionBlocked: String?
+    /// llama.cpp's counters since the server started (`/metrics`, needs `--metrics`). Kept here and not in `Totals`, whose request count
+    /// is not optional and which llama-server does not report. Prompt tokens are those read plus those reused. Carried in the snapshot
+    /// only; the Mac panel draws none of them.
+    public var totalPromptTokens: Double?
+    public var totalReusedTokens: Double?
+    public var totalOutputTokens: Double?
+    public var totalPromptMilliseconds: Double?
+    public var totalDecodeMilliseconds: Double?
+    public init(version: String? = nil, kvFormat: String? = nil, draftWindow: String? = nil, expertCacheMib: Double? = nil,
+                batchSlots: Double? = nil, expertHitRate: Double? = nil,
+                conversationCacheBudgetBytes: Double? = nil, conversationCacheSlots: Int? = nil,
+                kvFreePages: Double? = nil, kvCheckpointOnlyPages: Double? = nil, prefixCheckpoints: Double? = nil,
+                admissionBlocked: String? = nil,
+                totalPromptTokens: Double? = nil, totalReusedTokens: Double? = nil, totalOutputTokens: Double? = nil,
+                totalPromptMilliseconds: Double? = nil, totalDecodeMilliseconds: Double? = nil) {
+        self.totalPromptTokens = totalPromptTokens; self.totalReusedTokens = totalReusedTokens; self.totalOutputTokens = totalOutputTokens
+        self.totalPromptMilliseconds = totalPromptMilliseconds; self.totalDecodeMilliseconds = totalDecodeMilliseconds
+        self.kvFreePages = kvFreePages; self.kvCheckpointOnlyPages = kvCheckpointOnlyPages
+        self.prefixCheckpoints = prefixCheckpoints; self.admissionBlocked = admissionBlocked
+        self.version = version; self.kvFormat = kvFormat; self.draftWindow = draftWindow; self.expertCacheMib = expertCacheMib
+        self.batchSlots = batchSlots; self.expertHitRate = expertHitRate
+        self.conversationCacheBudgetBytes = conversationCacheBudgetBytes; self.conversationCacheSlots = conversationCacheSlots
+    }
+}
+
+/// One slot of a batching engine: "reading", "decoding" or "idle".
+public struct BatchSlot {
+    public var index: Int
+    public var state: String?
+    /// What an idle slot still holds for a next turn.
+    public var heldTokens: Double?
+    // The running request of the slot (nil while idle).
+    public var promptTokens: Double?
+    public var promptRead: Double?
+    public var generated: Double?
+    public var tokensPerSecond: Double?
+    public var maxTokens: Double?
+    public init(index: Int, state: String? = nil, heldTokens: Double? = nil, promptTokens: Double? = nil, promptRead: Double? = nil,
+                generated: Double? = nil, tokensPerSecond: Double? = nil, maxTokens: Double? = nil) {
+        self.index = index; self.state = state; self.heldTokens = heldTokens; self.promptTokens = promptTokens
+        self.promptRead = promptRead; self.generated = generated; self.tokensPerSecond = tokensPerSecond; self.maxTokens = maxTokens
+    }
+
+    /// The tokens in the slot's working memory: what an idle slot holds, what a running one holds (its prompt and what it has written).
+    public var tokens: Double? { heldTokens ?? promptTokens.map { $0 + (generated ?? 0) } }
+    public var isActive: Bool { state != nil && state != "idle" }
+    public var isReading: Bool { state == "reading" }
+    public var isDecoding: Bool { state == "decoding" }
+}
+
+/// One parked conversation in the engine's conversation cache.
 public struct CacheEntry {
     public var id: Int
     public var tokens: Int
@@ -158,19 +254,27 @@ public struct EngineSnapshot {
     public var links: [EngineLink]
     /// The version the engine reports about itself, or nil when it does not say.
     public var engineVersion: String?
+    /// Engine settings (version, KV format, draft window, expert cache, conversation cache budget); nil when the engine reports none.
+    public var info: EngineInfo?
+    /// One entry per slot for an engine with several; nil otherwise.
+    public var slots: [BatchSlot]?
+    /// True when the router refused the last read (HTTP 429) and this is the previous read of the same engine, not a new one; nil otherwise.
+    public var routerLimited: Bool?
 
     public init(engine: String, model: String, status: EngineStatus = .idle, queued: Int = 0, live: LiveRequest? = nil,
                 recent: [RequestStats] = [], context: ContextUsage, system: SystemStats? = nil,
-                cache: CacheStats? = nil, totals: Totals? = nil, links: [EngineLink] = [], engineVersion: String? = nil) {
+                cache: CacheStats? = nil, totals: Totals? = nil, links: [EngineLink] = [], engineVersion: String? = nil,
+                info: EngineInfo? = nil, slots: [BatchSlot]? = nil) {
         self.engine = engine; self.model = model; self.status = status; self.queued = queued; self.live = live
         self.recent = recent; self.context = context; self.system = system; self.cache = cache
         self.totals = totals; self.links = links; self.engineVersion = engineVersion
+        self.info = info; self.slots = slots
     }
 
     /// "Basalt 0.3.2": the engine's name and version, or nil while the version is unknown (then nothing is shown).
     public var engineLabel: String? { engineVersion.map { "\(engine) \($0)" } }
 
     public var isLoading: Bool { if case .loading = status { return true }; return false }
-    public var isBusy: Bool { switch status { case .prefill, .thinking, .decode: return true; default: return false } }
+    public var isBusy: Bool { switch status { case .prefill, .thinking, .decode, .running: return true; default: return false } }
     public var isReading: Bool { status == .prefill }
 }

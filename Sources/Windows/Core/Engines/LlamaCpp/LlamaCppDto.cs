@@ -99,17 +99,7 @@ public sealed record LlamaCppMetrics
     /// </summary>
     public static LlamaCppMetrics? Parse(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return null;
-        var values = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var raw in text.Split('\n'))
-        {
-            var line = raw.Trim();
-            if (!line.StartsWith(Prefix, StringComparison.Ordinal)) continue;
-            var parts = line.Substring(Prefix.Length).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2 || parts[0].Contains('{')) continue;
-            if (double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && double.IsFinite(value))
-                values[parts[0]] = value;
-        }
+        var values = PrometheusText.Parse(text, Prefix).Where(pair => !pair.Key.Contains('{')).ToDictionary(pair => pair.Key, pair => pair.Value);
         if (values.Count == 0) return null;
         double? V(string name) => values.TryGetValue(name, out var v) ? v : null;
         return new LlamaCppMetrics

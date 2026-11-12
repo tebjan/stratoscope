@@ -263,7 +263,8 @@ public class LlamaCppFlowTests
             .Json(Upstream + "/metrics", "strata-0.1.56-idle.json");
         var provider = Auto(source);
         Assert.Equal("Strata", (await provider.PollAsync(CancellationToken.None))!.Engine);
-        Assert.Equal(new[] { Router + "/running", Upstream + "/health", Upstream + "/props", Upstream + "/metrics" }, source.Requested);
+        // The kind is asked once: health, props, and a look at /metrics for the custom 27B server's q27: series (Strata's JSON has none), then the Strata read.
+        Assert.Equal(new[] { Router + "/running", Upstream + "/health", Upstream + "/props", Upstream + "/metrics", Upstream + "/metrics" }, source.Requested);
         source.Requested.Clear();
         await provider.PollAsync(CancellationToken.None);
         Assert.Equal(new[] { Router + "/running", Upstream + "/metrics" }, source.Requested);

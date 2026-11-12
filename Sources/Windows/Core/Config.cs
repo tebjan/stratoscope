@@ -8,7 +8,7 @@ namespace Stratoscope.Core;
 public sealed class EngineConfig
 {
     public string Name { get; set; } = "Strata";
-    /// <summary>"strata" (default) or "demo".</summary>
+    /// <summary>"strata" (default: asks the engine which kind it is), "basalt", "llamacpp", "custom" or "demo".</summary>
     public string Engine { get; set; } = "strata";
     /// <summary>The engine server, for example http://127.0.0.1:8095. Used when no router is set, or as fallback.</summary>
     public string? Url { get; set; }
@@ -100,13 +100,56 @@ public sealed class Config
 
     public const string DefaultUrl = "http://127.0.0.1:8095";
 
-    /// <summary>The file that "Open settings file" creates when there is none: the defaults, spelled out.</summary>
+    /// <summary>
+    /// The file that "Open settings file" creates when there is none: every setting as a commented example. Nothing in it is active, so the
+    /// app keeps looking for the server by itself until a line is switched on.
+    /// </summary>
     public const string Template =
         "{\r\n" +
-        "  \"servers\": [\r\n" +
-        "    { \"name\": \"Strata\", \"url\": \"" + DefaultUrl + "\" }\r\n" +
-        "  ]\r\n" +
+        "  // Stratoscope settings. To use a setting, delete the // in front of its line. The file is read again when you save it.\r\n" +
+        "\r\n" +
+        "  // Where your engine is. Without a line here Stratoscope looks for it by itself.\r\n" +
+        "  // \"url\": \"" + DefaultUrl + "\",\r\n" +
+        "\r\n" +
+        "  // A router in front of the engine (llama-swap): it knows the model name and says when a model is loading.\r\n" +
+        "  // \"router\": \"http://127.0.0.1:18080\",\r\n" +
+        "\r\n" +
+        "  // Several servers, one tab each, instead of url and router.\r\n" +
+        "  // \"servers\": [ { \"name\": \"Strata\", \"url\": \"" + DefaultUrl + "\" }, { \"name\": \"Router\", \"router\": \"http://127.0.0.1:18080\" } ],\r\n" +
+        "\r\n" +
+        "  // The look of the panel: \"system\" (default), \"light\" or \"dark\". The readout always matches the taskbar.\r\n" +
+        "  // \"theme\": \"system\",\r\n" +
+        "\r\n" +
+        "  // Size of the panel and the readout in percent, 100 to 250. Default: as Windows has it.\r\n" +
+        "  // \"ui_scale\": 125,\r\n" +
+        "\r\n" +
+        "  // Where the readout sits in the taskbar: \"center\" (default), \"tray\" (next to the notification area), \"after-buttons\", \"left\".\r\n" +
+        "  // \"readout_position\": \"center\",\r\n" +
+        "\r\n" +
+        "  // The token count at which your chat client summarises, drawn as a mark on the context bar. Only needed when Stratoscope cannot find it in the Kilo or OpenCode config.\r\n" +
+        "  // \"compact_at\": 60000\r\n" +
         "}\r\n";
+
+    /// <summary>
+    /// Writes <see cref="Template"/> when there is no settings file yet, so the folder always holds a file that says what can be set. An existing
+    /// file is never touched. A folder that cannot be written to is left alone: the app works without the file.
+    /// </summary>
+    public static void WriteStarterIfMissing(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) return;
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!);
+            File.WriteAllText(path, Template, new System.Text.UTF8Encoding(false));
+        }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+    }
+
+    /// <summary>The settings the file understands; anything else in it is named as a problem.</summary>
+    private static readonly HashSet<string> KnownSettings = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "servers", "engine", "url", "router", "log", "webui", "scenario", "client_model", "client_configs", "compact_at", "readout_position", "ui_scale", "theme",
+    };
 
     public static string DefaultPath(IDictionary<string, string?>? environment = null)
     {
@@ -151,7 +194,15 @@ public sealed class Config
         var builder = new ConfigurationBuilder();
         if (File.Exists(config.Path)) builder.AddJsonFile(config.Path!, optional: false, reloadOnChange: false);
         builder.AddInMemoryCollection(EnvironmentSettings(env));
-        try { return builder.Build(); }
+        try
+        {
+            var root = builder.Build();
+            var fromEnvironment = EnvironmentSettings(env).Select(pair => pair.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var child in root.GetChildren())
+                if (!KnownSettings.Contains(child.Key) && !fromEnvironment.Contains(child.Key))
+                    config.Problems.Add("Ignored \"" + child.Key + "\": there is no such setting.");
+            return root;
+        }
         catch (Exception e) when (e is FormatException || e is InvalidDataException)
         {
             config.Problems.Add("The settings file is not a JSON object: " + config.Path);
