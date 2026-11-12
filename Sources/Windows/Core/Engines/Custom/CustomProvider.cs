@@ -9,10 +9,12 @@ namespace Stratoscope.Core.Engines.Custom;
 ///  - <c>/metrics</c> (Prometheus text, prefix <c>q27:</c>): running and waiting requests, the engine's sequence capacity, free KV pages,
 ///    prefix cache checkpoints, which admission block holds a request back, and the token totals.
 ///
-///  - <c>/ui/state</c> (JSON, about 150 KB, asked only while <c>/metrics</c> says requests run): <c>seqs</c> with each request's state, its own phase
-///    (prefill or decode), prompt, fed, out, max_new, computed, prefill_s and decode_s. If it is missing, refused or not JSON, the phase is "running" only.
+///  - <c>/ui/state</c> (JSON, about 150 KB, asked on every poll): <c>tick.seqs</c> with each request's state, its own phase (prefill or decode), prompt,
+///    fed, out, max_new, computed, prefill_s and decode_s; <c>tick.sample</c> and <c>tick.vram</c> (video card, memory parts, KV cache); <c>tick.cache</c>
+///    and <c>tick.sched</c>; <c>info</c> (context size, slots, DFlash2, KV format, card name); <c>log</c> (the <c>done</c> events are the finished requests).
+///    If it is missing, refused or not JSON, the phase is "running" only and those parts are not drawn.
 ///
-/// What the custom 27B server does not report is not drawn: finished requests, context size, RAM, video card. The metrics alone are totals across all
+/// What the custom 27B server does not report is not drawn: RAM and CPU. The metrics alone are totals across all
 /// requests: without /ui/state neither reading nor writing is shown, and no speed.
 /// </summary>
 public sealed class CustomProvider : RoutedProvider
@@ -47,9 +49,9 @@ public sealed class CustomProvider : RoutedProvider
                 : new EngineRead(text.Status, false, FetchFailure.Other, "no q27: metrics", null);
         }
 
-        // /ui/state is about 150 KB (logs and history): asked only while /metrics says requests run. Same router path, 429 handling and timeout as /metrics.
+        // /ui/state is about 150 KB (logs and history). It is the only source of the video card, the memory parts, the cache counters, the engine
+        // settings and the finished requests, so it is asked on every poll, idle too. Same router path, 429 handling and timeout as /metrics.
         CustomUiState? ui = null;
-        if (metrics.Running > 0)
         {
             var state = await http.GetAsync(Endpoints.Join(engineBase, "ui", "state"), Json.CustomUiStateType, cancellation).ConfigureAwait(false);
             if (state.Status == 429) return new EngineRead(429, false, FetchFailure.Status, state.Detail, null);
@@ -120,20 +122,98 @@ public sealed class CustomProvider : RoutedProvider
             };
 
         string? blocked = m.BlockedKv == 1 ? "kv" : m.BlockedSpeed == 1 ? "speed" : m.BlockedKv == 0 && m.BlockedSpeed == 0 ? "none" : null;
+        var tick = ui?.Tick;
+        var uiInfo = ui?.Info;
+        var batchSlotCount = m.EngineSeqs ?? uiInfo?.MaxSeqs;
+        // Metrics first (they are asked on every poll); /ui/state fills what they lack.
+        var kvFree = m.KvFreePages ?? tick?.Cache?.FreePages;
+        var kvCheckpointOnly = m.KvCheckpointOnlyPages ?? tick?.Cache?.CheckpointOnlyPages;
+        var checkpoints = m.PrefixCacheCheckpoints ?? tick?.Cache?.Checkpoints;
+        string? draft = uiInfo?.Spec is bool spec ? (spec ? "DFlash2" : "none") : null;
         EngineInfo? info = null;
-        if (m.EngineSeqs.HasValue || m.KvFreePages.HasValue || m.PrefixCacheCheckpoints.HasValue || blocked != null)
+        if (batchSlotCount.HasValue || kvFree.HasValue || checkpoints.HasValue || blocked != null || uiInfo != null || tick?.Sched != null)
             info = new EngineInfo
             {
-                BatchSlots = m.EngineSeqs, KvFreePages = m.KvFreePages, KvCheckpointOnlyPages = m.KvCheckpointOnlyPages,
-                PrefixCheckpoints = m.PrefixCacheCheckpoints, AdmissionBlocked = blocked,
+                BatchSlots = batchSlotCount, KvFreePages = kvFree, KvCheckpointOnlyPages = kvCheckpointOnly,
+                PrefixCheckpoints = checkpoints, AdmissionBlocked = blocked,
+                KvFormat = uiInfo?.KvDtype, DraftWindow = draft, GpuName = uiInfo?.Gpu, TargetSeqs = tick?.Sched?.TargetSeqs,
             };
+
+        // Finished requests: the "done" events of the engine's log (the last 500 events), newest first. ttft and the like are not drawn.
+        var recent = (ui?.Log ?? new List<CustomLogEntry?>())
+            .Where(e => e is { Kind: "done", Rec: not null }).Select(e => e!)
+            .Reverse().Take(20)
+            .Select(e => new RequestStats
+            {
+                PromptTokens = e.Rec!.PromptTokens, ReusedTokens = e.Rec.CachedTokens, PromptRead = e.Rec.ComputedTokens,
+                PromptMilliseconds = e.Rec.PrefillSeconds * 1000, OutputTokens = e.Rec.CompletionTokens,
+                DecodeTokensPerSecond = e.Rec.DecodeTps, DurationSeconds = e.Rec.Total,
+                FinishedAt = e.T is double t ? DateTime.UnixEpoch.AddSeconds(t) : null, Finish = e.Rec.Reason,
+            }).ToList();
+
+        // The context of the fullest running request: the prompt fed so far plus what it wrote (the prompt when fed is missing); otherwise the newest finished one.
+        double? ctxUsed = null;
+        var runningSeqs = (ui?.Seqs ?? new List<CustomSeq?>()).Where(s => s != null && Is(s.State, "running")).Select(s => s!).ToList();
+        foreach (var s in runningSeqs)
+            if ((s.Fed ?? s.Prompt) is double basis) ctxUsed = Math.Max(ctxUsed ?? 0, basis + (s.Out ?? 0));
+        if (ctxUsed is null && recent.Count > 0) ctxUsed = recent[0].ContextTokens;
+
+        // The video card: the NVML sample. Video memory used is the total minus the "free" part of the engine's own accounting (vram.parts).
+        SystemStats? system = null;
+        if (tick?.Sample != null || tick?.Vram != null)
+        {
+            var vram = tick?.Vram;
+            double? free = vram?.Parts?.FirstOrDefault(p => p?.Name == "free")?.Bytes;
+            system = new SystemStats
+            {
+                GpuPercent = tick?.Sample?.Util, GpuMemoryBusyPercent = tick?.Sample?.MemUtil, GpuTemperatureCelsius = tick?.Sample?.Temp,
+                GpuPowerWatts = tick?.Sample?.Power, GpuPowerLimitWatts = tick?.Sample?.PowerLimit,
+                GpuMemoryTotalBytes = vram?.Total, GpuMemoryUsedBytes = vram?.Total is double total && free.HasValue ? total - free : null,
+                // RAM and CPU are not in /ui/state.
+            };
+        }
+
+        // The KV cache: its budget is the "KV cache" part of the video memory, in use is that minus its own "free" part; the counters are the engine's.
+        CacheStats? cache = null;
+        var kv = tick?.Vram?.Parts?.FirstOrDefault(p => p?.Name == "KV cache");
+        if (kv != null || tick?.Cache != null)
+        {
+            var kvFreeBytes = kv?.Parts?.FirstOrDefault(p => p?.Name == "free")?.Bytes;
+            cache = new CacheStats
+            {
+                BudgetBytes = kv?.Bytes, UsedBytes = kv?.Bytes is double kvBytes && kvFreeBytes.HasValue ? kvBytes - kvFreeBytes : null,
+                Requests = tick?.Cache?.Lookups, RequestsReused = tick?.Cache?.Hits, Evictions = tick?.Cache?.Evicted,
+            };
+        }
+
+        // One row per engine slot: a running request fills one, the rest are idle. Only when the slot count is known.
+        List<BatchSlot>? slots = null;
+        if (batchSlotCount is double count && count > 0 && ui != null)
+        {
+            var held = (ui.Seqs ?? new List<CustomSeq?>())
+                .Where(s => s != null && (Is(s.State, "running") || Is(s.State, "parked") || Is(s.State, "admitted"))).Select(s => s!).ToList();
+            slots = new List<BatchSlot>();
+            for (var i = 0; i < Math.Max(count, held.Count); i++)
+            {
+                if (i >= held.Count) { slots.Add(new BatchSlot { Index = i, State = "idle" }); continue; }
+                var s = held[i];
+                var isRunning = Is(s.State, "running");
+                slots.Add(new BatchSlot
+                {
+                    Index = i,
+                    State = isRunning ? (Is(s.Phase, "decode") ? "decoding" : Is(s.Phase, "prefill") ? "reading" : "running") : s.State!.ToLowerInvariant(),
+                    PromptTokens = s.Prompt, PromptRead = s.Fed, Generated = s.Out, MaxTokens = s.MaxNew,
+                    TokensPerSecond = isRunning && Is(s.Phase, "decode") ? Speed(s.Out, s.DecodeSeconds) : null,
+                });
+            }
+        }
 
         return new EngineSnapshot(Brand, model, status)
         {
             Queued = queued ?? (m.Waiting is double waiting ? (int)waiting : 0),
-            Live = live, Recent = new List<RequestStats>(),
-            Context = new ContextUsage { CompactAt = CompactAt(model) },
-            Totals = totals, Info = info, Links = Links(),
+            Live = live, Recent = recent,
+            Context = new ContextUsage { Used = ctxUsed, Max = uiInfo?.MaxTokens, CompactAt = CompactAt(model) },
+            System = system, Cache = cache, Totals = totals, Info = info, Slots = slots, Links = Links(),
         };
     }
 }

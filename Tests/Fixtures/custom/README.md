@@ -12,3 +12,7 @@ The custom 27B server (its metrics use the `q27:` prefix; `frontend/server.py`, 
 `GET /props` and `GET /slots` answer 404 on this server; that is how detection tells it from llama-server.
 
 Phase rule the tests assert: with only `/metrics` (or when `/ui/state` is missing, refused or not JSON) the custom engine shows "running" (no reading or writing, no speed). With `/ui/state` the phase of each `running` seq is the engine's own (`prefill` is reading, `decode` is writing); `waiting` is queued; `parked` and `admitted` count as running without a phase. There is no expected file: the tests assert the values.
+
+| `custom-ui-state-idle.json` | Live capture of `GET /ui/state` from 2026-11-12 (endpoint `/ui/state` of the engine, idle after two short requests, RTX 5090 Laptop GPU). The real shape is `info`, `started`, `history`, `log`, and `tick` (`seqs`, `vram`, `cache`, `sample`, `sched`). |
+
+`custom-ui-state-busy.json` uses the same `tick` wrapper as the capture (the first hand-written version had `seqs` at the top level, which the real engine does not send). `/ui/state` is read on every poll: the card, VRAM parts, KV cache, engine settings and finished requests (`log` events of kind `done`) are only there.

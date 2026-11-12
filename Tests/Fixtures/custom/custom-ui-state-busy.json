@@ -1,4 +1,4 @@
-{
+{"tick": {
   "sched": {"running": 3, "waiting": 2, "blocked": "kv", "target_seqs": 4},
   "seqs": [
     {"rid": "r1", "state": "running", "phase": "prefill", "prompt": 6000, "fed": 2400, "out": 0, "max_new": 512,
@@ -12,4 +12,4 @@
     {"rid": "r5", "state": "waiting", "phase": "prefill", "prompt": 700, "fed": 0, "out": 0, "max_new": 256,
      "computed": 0, "cached": 0, "reusable": 0, "prefill_s": 0.0, "decode_s": 0.0, "ttft": null, "decode_wall": 0.0, "steps": 0, "preempted": 0}
   ]
-}
+}}

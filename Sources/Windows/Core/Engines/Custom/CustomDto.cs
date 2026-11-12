@@ -12,13 +12,105 @@ public sealed record CustomHealth
 }
 
 /// <summary>
-/// The part of the custom 27B server's <c>GET /ui/state</c> that Stratoscope reads: the per-request list <c>seqs</c> (worker.py
-/// <c>Scheduler.stats()</c>, stats.py <c>tick()</c>, server.py <c>GET /ui/state</c>). The answer also carries logs and history (about 150 KB), so it is
-/// asked only while <c>/metrics</c> says requests run.
+/// The part of the custom 27B server's <c>GET /ui/state</c> that Stratoscope reads (server.py: <c>dict(HUB.init(), tick=HUB.tick())</c>, stats.py):
+/// <c>info</c> (the engine settings and the GPU name), <c>log</c> (the last 500 events; the <c>done</c> ones carry a finished request) and <c>tick</c>
+/// (the live part: seqs, vram, cache, sample, sched). The answer also carries the sample history (about 150 KB in all).
 /// </summary>
 public sealed record CustomUiState
 {
+    [JsonPropertyName("info")] public CustomInfo? Info { get; init; }
+    [JsonPropertyName("log")] public List<CustomLogEntry?>? Log { get; init; }
+    [JsonPropertyName("tick")] public CustomTick? Tick { get; init; }
+
+    /// <summary>The per-request list <c>tick.seqs</c> (worker.py <c>Scheduler.stats()</c>).</summary>
+    [JsonIgnore] public List<CustomSeq?>? Seqs => Tick?.Seqs;
+}
+
+/// <summary><c>info</c> of <c>/ui/state</c> (stats.py <c>Hub.info</c>, server.py). <c>max_tokens</c> is the context the server accepts (<c>max_model_len</c> of <c>/v1/models</c>).</summary>
+public sealed record CustomInfo
+{
+    [JsonPropertyName("max_tokens")] public double? MaxTokens { get; init; }
+    [JsonPropertyName("max_seqs")] public double? MaxSeqs { get; init; }
+    /// <summary>True when DFlash2 speculative decoding runs.</summary>
+    [JsonPropertyName("spec")] public bool? Spec { get; init; }
+    [JsonPropertyName("kv_dtype")] public string? KvDtype { get; init; }
+    [JsonPropertyName("gpu")] public string? Gpu { get; init; }
+}
+
+/// <summary><c>tick</c> of <c>/ui/state</c> (stats.py <c>Hub.tick()</c>).</summary>
+public sealed record CustomTick
+{
+    [JsonPropertyName("engine")] public string? Engine { get; init; }
     [JsonPropertyName("seqs")] public List<CustomSeq?>? Seqs { get; init; }
+    [JsonPropertyName("vram")] public CustomVram? Vram { get; init; }
+    [JsonPropertyName("cache")] public CustomCache? Cache { get; init; }
+    [JsonPropertyName("sample")] public CustomSample? Sample { get; init; }
+    [JsonPropertyName("sched")] public CustomSched? Sched { get; init; }
+}
+
+/// <summary>The latest NVML sample (stats.py <c>Nvml.sample</c>).</summary>
+public sealed record CustomSample
+{
+    [JsonPropertyName("util")] public double? Util { get; init; }
+    [JsonPropertyName("mem_util")] public double? MemUtil { get; init; }
+    [JsonPropertyName("power")] public double? Power { get; init; }
+    [JsonPropertyName("power_limit")] public double? PowerLimit { get; init; }
+    [JsonPropertyName("temp")] public double? Temp { get; init; }
+}
+
+public sealed record CustomSched
+{
+    [JsonPropertyName("target_seqs")] public double? TargetSeqs { get; init; }
+}
+
+/// <summary>The engine's cache counters (worker.py <c>Scheduler.stats()</c> <c>cache</c>).</summary>
+public sealed record CustomCache
+{
+    [JsonPropertyName("lookups")] public double? Lookups { get; init; }
+    [JsonPropertyName("hits")] public double? Hits { get; init; }
+    [JsonPropertyName("evicted")] public double? Evicted { get; init; }
+    [JsonPropertyName("checkpoints")] public double? Checkpoints { get; init; }
+    [JsonPropertyName("free_pages")] public double? FreePages { get; init; }
+    [JsonPropertyName("checkpoint_only_pages")] public double? CheckpointOnlyPages { get; init; }
+    [JsonPropertyName("pool_pages")] public double? PoolPages { get; init; }
+}
+
+public sealed record CustomVram
+{
+    [JsonPropertyName("total")] public double? Total { get; init; }
+    [JsonPropertyName("parts")] public List<CustomVramPart?>? Parts { get; init; }
+    [JsonPropertyName("kv_page_tokens")] public double? KvPageTokens { get; init; }
+    [JsonPropertyName("slots")] public double? Slots { get; init; }
+}
+
+/// <summary>A named part of the video memory in bytes: weights, KV cache (with its own parts), ..., free.</summary>
+public sealed record CustomVramPart
+{
+    [JsonPropertyName("name")] public string? Name { get; init; }
+    [JsonPropertyName("bytes")] public double? Bytes { get; init; }
+    [JsonPropertyName("parts")] public List<CustomVramPart?>? Parts { get; init; }
+}
+
+/// <summary>One log event; only a <c>done</c> one has a <c>rec</c> (stats.py <c>done()</c>).</summary>
+public sealed record CustomLogEntry
+{
+    [JsonPropertyName("kind")] public string? Kind { get; init; }
+    /// <summary>Unix seconds of the event.</summary>
+    [JsonPropertyName("t")] public double? T { get; init; }
+    [JsonPropertyName("rec")] public CustomDone? Rec { get; init; }
+}
+
+/// <summary>The record of a finished request.</summary>
+public sealed record CustomDone
+{
+    [JsonPropertyName("prompt_tokens")] public double? PromptTokens { get; init; }
+    [JsonPropertyName("completion_tokens")] public double? CompletionTokens { get; init; }
+    [JsonPropertyName("cached_tokens")] public double? CachedTokens { get; init; }
+    [JsonPropertyName("computed_tokens")] public double? ComputedTokens { get; init; }
+    [JsonPropertyName("total")] public double? Total { get; init; }
+    [JsonPropertyName("prefill_s")] public double? PrefillSeconds { get; init; }
+    [JsonPropertyName("decode_tps")] public double? DecodeTps { get; init; }
+    [JsonPropertyName("reason")] public string? Reason { get; init; }
 }
 
 /// <summary>One request of <c>/ui/state</c> <c>seqs</c>. Null means the field was missing, null or of another type.</summary>

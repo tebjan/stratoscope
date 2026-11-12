@@ -124,7 +124,7 @@ public class CustomDetectionTests
         var provider = Auto(source);
         await provider.PollAsync(CancellationToken.None);
         var engine = source.Requested.Where(r => r.StartsWith(Upstream)).Select(r => r.Substring(Upstream.Length)).ToList();
-        Assert.Equal(new[] { "/health", "/props", "/metrics", "/health", "/metrics" }, engine);       // the kind is asked once, then remembered
+        Assert.Equal(new[] { "/health", "/props", "/metrics", "/health", "/metrics", "/ui/state" }, engine);       // the kind is asked once, then remembered
         source.Requested.Clear();
         await provider.PollAsync(CancellationToken.None);
         Assert.DoesNotContain(Upstream + "/props", source.Requested);
@@ -177,6 +177,84 @@ public class CustomDetectionTests
     }
 }
 
+// The live capture custom-ui-state-idle.json (GET /ui/state, 2026-11-12, idle engine after two short requests, RTX 5090 Laptop GPU): expected values are
+// read from that file. Metrics are the recorded idle ones (4 sequences, 3409 free KV pages, 1 checkpoint).
+public class CustomIdleCaptureTests
+{
+    private static EngineSnapshot Idle()
+    {
+        var m = CustomMetrics.Parse(Fixtures.Text("custom/custom-idle.metrics.txt"))!;
+        var ui = Json.Deserialize(Fixtures.Text("custom/custom-ui-state-idle.json"), Json.CustomUiStateType)!;
+        return new CustomProvider(new EngineConfig(), new FakeSource()).Translate(m, "m", ui);
+    }
+
+    [Fact]
+    public void TheEngineLineComesFromInfoAndSched()
+    {
+        var info = Idle().Info!;
+        Assert.Equal("NVIDIA GeForce RTX 5090 Laptop GPU", info.GpuName);   // info.gpu
+        Assert.Equal("DFlash2", info.DraftWindow);                          // info.spec true
+        Assert.Equal("nvfp4", info.KvFormat);                               // info.kv_dtype
+        Assert.Equal(4, info.BatchSlots);                                   // q27:engine_seqs
+        Assert.Equal(4, info.TargetSeqs);                                   // tick.sched.target_seqs
+        Assert.Equal(3409, info.KvFreePages);
+    }
+
+    [Fact]
+    public void TheCardAndTheVideoMemoryComeFromTheSampleAndVram()
+    {
+        var s = Idle().System!;
+        Assert.Equal(0, s.GpuPercent);                                      // sample.util
+        Assert.Equal(0, s.GpuMemoryBusyPercent);                            // sample.mem_util
+        Assert.Equal(34, s.GpuTemperatureCelsius);
+        Assert.Equal(7.178, s.GpuPowerWatts);
+        Assert.Equal(175, s.GpuPowerLimitWatts);
+        Assert.Equal(25651314688, s.GpuMemoryTotalBytes);                   // vram.total
+        Assert.Equal(25651314688 - 2007592960, s.GpuMemoryUsedBytes);       // minus the "free" part
+        Assert.Null(s.RamUsedBytes);                                        // not in /ui/state
+        Assert.Null(s.CpuPercent);
+    }
+
+    [Fact]
+    public void TheKvCacheAndTheContextComeFromVramCacheAndInfo()
+    {
+        var s = Idle();
+        Assert.Equal(4034396160, s.Cache!.BudgetBytes);                     // vram part "KV cache"
+        Assert.Equal(4034396160 - 4022599680, s.Cache.UsedBytes);           // minus its "free" sub-part
+        Assert.Equal(2, s.Cache.Requests);                                  // cache.lookups
+        Assert.Equal(0, s.Cache.RequestsReused);                            // cache.hits
+        Assert.Equal(0, s.Cache.Evictions);                                 // cache.evicted
+        Assert.Equal(98304, s.Context.Max);                                 // info.max_tokens
+        Assert.Equal(18, s.Context.Used);                                   // newest finished request: 17 prompt + 1 output
+    }
+
+    [Fact]
+    public void FinishedRequestsAreTheDoneEventsOfTheLogNewestFirst()
+    {
+        var r = Idle().Recent;
+        Assert.Equal(2, r.Count);
+        Assert.Equal(0.26059770584106445, r[0].DurationSeconds);            // the later one
+        Assert.Equal(0.15842962265014648, r[1].DurationSeconds);
+        Assert.Equal(17, r[1].PromptTokens);
+        Assert.Equal(0, r[1].ReusedTokens);                                 // cached_tokens
+        Assert.Equal(17, r[1].PromptRead);                                  // computed_tokens
+        Assert.Equal(116.1649227142334, r[1].PromptMilliseconds!.Value, 6); // prefill_s
+        Assert.Equal(1, r[1].OutputTokens);
+        Assert.Equal("stop", r[1].Finish);
+        Assert.Null(r[1].DecodeTokensPerSecond);                            // decode_tps null
+        Assert.Equal(new DateTime(2026, 11, 12, 2, 37, 51, DateTimeKind.Utc).AddMilliseconds(573.377), r[1].FinishedAt!.Value, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void EmptyEngineSlotsAreIdleRowsUpToTheEngineCount()
+    {
+        var slots = Idle().Slots!;
+        Assert.Equal(4, slots.Count);
+        Assert.All(slots, s => Assert.Equal("idle", s.State));
+        Assert.Equal(new[] { 0, 1, 2, 3 }, slots.Select(s => s.Index));
+    }
+}
+
 // Per-request reading and writing from /ui/state. The fixture custom-ui-state-busy.json is hand-written after the engine's source (worker.py, stats.py),
 // not captured from a live request. Its requests: r1 running prefill (prompt 6000, fed 2400, computed 2400, prefill_s 3.0), r2 running decode
 // (out 300, max_new 2048, decode_s 10.0), r3 and r5 waiting, r4 running prefill with prefill_s 0.
@@ -189,7 +267,7 @@ public class CustomUiStateTests
     private static CustomUiState Ui(params string[] rids)
     {
         var all = Json.Deserialize(Fixtures.Text("custom/custom-ui-state-busy.json"), Json.CustomUiStateType)!;
-        return rids.Length == 0 ? all : new CustomUiState { Seqs = all.Seqs!.Where(s => rids.Contains(s!.Rid)).ToList() };
+        return rids.Length == 0 ? all : new CustomUiState { Tick = new CustomTick { Seqs = all.Seqs!.Where(s => rids.Contains(s!.Rid)).ToList() } };
     }
 
     [Fact]
@@ -229,7 +307,7 @@ public class CustomUiStateTests
     [Fact]
     public void ParkedAndAdmittedCountAsRunningWithoutAPhase()
     {
-        var ui = new CustomUiState { Seqs = [new CustomSeq { State = "parked", Phase = "decode" }, new CustomSeq { State = "admitted", Phase = "prefill" }] };
+        var ui = new CustomUiState { Tick = new CustomTick { Seqs = [new CustomSeq { State = "parked", Phase = "decode" }, new CustomSeq { State = "admitted", Phase = "prefill" }] } };
         var s = Provider().Translate(Busy(), "m", ui);
         Assert.Equal(EngineStatus.Running, s.Status);
         Assert.Equal(2, s.Live!.Running);
@@ -262,11 +340,13 @@ public class CustomUiStateTests
     }
 
     [Fact]
-    public async Task UiStateIsReadOnlyWhileRequestsRunAndMapsThroughTheProvider()
+    public async Task UiStateIsReadOnEveryPollAndMapsThroughTheProvider()
     {
-        var idle = new FakeSource().Json(Address + "/health", "custom/custom-idle.health.json").Json(Address + "/metrics", "custom/custom-idle.metrics.txt");
-        await new CustomProvider(new EngineConfig { Url = Address }, idle).PollAsync(CancellationToken.None);
-        Assert.DoesNotContain(Address + "/ui/state", idle.Requested);
+        var idle = new FakeSource().Json(Address + "/health", "custom/custom-idle.health.json").Json(Address + "/metrics", "custom/custom-idle.metrics.txt")
+            .Json(Address + "/ui/state", "custom/custom-ui-state-idle.json");
+        var idleSnapshot = await new CustomProvider(new EngineConfig { Url = Address }, idle).PollAsync(CancellationToken.None);
+        Assert.Contains(Address + "/ui/state", idle.Requested);
+        Assert.Equal(98304, idleSnapshot!.Context.Max);
 
         var busy = new FakeSource().Json(Address + "/health", "custom/custom-idle.health.json").Json(Address + "/metrics", "custom/custom-busy.metrics.txt")
             .Json(Address + "/ui/state", "custom/custom-ui-state-busy.json");

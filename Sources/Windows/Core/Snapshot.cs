@@ -103,6 +103,8 @@ public sealed class SystemStats
     public double? GpuPowerLimitWatts { get; set; }
     public double? GpuMemoryUsedBytes { get; set; }
     public double? GpuMemoryTotalBytes { get; set; }
+    /// <summary>Share of time the video memory interface was busy, 0..100 (NVML memory utilisation; custom 27B server), or null.</summary>
+    public double? GpuMemoryBusyPercent { get; set; }
 }
 
 /// <summary>One parked conversation in the engine's conversation cache.</summary>
@@ -169,6 +171,10 @@ public sealed class EngineInfo
     public double? PrefixCheckpoints { get; set; }
     /// <summary>Why the scheduler holds a waiting request back: "kv", "speed", or "none" when it reports no block. Null when unknown.</summary>
     public string? AdmissionBlocked { get; set; }
+    /// <summary>The name of the video card the engine runs on (custom 27B server), or null.</summary>
+    public string? GpuName { get; set; }
+    /// <summary>The number of requests the scheduler aims to run together (custom 27B server, <c>target_seqs</c>), or null.</summary>
+    public double? TargetSeqs { get; set; }
 }
 
 /// <summary>One slot of a batching engine.</summary>
@@ -254,14 +260,14 @@ public sealed class EngineSnapshot
             h.Add(r.DecodeTokensPerSecond); h.Add(r.DurationSeconds); h.Add(r.FinishedAt); h.Add(r.Finish);
         }
         h.Add(Context.Used); h.Add(Context.Max); h.Add(Context.CompactAt);
-        if (System is { } s) { h.Add(s.RamUsedBytes); h.Add(s.RamTotalBytes); h.Add(s.GpuPercent); h.Add(s.CpuPercent); h.Add(s.GpuTemperatureCelsius); h.Add(s.GpuPowerWatts); h.Add(s.GpuMemoryUsedBytes); }
+        if (System is { } s) { h.Add(s.RamUsedBytes); h.Add(s.RamTotalBytes); h.Add(s.GpuPercent); h.Add(s.CpuPercent); h.Add(s.GpuTemperatureCelsius); h.Add(s.GpuPowerWatts); h.Add(s.GpuMemoryUsedBytes); h.Add(s.GpuMemoryBusyPercent); }
         if (Cache is { } c)
         {
             h.Add(c.UsedBytes); h.Add(c.Slots); h.Add(c.Parked); h.Add(c.Requests); h.Add(c.RequestsReused); h.Add(c.Evictions);
             foreach (var e in c.Entries) { h.Add(e.Id); h.Add(e.Tokens); h.Add(e.ParkedAt); }
         }
         if (Totals is { } t) { h.Add(t.Requests); h.Add(t.OutputTokens); h.Add(t.PromptTokens); h.Add(t.ReusedTokens); }
-        if (Info is { } i) { h.Add(i.Version); h.Add(i.BatchSlots); h.Add(i.ExpertHitRate); h.Add(i.KvFreePages); h.Add(i.KvCheckpointOnlyPages); h.Add(i.PrefixCheckpoints); h.Add(i.AdmissionBlocked); }
+        if (Info is { } i) { h.Add(i.Version); h.Add(i.BatchSlots); h.Add(i.ExpertHitRate); h.Add(i.KvFreePages); h.Add(i.KvCheckpointOnlyPages); h.Add(i.PrefixCheckpoints); h.Add(i.AdmissionBlocked); h.Add(i.GpuName); h.Add(i.TargetSeqs); h.Add(i.KvFormat); h.Add(i.DraftWindow); }
         if (Slots != null) foreach (var s2 in Slots) { h.Add(s2.State); h.Add(s2.HeldTokens); h.Add(s2.PromptRead); h.Add(s2.Generated); h.Add(s2.TokensPerSecond); h.Add(s2.ElapsedSeconds is double e2 ? Math.Floor(e2) : (double?)null); h.Add(s2.MaxTokens); }
         return h.ToHashCode();
     }
