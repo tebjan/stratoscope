@@ -12,6 +12,7 @@ Stratoscope is an **instrument**: it shows what an engine reports and says when 
 - **When a value is missing, show "–" or nothing.** Don't estimate it, scale it from another metric, or fall back to 0.
 - **Never launch, wake, signal or restart an engine**, and never write to its files.
 - **No network calls** other than to the configured engine.
+- **Several requests at once: the headline speed is the engine's own total** (decode, and prefill while reading), for every engine on every platform: Strata `live.tok_s`, Basalt `live.tok_s`, llama.cpp `/metrics` `predicted_tokens_seconds`, custom `tick.sample.decode_tps`. A request's own speed is shown on its own row only. Do not add up the per-request rows for the headline unless the engine has no total. The rule is written as a comment at the top of each engine adapter (Windows and macOS), in `RoutedProvider.cs`, and in `docs/ARCHITECTURE.md`; keep them in step.
 
 ## Rules for the code
 
