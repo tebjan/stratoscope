@@ -305,14 +305,25 @@ public class CustomUiStateTests
     }
 
     [Fact]
-    public void ParkedAndAdmittedCountAsRunningWithoutAPhase()
+    public void ParkedDecodingRequestsCountAsWritingAndAdmittedPrefillAsReading()
     {
+        // The engine's own phase: a parked request that is decoding is still decoding. Without token counts there is no speed.
         var ui = new CustomUiState { Tick = new CustomTick { Seqs = [new CustomSeq { State = "parked", Phase = "decode" }, new CustomSeq { State = "admitted", Phase = "prefill" }] } };
         var s = Provider().Translate(Busy(), "m", ui);
-        Assert.Equal(EngineStatus.Running, s.Status);
+        Assert.Equal(EngineStatus.Decode, s.Status);
         Assert.Equal(2, s.Live!.Running);
-        Assert.Null(s.Live.PromptRead);
         Assert.Null(s.Live.Generated);
+        Assert.Null(s.Live.DecodeTokensPerSecond);
+    }
+
+    [Fact]
+    public void TheHeadlineSpeedIsTheEnginesOwnTotalOverAllRequests()
+    {
+        // Strata shows one total for the batch (live.tok_s). The custom engine publishes the same total in its live sample (tick.sample).
+        var ui = new CustomUiState { Tick = new CustomTick { Seqs = [new CustomSeq { State = "running", Phase = "decode", Out = 150, DecodeSeconds = 1.5 }, new CustomSeq { State = "parked", Phase = "decode", Out = 90, DecodeSeconds = 2.0 }], Sample = new CustomSample { DecodeTps = 123.4 } } };
+        var s = Provider().Translate(Busy(), "m", ui);
+        Assert.Equal(123.4, s.Live!.DecodeTokensPerSecond);
+        Assert.Equal(2, s.Live.Running);
     }
 
     [Fact]

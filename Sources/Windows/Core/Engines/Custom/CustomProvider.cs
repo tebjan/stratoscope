@@ -87,11 +87,11 @@ public sealed class CustomProvider : RoutedProvider
         if (busy && ui?.Seqs is { } seqs)
         {
             var rows = seqs.Where(s => s != null).Select(s => s!).ToList();
-            // waiting: queued, not drawn as busy. running, parked and admitted: counted as running. parked and admitted carry no phase here
-            // (the phase is taken only from a "running" seq), so they add to the count without reading or writing.
+            // waiting: queued, not drawn as busy. running, parked and admitted: counted as running. The phase is the engine's own word for each
+            // of them: a parked request that is decoding is still decoding (the scheduler parks it between its turns), so it counts as writing.
             var active = rows.Where(s => Is(s.State, "running") || Is(s.State, "parked") || Is(s.State, "admitted")).ToList();
-            var readers = active.Where(s => Is(s.State, "running") && Is(s.Phase, "prefill")).ToList();
-            var writers = active.Where(s => Is(s.State, "running") && Is(s.Phase, "decode")).ToList();
+            var readers = active.Where(s => Is(s.Phase, "prefill")).ToList();
+            var writers = active.Where(s => Is(s.Phase, "decode")).ToList();
             if (active.Count > 0)
             {
                 queued = rows.Count(s => Is(s.State, "waiting"));
@@ -106,8 +106,10 @@ public sealed class CustomProvider : RoutedProvider
                     PromptTotal = status == EngineStatus.Prefill && !together ? one!.Prompt : null,
                     Generated = status == EngineStatus.Decode ? Sum(writers.Select(s => s.Out)) : null,
                     MaxTokens = status == EngineStatus.Decode && !together ? one!.MaxNew : null,
-                    PrefillTokensPerSecond = status == EngineStatus.Prefill ? Sum(readers.Select(s => Speed(s.Computed, s.PrefillSeconds))) : null,
-                    DecodeTokensPerSecond = Sum(writers.Select(s => Speed(s.Out, s.DecodeSeconds))),
+                    // The total over all requests comes from the engine's own sample (as Strata's live.tok_s does); the sum of the per-request
+                    // speeds is used only when the sample has no rate.
+                    PrefillTokensPerSecond = status == EngineStatus.Prefill ? (ui?.Tick?.Sample?.PrefillTps ?? Sum(readers.Select(s => Speed(s.Computed, s.PrefillSeconds)))) : null,
+                    DecodeTokensPerSecond = ui?.Tick?.Sample?.DecodeTps ??Sum(writers.Select(s => Speed(s.Out, s.DecodeSeconds))),
                     Running = together ? active.Count : null,
                 };
             }

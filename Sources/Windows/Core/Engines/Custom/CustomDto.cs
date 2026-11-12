@@ -56,6 +56,10 @@ public sealed record CustomSample
     [JsonPropertyName("power")] public double? Power { get; init; }
     [JsonPropertyName("power_limit")] public double? PowerLimit { get; init; }
     [JsonPropertyName("temp")] public double? Temp { get; init; }
+    /// <summary>The engine's total decode rate over all requests (stats.py: generated tokens per second between samples).</summary>
+    [JsonPropertyName("decode_tps")] public double? DecodeTps { get; init; }
+    /// <summary>The engine's total prefill rate over all requests (stats.py: prompt tokens per second between samples).</summary>
+    [JsonPropertyName("prefill_tps")] public double? PrefillTps { get; init; }
 }
 
 public sealed record CustomSched
