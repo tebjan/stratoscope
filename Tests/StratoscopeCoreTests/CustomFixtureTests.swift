@@ -130,12 +130,16 @@ import Testing
         #expect(translate(seqs("r3")).status == .running)   // nothing in the list runs: the aggregate state stays
     }
 
-    @Test func testParkedAndAdmittedCountAsRunningWithoutAPhase() {
+    @Test func testParkedAndAdmittedCountAsActiveAndKeepTheEnginesPhase() {
+        // parked + phase decode writes, admitted + phase prefill reads; the state is not part of the test. The seqs carry no out, fed or
+        // time values, so status is decode (a writer exists), both count as running, and no speed or token count is shown.
         let s = translate([CustomSeq(state: "parked", phase: "decode"), CustomSeq(state: "admitted", phase: "prefill")])
-        #expect(s.status == .running)
+        #expect(s.status == .decode)
         #expect(s.live?.running == 2)
         #expect(s.live?.promptRead == nil)
         #expect(s.live?.generated == nil)
+        #expect(s.live?.decodeTokensPerSecond == nil)
+        #expect(translate([CustomSeq(state: "admitted", phase: "prefill")]).status == .prefill)
     }
 
     @Test func testASeqWithZeroTimeHasNoSpeed() {

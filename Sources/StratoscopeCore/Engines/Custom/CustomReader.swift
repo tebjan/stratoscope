@@ -257,11 +257,11 @@ public final class CustomReader {
         var waitingFromSeqs: Int?
 
         if busy, let seqs = seqs {
-            // waiting: queued, not drawn as busy. running, parked and admitted: counted as running. parked and admitted carry no phase here
-            // (the phase is taken only from a "running" seq), so they add to the count without reading or writing.
+            // waiting: queued, not drawn as busy. running, parked and admitted: counted as running. The phase is the engine's own word for each
+            // of them: a parked request that is decoding is still decoding (the scheduler parks it between its turns), so it counts as writing.
             let active = seqs.filter { $0.isState("running") || $0.isState("parked") || $0.isState("admitted") }
-            let readers = active.filter { $0.isState("running") && $0.isPhase("prefill") }
-            let writers = active.filter { $0.isState("running") && $0.isPhase("decode") }
+            let readers = active.filter { $0.isPhase("prefill") }
+            let writers = active.filter { $0.isPhase("decode") }
             if !active.isEmpty {
                 waitingFromSeqs = seqs.filter { $0.isState("waiting") }.count
                 status = !writers.isEmpty ? .decode : !readers.isEmpty ? .prefill : .running
