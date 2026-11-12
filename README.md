@@ -46,18 +46,18 @@ Stratoscope shows what your local LLM inference engine is doing right now, in th
 
 ### With your agent (recommended)
 
-Give this prompt to an AI agent that runs on your computer and knows your local LLM setup, or can read its configs: Claude Code, Codex or similar. It installs Stratoscope on macOS or Windows and connects it to your setup, so you do nothing yourself.
+Give this prompt to an AI agent that runs on your computer and knows your local LLM setup, or can read its configs:
 
 ```text
 Install Stratoscope on this computer and set it up for my local LLM.
 
 1. Check whether this is macOS or Windows.
 2. Download the latest release from
-   https://github.com/yosephyne/stratoscope/releases/latest and check it against
-   its .sha256 file. macOS: the .dmg; open it, copy Stratoscope to Applications,
-   start it. If macOS warns that the app is not notarized, tell me and wait, and
-   change no security settings. Windows: Stratoscope-<version>-windows-setup.exe;
-   run it.
+   https://github.com/yosephyne/stratoscope/releases/latest and check its sha256
+   against the digest shown there. macOS: Stratoscope-<version>-macos.dmg; open
+   it, copy Stratoscope to Applications, start it. If macOS warns that the app is
+   not notarized, tell me and wait, and change no security settings. Windows:
+   Stratoscope-<version>-windows-setup.exe; run it.
 3. Look for my local LLM setup: a Strata server (default http://127.0.0.1:8095),
    a llama-swap router in front of it, Strata's log folder, and the Kilo or
    OpenCode config. On Windows, `Stratoscope.exe --detect` shows what Stratoscope
@@ -75,7 +75,7 @@ Install Stratoscope on this computer and set it up for my local LLM.
 
 ### macOS
 
-1. Download the latest `Stratoscope-<version>.dmg` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest).
+1. Download the latest `Stratoscope-<version>-macos.dmg` from [Releases](https://github.com/yosephyne/stratoscope/releases/latest).
 2. Open it and drag Stratoscope to Applications.
 3. Start it. On the first launch macOS warns you, because the app isn't notarized yet. Open System Settings → Privacy & Security, scroll down and click **Open Anyway**.
 
@@ -111,7 +111,9 @@ The inference engine adapters and all the numbers are platform-neutral. Only the
 | Inference engine | Status |
 |---|---|
 | Strata | Works |
-| llama.cpp (`llama-server`) | Works on Windows: state, slots, cache reuse and context from `/slots`, speeds and totals from `/metrics` (start the server with `--metrics`); a build with `--sleep-idle-seconds` is shown as asleep, never woken. macOS: not yet |
+| llama.cpp (`llama-server`) | Works on Windows: state, slots, cache reuse and context from `/slots`, speeds and totals from `/metrics` (start the server with `--metrics`); a build with `--sleep-idle-seconds` is shown as asleep, never woken. macOS: same adapter, checked against recorded payloads only |
+| Basalt | Works on Windows; macOS: same readout, checked against recorded payloads only |
+| Custom 27B server | Works on Windows: one busy state from `/metrics`, reading and writing per request from `/ui/state`; macOS: checked against recorded payloads only |
 | Demo (fake data, to try the menu without an inference engine) | Works: `STRATOSCOPE_ENGINE=demo` |
 | MLX, Uzu, BaseRT | Not yet |
 
@@ -142,11 +144,11 @@ Strata listens on port 8095 unless it is started with `--port`, so the default w
 
 ## Settings
 
-Environment variables win over `~/.config/stratoscope.json`, which wins over the defaults. If you start the app from the Finder on macOS, use the JSON file, because the Finder doesn't pass your shell variables on. On Windows the file is `%LOCALAPPDATA%\Stratoscope\config.json`, see [docs/WINDOWS.md](docs/WINDOWS.md#settings).
+Environment variables win over `~/.config/stratoscope.json`, which wins over the defaults. If you start the app from the Finder on macOS, use the JSON file, because the Finder doesn't pass your shell variables on. On Windows the file is `%LOCALAPPDATA%\Stratoscope\config.json`, see [docs/WINDOWS.md](docs/WINDOWS.md#settings). There is no file until you need one: "Open settings file" in the menu creates it with every setting as a commented example; `//` comments are allowed.
 
 | Variable | JSON key | Does |
 |---|---|---|
-| `STRATOSCOPE_ENGINE` | `engine` | Which inference engine to read: `strata` (default; on Windows Basalt and llama.cpp engines are recognised as well), `basalt`, `llamacpp` (Windows) or `demo` |
+| `STRATOSCOPE_ENGINE` | `engine` | Which inference engine to read: `strata` (default; Basalt, llama.cpp and custom 27B engines are recognised as well), `basalt`, `llamacpp`, `custom` or `demo` |
 | `STRATOSCOPE_URL` | `url` | Inference engine address. Strata default: `http://127.0.0.1:8095` |
 | `STRATOSCOPE_ROUTER_URL` | `router` | Router in front of the inference engine. `none` turns it off |
 | `STRATOSCOPE_LOG` | `log` | Inference engine log file. Strata default: newest `*.log` in `~/.local/share/strata/install` |

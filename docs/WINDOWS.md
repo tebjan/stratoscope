@@ -26,7 +26,7 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 
 - **Readout**, one item per server: a glyph and the speed (`[bar] 247 t/s`, `[dot] 26 t/s`). While nothing runs, only the glyph.
 - **Glyph**: bar while a prompt is read, colored like on the Mac by how much came from the cache (green, yellow, orange, gray); blue dot while it writes; green dot when ready; grey ring when offline or no model; dotted ring while loading; red mark on an error.
-- **Custom engine**: shows "running" only, until it reports per-request phases (see the to-do in ops `tasks/todo.md`, section "Custom engine: per-request phase for Stratoscope"). No reading, no writing, no speed.
+- **Custom engine**: reading and writing per request from its `/ui/state` while requests run; without it, one busy state ("running") and no speed.
 - **Speed**: plain digits, `10k` from 9,999.5 t/s. With parallel requests it is the total.
 - **Position**: centred in the free gap of the taskbar. It moves only when the taskbar geometry changes, then once.
 - **Panel**: the Mac menu, with tabs for several servers. Two or more parallel requests show a sum bar with one smaller bar per request.
@@ -96,7 +96,7 @@ A server on another machine is reached through an SSH forward or a VPN address. 
 
 ```powershell
 dotnet test Sources/Windows/Stratoscope.Windows.sln -c Release
-.\scripts\windows\build.ps1 -Version 0.2.0   # publish both zips and the Setup (needs Inno Setup), each with .sha256
+.\scripts\windows\build.ps1 -Version 0.3.1   # publish both zips and the Setup (needs Inno Setup)
 .\scripts\windows\install.ps1                 # install your build
 .\scripts\windows\screenshots.ps1             # regenerate docs\img
 ```

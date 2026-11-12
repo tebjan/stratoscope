@@ -2,9 +2,24 @@
 
 ## Unreleased
 
-- llama.cpp (`llama-server`) on Windows: state (idle, reading, decoding), slots with the tokens they hold, prompt tokens read and reused per request, generated tokens, context, prefill and decode speed and the totals since start (the speeds and totals need `--metrics`). Found by `/props` when `/health` names no engine, so one router can serve Strata, Basalt and llama.cpp; a sleeping server is shown as asleep and not woken. llama-server reports no prompt size and no finished requests, so there is no read percentage and no request list. New setting value `engine: llamacpp`. Written against the llama.cpp source and recorded payload shapes, see `Tests/Fixtures/README.md` for what was checked against a running server.
+- llama.cpp (`llama-server`) connector, on Windows and the Mac: state, slots with the tokens they hold, prompt tokens read and reused per request, context, and with `--metrics` the speeds and totals. A sleeping server is shown as asleep and not woken. Setting value `engine: llamacpp`.
+- Custom 27B engine: one busy state from `/metrics`, and reading and writing per request from `/ui/state` while requests run. Setting value `engine: custom`.
+- Basalt engines: state, prefill progress and speeds, context, finished requests with their cache verdict, engine details, one entry per batch slot, RAM, CPU and the video card, each only where Basalt reports it. The Mac shows the same as Windows. Setting value `engine: basalt`.
+- The kind of engine is asked of the engine itself, so one router can serve Strata, Basalt, llama.cpp and the custom engine.
 
-- Basalt engines (verified against Basalt 0.3.2): state, prefill progress and speed, decode speed, context, finished requests with their cache verdict, engine details (version, KV format, draft window, expert cache), RAM, CPU, and the video card's load, temperature, power and memory, each only where Basalt reports it. The kind of engine is asked of the engine itself (`/health`), so one router can serve Strata and Basalt. New setting value `engine: basalt` reads Basalt only. The Swift core recognises a Basalt document and shows state, speeds, context, requests, RAM, GPU load and CPU.
+## v0.3.1 · 2026-11-09
+
+- Release files: the Mac download is `Stratoscope-<version>-macos.dmg`, the `.sha256` files are gone (GitHub shows each file's sha256), and the release text is shorter.
+- "Open settings file" creates a settings file of commented examples, on Windows and on the Mac. Choosing a theme keeps the comments, and a setting the app does not know is named.
+- The panel section "Prompt cache" is now "Conversation cache", on both systems.
+
+## v0.3.0 · 2026-11-09
+
+- Mac: a settings menu with Start at login, Theme, Open settings file, Reload settings and Check for updates.
+- Mac: finds the server by itself, like Windows. It shows "No engine found" for a minute, then the item hides.
+- Windows: the readout checks its colours against the taskbar as it really looks, and the grey ring is thicker.
+- Windows: Settings and Check for updates are rows of the panel, with a settings page drawn like the rest of it. The system context menu is gone, it stayed light on a dark Windows.
+- Windows: installer (`Stratoscope-<version>-windows-setup.exe`).
 
 ## v0.2.0 · 2026-11-09
 

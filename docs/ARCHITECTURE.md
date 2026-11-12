@@ -32,7 +32,7 @@ Open an issue first so the design can be agreed before the code.
 
 ## The snapshot
 
-`EngineSnapshot` holds what the menu can show: status (loading, idle, prefill, thinking, decode), the running request, finished requests, context usage, and three **optional** sections: `system` (RAM, GPU, CPU), `cache` (prompt cache and parked conversations) and `totals`. A section that is `nil` is not drawn. An engine that has no cache stats simply gets a shorter menu.
+`EngineSnapshot` holds what the menu can show: status (loading, idle, prefill, thinking, decode), the running request, finished requests, context usage, and three **optional** sections: `system` (RAM, GPU, CPU), `cache` (conversation cache and parked conversations) and `totals`. A section that is `nil` is not drawn. An engine that has no cache stats simply gets a shorter menu.
 
 ## Where the context numbers come from
 
@@ -91,7 +91,7 @@ What every front end does the same way. The payloads in `Tests/Fixtures` with th
 
 - **Missing values:** a key that is missing or `null` is unknown (`–` or left out, never `0`); a number sent as text is not a number. A missing section (`hardware`, `conversation_cache`, `totals`) is not drawn. Shown on purpose: the title is padded to three digits and reads `0 t/s`, and the running request's cache reuse carries `≈`.
 - **Numbers:** English formatting whatever the system language (`1,234,567`, `26.4`), halves round to even, durations `42 s`, `2 min 5 s`, `3 h 12 min`, sizes in GiB with one decimal.
-- **Strata sources:** router mode asks `GET <router>/running`, then `GET <router>/upstream/<model>/metrics`; direct mode `GET <url>/metrics`. Nothing else. Status comes from `live.state` and `live.phase`; speeds from `live.prefill_tok_s_mean` (else the progress of `live.prompt_read` between polls) and `live.tok_s`; context from `live.prompt_tokens + live.generated` of `engine.max_context`; requests from `requests[]`; RAM, GPU, CPU from `hardware`; the prompt cache from `conversation_cache`; totals from `totals`.
+- **Strata sources:** router mode asks `GET <router>/running`, then `GET <router>/upstream/<model>/metrics`; direct mode `GET <url>/metrics`. Nothing else. Status comes from `live.state` and `live.phase`; speeds from `live.prefill_tok_s_mean` (else the progress of `live.prompt_read` between polls) and `live.tok_s`; context from `live.prompt_tokens + live.generated` of `engine.max_context`; requests from `requests[]`; RAM, GPU, CPU from `hardware`; the conversation cache from `conversation_cache`; totals from `totals`.
 - **States:** connecting (nothing shown), offline, no model (router answers, `running` empty; nothing is woken), loading (router state is not `ready`), then ready, reading, thinking, writing. An HTTP 429 from the router keeps the last data on screen, marked.
 - **Settings:** environment variable, then the settings file, then the default. A router without `url` is asked alone, never `127.0.0.1:8095`.
 

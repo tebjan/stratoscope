@@ -35,9 +35,7 @@ jobs:
           name: Stratoscope-windows-${{ steps.v.outputs.version }}
           path: |
             Sources/Windows/artifacts/Stratoscope-*-windows*.zip
-            Sources/Windows/artifacts/Stratoscope-*-windows*.zip.sha256
             Sources/Windows/artifacts/Stratoscope-*-windows-setup.exe
-            Sources/Windows/artifacts/Stratoscope-*-windows-setup.exe.sha256
 
   release:
     needs: windows
@@ -66,8 +64,7 @@ jobs:
         with:
           name: Stratoscope-${{ steps.v.outputs.version }}
           path: |
-            build/Stratoscope-*.dmg
-            build/Stratoscope-*.dmg.sha256
+            build/Stratoscope-*-macos.dmg
 
       - name: Publish release
         if: github.ref_type == 'tag'
@@ -77,7 +74,5 @@ jobs:
           V="${{ steps.v.outputs.version }}"
           ./scripts/release-notes.sh "$V" > build/release-notes.md
           gh release create "$GITHUB_REF_NAME" \
-            "build/Stratoscope-$V.dmg" "build/Stratoscope-$V.dmg.sha256" \
-            build/Stratoscope-$V-windows*.zip build/Stratoscope-$V-windows*.zip.sha256 \
-            "build/Stratoscope-$V-windows-setup.exe" "build/Stratoscope-$V-windows-setup.exe.sha256" \
+            "build/Stratoscope-$V-macos.dmg" build/Stratoscope-$V-windows*.zip "build/Stratoscope-$V-windows-setup.exe" \
             --title "Stratoscope $V" --notes-file build/release-notes.md
