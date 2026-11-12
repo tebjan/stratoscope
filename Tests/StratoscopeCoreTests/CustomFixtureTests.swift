@@ -89,6 +89,71 @@ import Testing
     }
 }
 
+// Per-request reading and writing from /ui/state. custom-ui-state-busy.json is hand-written after the engine's source (worker.py, stats.py),
+// not captured from a live request. Its requests: r1 running prefill (prompt 6000, fed 2400, computed 2400, prefill_s 3.0), r2 running decode
+// (out 300, max_new 2048, decode_s 10.0), r3 and r5 waiting, r4 running prefill with prefill_s 0.
+@Suite struct CustomUiStateTests {
+    private let reader = CustomReader()
+
+    private func text(_ name: String) -> String { String(decoding: Fixture.data("custom/" + name), as: UTF8.self) }
+    private func busy() -> CustomMetrics { CustomMetrics.parse(text("custom-busy.metrics.txt"))! }
+    private func seqs(_ rids: String...) -> [CustomSeq] {
+        let all = CustomSeq.parse(text("custom-ui-state-busy.json"))!
+        return rids.isEmpty ? all : all.filter { rids.contains($0.rid ?? "") }
+    }
+    private func translate(_ s: [CustomSeq]?) -> EngineSnapshot { reader.translate(busy(), model: "m", seqs: s) }
+
+    @Test func testAPrefillSeqIsReadingWithFedAndPromptAndItsSpeed() {
+        let s = translate(seqs("r1"))
+        #expect(s.status == .prefill)
+        #expect(s.live?.promptRead == 2400)                 // fed
+        #expect(s.live?.promptTotal == 6000)                // prompt
+        #expect(s.live?.percent == 40)
+        #expect(s.live?.prefillTokensPerSecond == 800)      // computed 2400 / prefill_s 3.0
+        #expect(s.live?.decodeTokensPerSecond == nil)
+    }
+
+    @Test func testADecodeSeqIsWritingWithOutAndMaxNewAndItsSpeed() {
+        let s = translate(seqs("r2"))
+        #expect(s.status == .decode)
+        #expect(s.live?.generated == 300)                   // out
+        #expect(s.live?.maxTokens == 2048)                  // max_new
+        #expect(s.live?.decodeTokensPerSecond == 30)        // out 300 / decode_s 10.0
+        #expect(s.live?.prefillTokensPerSecond == nil)
+    }
+
+    @Test func testWaitingSeqsAreQueuedAndNotBusy() {
+        let s = translate(seqs())
+        #expect(s.queued == 2)                              // r3 and r5
+        #expect(s.live?.running == 3)                       // r1, r2, r4 run; the waiting ones do not
+        #expect(s.status == .decode)                        // r2 writes
+        #expect(translate(seqs("r3")).status == .running)   // nothing in the list runs: the aggregate state stays
+    }
+
+    @Test func testParkedAndAdmittedCountAsRunningWithoutAPhase() {
+        let s = translate([CustomSeq(state: "parked", phase: "decode"), CustomSeq(state: "admitted", phase: "prefill")])
+        #expect(s.status == .running)
+        #expect(s.live?.running == 2)
+        #expect(s.live?.promptRead == nil)
+        #expect(s.live?.generated == nil)
+    }
+
+    @Test func testASeqWithZeroTimeHasNoSpeed() {
+        let s = translate(seqs("r4"))
+        #expect(s.status == .prefill)
+        #expect(s.live?.promptRead == 0)                    // the engine says fed 0
+        #expect(s.live?.prefillTokensPerSecond == nil)      // prefill_s 0: no speed
+    }
+
+    @Test func testAnEngineWithoutUiStateStaysRunning() {
+        let s = translate(nil)
+        #expect(s.status == .running)
+        #expect(s.live?.promptRead == nil)
+        #expect(s.live?.generated == nil)
+        #expect(CustomSeq.parse("<html>") == nil)
+    }
+}
+
 @Suite struct CustomDetectionTests {
     private func text(_ name: String) -> String { String(decoding: Fixture.data("custom/" + name), as: UTF8.self) }
 

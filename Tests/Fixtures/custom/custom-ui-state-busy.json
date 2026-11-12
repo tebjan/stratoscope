@@ -1,0 +1,15 @@
+{
+  "sched": {"running": 3, "waiting": 2, "blocked": "kv", "target_seqs": 4},
+  "seqs": [
+    {"rid": "r1", "state": "running", "phase": "prefill", "prompt": 6000, "fed": 2400, "out": 0, "max_new": 512,
+     "computed": 2400, "cached": 0, "reusable": 0, "prefill_s": 3.0, "decode_s": 0.0, "ttft": null, "decode_wall": 0.0, "steps": 5, "preempted": 0},
+    {"rid": "r2", "state": "running", "phase": "decode", "prompt": 1000, "fed": 1000, "out": 300, "max_new": 2048,
+     "computed": 1000, "cached": 0, "reusable": 0, "prefill_s": 0.5, "decode_s": 10.0, "ttft": 0.7, "decode_wall": 12.0, "steps": 300, "preempted": 0},
+    {"rid": "r3", "state": "waiting", "phase": "prefill", "prompt": 900, "fed": 0, "out": 0, "max_new": 256,
+     "computed": 0, "cached": 0, "reusable": 0, "prefill_s": 0.0, "decode_s": 0.0, "ttft": null, "decode_wall": 0.0, "steps": 0, "preempted": 0},
+    {"rid": "r4", "state": "running", "phase": "prefill", "prompt": 500, "fed": 0, "out": 0, "max_new": 128,
+     "computed": 0, "cached": 0, "reusable": 0, "prefill_s": 0.0, "decode_s": 0.0, "ttft": null, "decode_wall": 0.0, "steps": 0, "preempted": 0},
+    {"rid": "r5", "state": "waiting", "phase": "prefill", "prompt": 700, "fed": 0, "out": 0, "max_new": 256,
+     "computed": 0, "cached": 0, "reusable": 0, "prefill_s": 0.0, "decode_s": 0.0, "ttft": null, "decode_wall": 0.0, "steps": 0, "preempted": 0}
+  ]
+}

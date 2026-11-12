@@ -12,6 +12,35 @@ public sealed record CustomHealth
 }
 
 /// <summary>
+/// The part of the custom 27B server's <c>GET /ui/state</c> that Stratoscope reads: the per-request list <c>seqs</c> (worker.py
+/// <c>Scheduler.stats()</c>, stats.py <c>tick()</c>, server.py <c>GET /ui/state</c>). The answer also carries logs and history (about 150 KB), so it is
+/// asked only while <c>/metrics</c> says requests run.
+/// </summary>
+public sealed record CustomUiState
+{
+    [JsonPropertyName("seqs")] public List<CustomSeq?>? Seqs { get; init; }
+}
+
+/// <summary>One request of <c>/ui/state</c> <c>seqs</c>. Null means the field was missing, null or of another type.</summary>
+public sealed record CustomSeq
+{
+    [JsonPropertyName("rid")] public string? Rid { get; init; }
+    /// <summary>waiting, running, parked or admitted.</summary>
+    [JsonPropertyName("state")] public string? State { get; init; }
+    /// <summary>The engine's own phase: prefill or decode.</summary>
+    [JsonPropertyName("phase")] public string? Phase { get; init; }
+    [JsonPropertyName("prompt")] public double? Prompt { get; init; }
+    /// <summary>Prompt tokens the engine has run (capped at the prompt).</summary>
+    [JsonPropertyName("fed")] public double? Fed { get; init; }
+    [JsonPropertyName("out")] public double? Out { get; init; }
+    [JsonPropertyName("max_new")] public double? MaxNew { get; init; }
+    /// <summary>Prompt tokens actually prefilled, not restored from the cache.</summary>
+    [JsonPropertyName("computed")] public double? Computed { get; init; }
+    [JsonPropertyName("prefill_s")] public double? PrefillSeconds { get; init; }
+    [JsonPropertyName("decode_s")] public double? DecodeSeconds { get; init; }
+}
+
+/// <summary>
 /// The numbers of the custom 27B server's <c>GET /metrics</c> (Prometheus text, series prefix <c>q27:</c>; worker.py <c>metrics()</c>). Null means the series
 /// was not in the answer. The scheduler gauges are read at the time of the request; the totals count since the engine started.
 /// </summary>

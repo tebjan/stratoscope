@@ -44,6 +44,7 @@ public static class Json
     public static JsonTypeInfo<List<LlamaSlotDto?>> LlamaSlotsType => StratoscopeJson.Default.ListLlamaSlotDto;
     public static JsonTypeInfo<LlamaProps> LlamaPropsType => StratoscopeJson.Default.LlamaProps;
     public static JsonTypeInfo<CustomHealth> CustomHealthType => StratoscopeJson.Default.CustomHealth;
+    public static JsonTypeInfo<CustomUiState> CustomUiStateType => StratoscopeJson.Default.CustomUiState;
 }
 
 /// <summary>The generated serializer metadata for every document the app reads.</summary>
@@ -60,6 +61,7 @@ public static class Json
 [JsonSerializable(typeof(List<LlamaSlotDto?>))]
 [JsonSerializable(typeof(LlamaProps))]
 [JsonSerializable(typeof(CustomHealth))]
+[JsonSerializable(typeof(CustomUiState))]
 internal sealed partial class StratoscopeJson : JsonSerializerContext;
 
 /// <summary>A number into a <c>double?</c>. Text, booleans, objects, arrays and numbers a double cannot hold give null.</summary>

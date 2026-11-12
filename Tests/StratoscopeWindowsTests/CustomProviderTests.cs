@@ -176,3 +176,103 @@ public class CustomDetectionTests
         Assert.Contains("custom", EngineRegistry.Available);
     }
 }
+
+// Per-request reading and writing from /ui/state. The fixture custom-ui-state-busy.json is hand-written after the engine's source (worker.py, stats.py),
+// not captured from a live request. Its requests: r1 running prefill (prompt 6000, fed 2400, computed 2400, prefill_s 3.0), r2 running decode
+// (out 300, max_new 2048, decode_s 10.0), r3 and r5 waiting, r4 running prefill with prefill_s 0.
+public class CustomUiStateTests
+{
+    private const string Address = "http://127.0.0.1:8095";
+
+    private static CustomProvider Provider() => new(new EngineConfig(), new FakeSource());
+    private static CustomMetrics Busy() => CustomMetrics.Parse(Fixtures.Text("custom/custom-busy.metrics.txt"))!;
+    private static CustomUiState Ui(params string[] rids)
+    {
+        var all = Json.Deserialize(Fixtures.Text("custom/custom-ui-state-busy.json"), Json.CustomUiStateType)!;
+        return rids.Length == 0 ? all : new CustomUiState { Seqs = all.Seqs!.Where(s => rids.Contains(s!.Rid)).ToList() };
+    }
+
+    [Fact]
+    public void APrefillSeqIsReadingWithFedAndPromptAndItsSpeed()
+    {
+        var s = Provider().Translate(Busy(), "m", Ui("r1"));
+        Assert.Equal(EngineStatus.Prefill, s.Status);
+        Assert.Equal(2400, s.Live!.PromptRead);                 // fed
+        Assert.Equal(6000, s.Live.PromptTotal);                 // prompt
+        Assert.Equal(40, s.Live.Percent);
+        Assert.Equal(800, s.Live.PrefillTokensPerSecond);       // computed 2400 / prefill_s 3.0
+        Assert.Null(s.Live.DecodeTokensPerSecond);
+    }
+
+    [Fact]
+    public void ADecodeSeqIsWritingWithOutAndMaxNewAndItsSpeed()
+    {
+        var s = Provider().Translate(Busy(), "m", Ui("r2"));
+        Assert.Equal(EngineStatus.Decode, s.Status);
+        Assert.Equal(300, s.Live!.Generated);                   // out
+        Assert.Equal(2048, s.Live.MaxTokens);                   // max_new
+        Assert.Equal(30, s.Live.DecodeTokensPerSecond);         // out 300 / decode_s 10.0
+        Assert.Null(s.Live.PrefillTokensPerSecond);
+    }
+
+    [Fact]
+    public void WaitingSeqsAreQueuedAndNotBusy()
+    {
+        var s = Provider().Translate(Busy(), "m", Ui());
+        Assert.Equal(2, s.Queued);                              // r3 and r5
+        Assert.Equal(3, s.Live!.Running);                       // r1, r2, r4 run; the waiting ones do not
+        Assert.Equal(EngineStatus.Decode, s.Status);            // r2 writes
+        var onlyWaiting = Provider().Translate(Busy(), "m", Ui("r3"));
+        Assert.Equal(EngineStatus.Running, onlyWaiting.Status); // nothing in the list runs: the aggregate state stays
+    }
+
+    [Fact]
+    public void ParkedAndAdmittedCountAsRunningWithoutAPhase()
+    {
+        var ui = new CustomUiState { Seqs = [new CustomSeq { State = "parked", Phase = "decode" }, new CustomSeq { State = "admitted", Phase = "prefill" }] };
+        var s = Provider().Translate(Busy(), "m", ui);
+        Assert.Equal(EngineStatus.Running, s.Status);
+        Assert.Equal(2, s.Live!.Running);
+        Assert.Null(s.Live.PromptRead);
+        Assert.Null(s.Live.Generated);
+    }
+
+    [Fact]
+    public void ASeqWithZeroTimeHasNoSpeed()
+    {
+        var s = Provider().Translate(Busy(), "m", Ui("r4"));
+        Assert.Equal(EngineStatus.Prefill, s.Status);
+        Assert.Equal(0, s.Live!.PromptRead);                    // the engine says fed 0
+        Assert.Null(s.Live.PrefillTokensPerSecond);             // prefill_s 0: no speed
+    }
+
+    [Fact]
+    public async Task AnEngineWithoutUiStateStaysRunning()
+    {
+        var source = new FakeSource().Json(Address + "/health", "custom/custom-idle.health.json").Json(Address + "/metrics", "custom/custom-busy.metrics.txt");
+        var s = await new CustomProvider(new EngineConfig { Url = Address }, source).PollAsync(CancellationToken.None);
+        Assert.Equal(EngineStatus.Running, s!.Status);
+        Assert.Null(s.Live!.PromptRead);
+        Assert.Null(s.Live.Generated);
+        Assert.Contains(Address + "/ui/state", source.Requested);
+
+        var notJson = new FakeSource().Json(Address + "/health", "custom/custom-idle.health.json").Json(Address + "/metrics", "custom/custom-busy.metrics.txt")
+            .Text(Address + "/ui/state", "<html>");
+        Assert.Equal(EngineStatus.Running, (await new CustomProvider(new EngineConfig { Url = Address }, notJson).PollAsync(CancellationToken.None))!.Status);
+    }
+
+    [Fact]
+    public async Task UiStateIsReadOnlyWhileRequestsRunAndMapsThroughTheProvider()
+    {
+        var idle = new FakeSource().Json(Address + "/health", "custom/custom-idle.health.json").Json(Address + "/metrics", "custom/custom-idle.metrics.txt");
+        await new CustomProvider(new EngineConfig { Url = Address }, idle).PollAsync(CancellationToken.None);
+        Assert.DoesNotContain(Address + "/ui/state", idle.Requested);
+
+        var busy = new FakeSource().Json(Address + "/health", "custom/custom-idle.health.json").Json(Address + "/metrics", "custom/custom-busy.metrics.txt")
+            .Json(Address + "/ui/state", "custom/custom-ui-state-busy.json");
+        var s = await new CustomProvider(new EngineConfig { Url = Address }, busy).PollAsync(CancellationToken.None);
+        Assert.Equal(EngineStatus.Decode, s!.Status);
+        Assert.Equal(3, s.Live!.Running);
+        Assert.Equal(2, s.Queued);
+    }
+}

@@ -36,6 +36,43 @@ struct CustomMetrics {
     }
 }
 
+/// One request of `GET /ui/state` `seqs` (worker.py `Scheduler.stats()`, stats.py `tick()`, server.py `GET /ui/state`). nil means the field was
+/// missing or of another type.
+struct CustomSeq {
+    var rid: String?
+    /// waiting, running, parked or admitted.
+    var state: String?
+    /// The engine's own phase: prefill or decode.
+    var phase: String?
+    var prompt: Double?
+    /// Prompt tokens the engine has run (capped at the prompt).
+    var fed: Double?
+    var out: Double?
+    var maxNew: Double?
+    /// Prompt tokens actually prefilled, not restored from the cache.
+    var computed: Double?
+    var prefillSeconds: Double?
+    var decodeSeconds: Double?
+
+    func isState(_ word: String) -> Bool { state?.caseInsensitiveCompare(word) == .orderedSame }
+    func isPhase(_ word: String) -> Bool { phase?.caseInsensitiveCompare(word) == .orderedSame }
+
+    /// The `seqs` of a `/ui/state` document, or nil when the text is not a JSON object with a `seqs` list.
+    static func parse(_ text: String?) -> [CustomSeq]? {
+        guard let text = text, let obj = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any],
+              let list = obj["seqs"] as? [Any] else { return nil }
+        func num(_ d: [String: Any], _ key: String) -> Double? {
+            guard let n = d[key] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite else { return nil }
+            return n.doubleValue
+        }
+        return list.compactMap { ($0 as? [String: Any]).map { d in
+            CustomSeq(rid: d["rid"] as? String, state: d["state"] as? String, phase: d["phase"] as? String,
+                      prompt: num(d, "prompt"), fed: num(d, "fed"), out: num(d, "out"), maxNew: num(d, "max_new"),
+                      computed: num(d, "computed"), prefillSeconds: num(d, "prefill_s"), decodeSeconds: num(d, "decode_s"))
+        } }
+    }
+}
+
 /// Reads the custom 27B server (its metrics use the q27: prefix) behind a llama-swap router or directly.
 ///
 /// Data sources, all GET on endpoints the server answers without waking it:
@@ -44,9 +81,11 @@ struct CustomMetrics {
 ///  - `/metrics` (Prometheus text, prefix `q27:`): running and waiting requests, the engine's sequence capacity, free KV pages,
 ///    prefix cache checkpoints, which admission block holds a request back, and the token totals.
 ///
-/// Not reported, so not drawn: speeds, the phase of a request, prompt sizes, finished requests, context size, RAM, video card.
-/// The phase is `.running` only: the metrics are totals across all requests and give no per-request phase, so neither reading nor
-/// writing is shown. They return once the engine reports per-request phases.
+///  - `/ui/state` (JSON, about 150 KB, asked only while `/metrics` says requests run): `seqs` with each request's state, its own phase
+///    (prefill or decode), prompt, fed, out, max_new, computed, prefill_s and decode_s. If it is missing, refused or not JSON, the phase is `.running` only.
+///
+/// Not reported, so not drawn: finished requests, context size, RAM, video card. The metrics alone are totals across all requests:
+/// without `/ui/state` neither reading nor writing is shown, and no speed.
 public final class CustomReader {
     /// The value of `engine:` in the config file.
     public static let id = "custom"
@@ -91,20 +130,56 @@ public final class CustomReader {
             }
             http.getText(base + "/metrics") { [self] code, text in
                 guard let code = code, (200..<300).contains(code), let m = CustomMetrics.parse(text) else { completion(nil); return }
-                completion(translate(m, model: model, compactAt: compactAt, links: links))
+                // Only while requests run. A missing, refused or non-JSON answer leaves seqs nil: the aggregate state stays.
+                guard (m.running ?? 0) > 0 else { completion(translate(m, model: model, compactAt: compactAt, links: links)); return }
+                http.getText(base + "/ui/state") { [self] stateCode, stateText in
+                    let seqs = stateCode.flatMap { (200..<300).contains($0) ? CustomSeq.parse(stateText) : nil }
+                    completion(translate(m, model: model, compactAt: compactAt, links: links, seqs: seqs))
+                }
             }
         }
     }
 
-    /// Translates the metrics into a snapshot: running requests give `.running`, none give `.idle`. Internal so tests can feed recorded payloads.
+    /// Translates the metrics into a snapshot: running requests give `.running`, none give `.idle`. With `seqs` (`/ui/state`, read only while
+    /// requests run) the phase of each running request is the engine's own: phase prefill is reading, decode is writing. Internal so tests can feed payloads.
     func translate(_ m: CustomMetrics, model: String, compactAt: Double? = nil,
-                   links: [EngineLink] = []) -> EngineSnapshot {
+                   links: [EngineLink] = [], seqs: [CustomSeq]? = nil) -> EngineSnapshot {
         let running = m.running ?? 0
         let busy = running > 0
-        let status: EngineStatus = busy ? .running : .idle
+        var status: EngineStatus = busy ? .running : .idle
 
-        // Only the number of requests running together is known; every other counter of the model stays nil (unknown).
-        let live: LiveRequest? = busy ? LiveRequest(running: running > 1 ? Int(running) : nil) : nil
+        // Without /ui/state only the number of requests running together is known; every other counter stays nil (unknown).
+        var live: LiveRequest? = busy ? LiveRequest(running: running > 1 ? Int(running) : nil) : nil
+        var waitingFromSeqs: Int?
+
+        if busy, let seqs = seqs {
+            // waiting: queued, not drawn as busy. running, parked and admitted: counted as running. parked and admitted carry no phase here
+            // (the phase is taken only from a "running" seq), so they add to the count without reading or writing.
+            let active = seqs.filter { $0.isState("running") || $0.isState("parked") || $0.isState("admitted") }
+            let readers = active.filter { $0.isState("running") && $0.isPhase("prefill") }
+            let writers = active.filter { $0.isState("running") && $0.isPhase("decode") }
+            if !active.isEmpty {
+                waitingFromSeqs = seqs.filter { $0.isState("waiting") }.count
+                status = !writers.isEmpty ? .decode : !readers.isEmpty ? .prefill : .running
+                let together = active.count > 1
+                // Speed only from exposed values and only for a time above zero; several together: the sum over those in the phase.
+                func speed(_ tokens: Double?, _ seconds: Double?) -> Double? {
+                    guard let t = tokens, let s = seconds, s > 0 else { return nil }
+                    return t / s
+                }
+                func sum(_ values: [Double?]) -> Double? {
+                    values.isEmpty || values.contains(where: { $0 == nil }) ? nil : values.compactMap { $0 }.reduce(0, +)
+                }
+                live = LiveRequest(
+                    promptRead: status == .prefill ? sum(readers.map { $0.fed }) : nil,
+                    promptTotal: status == .prefill && !together ? active[0].prompt : nil,
+                    generated: status == .decode ? sum(writers.map { $0.out }) : nil,
+                    maxTokens: status == .decode && !together ? active[0].maxNew : nil,
+                    prefillTokensPerSecond: status == .prefill ? sum(readers.map { speed($0.computed, $0.prefillSeconds) }) : nil,
+                    decodeTokensPerSecond: sum(writers.map { speed($0.out, $0.decodeSeconds) }),
+                    running: together ? active.count : nil)
+            }
+        }
 
         // Counters since the engine started. The Mac model's totals are not optional, so they are given only when the engine
         // reports all four (an unknown one would show as 0). Prompt tokens are all prompts admitted, reused ones included.
@@ -121,7 +196,7 @@ public final class CustomReader {
         }
 
         return EngineSnapshot(engine: Self.brand, model: model, status: status,
-                              queued: m.waiting.map { Int(max(0, min($0, 1e9))) } ?? 0,
+                              queued: waitingFromSeqs ?? m.waiting.map { Int(max(0, min($0, 1e9))) } ?? 0,
                               live: live, recent: [], context: ContextUsage(max: 0, compactAt: compactAt),
                               totals: totals, links: links, info: info)
     }
