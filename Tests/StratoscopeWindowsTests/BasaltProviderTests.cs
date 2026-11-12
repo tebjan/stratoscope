@@ -55,6 +55,18 @@ public class BasaltSnapshotTests
     }
 
     [Fact]
+    public void KvResidentTokensComeFromTheEnginesOwnKeyAndNoSlotTimingOrTotalsExist()
+    {
+        // /metrics engine.kv_resident is 32768 in basalt-0.3.2-parallel-idle.json and 0 in basalt-0.3.2-idle.json.
+        var parallel = Provider().Translate(Metrics("basalt-0.3.2-parallel-idle.json"), Slots("basalt-0.3.2-parallel-idle.slots.json"), "m");
+        Assert.Equal(32768, parallel.Info!.KvResidentTokens);
+        Assert.Equal(0, Provider().Translate(Metrics("basalt-0.3.2-idle.json"), null, "m").Info!.KvResidentTokens);
+        // The /slots rows carry no per-slot elapsed time and /metrics carries no totals: both stay unknown.
+        var decode = Provider().Translate(Metrics("basalt-0.3.2-decode.json"), Slots("basalt-0.3.2-decode.slots.json"), "m");
+        Assert.Null(decode.Totals);
+    }
+
+    [Fact]
     public void DecodeShowsSpeedGeneratedCountAndTheContextOfTheSlot()
     {
         var s = Provider().Translate(Metrics("basalt-0.3.2-decode.json"), Slots("basalt-0.3.2-decode.slots.json"), "m");

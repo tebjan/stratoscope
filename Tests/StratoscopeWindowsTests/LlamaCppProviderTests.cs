@@ -24,9 +24,9 @@ public class LlamaCppSnapshotTests
         Assert.Equal("llama.cpp", s.Engine);
         Assert.Equal(EngineStatus.Prefill, s.Status);
         Assert.Equal(0, s.Queued);
-        Assert.Equal(26889, s.Live!.PromptRead);
-        Assert.Null(s.Live.PromptTotal);                    // llama-server does not say how long the prompt is
-        Assert.Null(s.Live.Percent);                        // so there is no percentage, not 0
+        Assert.Equal(26377, s.Live!.PromptRead);            // /slots n_prompt_tokens_processed 26377 + n_prompt_tokens_cache 0
+        Assert.Equal(26889, s.Live.PromptTotal);            // /slots n_prompt_tokens, the request's whole prompt
+        Assert.NotNull(s.Live.Percent);
         Assert.Null(s.Live.PrefillTokensPerSecond);         // the engine counts a prompt into its speed gauge only when it is read: 0 during a long read, unknown here
         Assert.Null(s.Live.DecodeTokensPerSecond);          // the gauge is 0 when nothing was generated: unknown, not 0
         Assert.Equal(0, s.Live.Generated);
@@ -101,7 +101,7 @@ public class LlamaCppSnapshotTests
         Assert.Equal(4096, s.Slots![0].MaxTokens);
         Assert.Null(s.Slots[1].MaxTokens);                  // no limit
         Assert.Equal(5120, s.Slots[1].PromptRead);
-        Assert.Null(s.Slots[1].PromptTokens);               // the whole prompt is not known
+        Assert.Equal(5120, s.Slots[1].PromptTokens);        // /slots n_prompt_tokens of the reading slot
         Assert.Equal(18000, s.Slots[2].HeldTokens);         // an idle slot says what it holds
         Assert.False(s.Slots[2].IsActive);
         Assert.Null(s.Slots[3].HeldTokens);                 // a slot that never ran has no task and says nothing
@@ -204,7 +204,7 @@ public class LlamaCppFlowTests
         Assert.Equal("llama.cpp", provider.Brand);
         Assert.Equal(EngineStatus.Prefill, s.Status);
         Assert.Equal("Demo Model (4 parallel)", s.Model);   // the router's friendly name
-        Assert.Equal(26889, s.Live!.PromptRead);
+        Assert.Equal(26377, s.Live!.PromptRead);
         Assert.Equal(new[] { Router + "/running", Upstream + "/health", Upstream + "/props", Upstream + "/props", Upstream + "/slots", Upstream + "/metrics" }, source.Requested);
         Assert.Contains(s.Links, l => l.Title == "Open llama.cpp UI" && l.Target == Upstream + "/");
 
@@ -243,7 +243,7 @@ public class LlamaCppFlowTests
         var s = await Auto(source).PollAsync(CancellationToken.None);
         Assert.Equal(EngineStatus.Prefill, s!.Status);
         Assert.Null(s.Live!.PrefillTokensPerSecond);
-        Assert.Equal(26889, s.Live.PromptRead);
+        Assert.Equal(26377, s.Live.PromptRead);
         Assert.Null(s.Totals);
     }
 

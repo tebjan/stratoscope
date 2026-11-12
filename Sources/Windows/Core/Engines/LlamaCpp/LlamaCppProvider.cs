@@ -69,11 +69,12 @@ public sealed class LlamaCppProvider : RoutedProvider
         if (status != EngineStatus.Idle)
         {
             var reading = status == EngineStatus.Prefill;
-            double? read = null, generated;
+            double? read = null, total = null, generated;
             if (reading)
             {
-                // The engine does not say how long the prompt is, so there is no total and no percentage.
-                read = readers.All(Counting) && readers.All(s => s.Tokens.HasValue) ? readers.Sum(s => s.Tokens!.Value) : null;
+                // Read so far = tokens processed plus tokens reused from the cache (/slots n_prompt_tokens_processed and n_prompt_tokens_cache).
+                read = readers.All(Counting) && readers.All(s => s.Processed.HasValue && s.Cached.HasValue) ? readers.Sum(s => s.Processed!.Value + s.Cached!.Value) : null;
+                total = readers.All(s => s.Tokens.HasValue) ? readers.Sum(s => s.Tokens!.Value) : null;      // /slots n_prompt_tokens: the request's whole prompt
                 generated = readers.All(s => s.Generated == 0) ? 0 : null;       // "0" is the engine's word; a slot that says nothing is unknown
             }
             else
@@ -81,7 +82,7 @@ public sealed class LlamaCppProvider : RoutedProvider
             double? reused = !together && row != null && Counting(row) ? row.Cached : null;
             live = new LiveRequest
             {
-                PromptRead = read, PromptTotal = null, Generated = generated,
+                PromptRead = read, PromptTotal = total, Generated = generated,
                 MaxTokens = together ? null : row?.TokenLimit,
                 PrefillTokensPerSecond = reading && metrics?.PromptTokensPerSecond > 0 ? metrics.PromptTokensPerSecond : null,
                 DecodeTokensPerSecond = writers.Count > 0 && metrics?.PredictedTokensPerSecond > 0 ? metrics.PredictedTokensPerSecond : null,
@@ -98,7 +99,8 @@ public sealed class LlamaCppProvider : RoutedProvider
                 Index = (int)(s.Id ?? position),
                 State = !s.Processing ? "idle" : s.Generated > 0 ? "decoding" : "reading",
                 HeldTokens = s.Tokens,        // the slot's memory: the conversation it holds, a running request's prompt and what it wrote
-                PromptRead = s.Processing && s.Generated is not > 0 && Counting(s) ? s.Tokens : null,
+                PromptTokens = s.Processing && s.Generated is not > 0 ? s.Tokens : null,
+                PromptRead = s.Processing && s.Generated is not > 0 && Counting(s) && s.Processed.HasValue && s.Cached.HasValue ? s.Processed + s.Cached : null,
                 Generated = s.Processing ? s.Generated : null,
                 MaxTokens = s.Processing ? s.TokenLimit : null,
             }).ToList();

@@ -147,7 +147,7 @@ public sealed class BasaltProvider : RoutedProvider
         if (!IsEmpty(m.Engine))
             info = new EngineInfo
             {
-                Version = eng.Version, KvFormat = eng.Kv, DraftWindow = eng.Spec, ExpertCacheMib = eng.ExpertCacheMib,
+                Version = eng.Version, KvFormat = eng.Kv, KvResidentTokens = eng.KvResident, DraftWindow = eng.Spec, ExpertCacheMib = eng.ExpertCacheMib,
                 BatchSlots = live.Slots?.Total, ExpertHitRate = reqs.Count > 0 ? reqs[0].HitRate : null,
             };
 

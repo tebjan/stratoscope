@@ -20,6 +20,8 @@ public sealed record BasaltEngineDto
     [JsonPropertyName("max_context")] public double? MaxContext { get; init; }
     [JsonPropertyName("version")] public string? Version { get; init; }
     [JsonPropertyName("kv")] public string? Kv { get; init; }
+    /// <summary>The KV tokens resident in video memory (/metrics engine.kv_resident); 0 means none.</summary>
+    [JsonPropertyName("kv_resident")] public double? KvResident { get; init; }
     /// <summary>The draft window. Basalt sends a number; it is kept as text.</summary>
     [JsonPropertyName("spec")] public string? Spec { get; init; }
     [JsonPropertyName("expert_cache_mib")] public double? ExpertCacheMib { get; init; }
