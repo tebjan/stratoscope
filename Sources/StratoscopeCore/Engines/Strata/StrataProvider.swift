@@ -157,6 +157,9 @@ public final class StrataProvider: EngineProvider {
             let mean = num(live, "prefill_tok_s_mean") ?? 0, el = num(live, "elapsed_s") ?? 0
             reused = (mean > 0 && el > 1) ? max(0, read - mean * el) : read
         }
+        // Batch slots (live.slots): one row per slot. Several slots running together set the running count of the live request.
+        let rawSlots = (live["slots"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }
+        let running = rawSlots.filter { $0["state"] as? String == "reading" || $0["state"] as? String == "decoding" }
         var liveRequest: LiveRequest?
         if state != "idle" {
             let t = num(live, "tok_s")
@@ -164,21 +167,26 @@ public final class StrataProvider: EngineProvider {
                 promptRead: num(live, "prompt_read") ?? 0, promptTotal: num(live, "prompt_total") ?? 0,
                 generated: num(live, "generated") ?? 0, maxTokens: num(live, "max_tokens") ?? 0,
                 elapsedSeconds: num(live, "elapsed_s") ?? 0, prefillTokensPerSecond: prefill,
-                decodeTokensPerSecond: (t ?? 0) > 0 ? t : num(live, "tok_s_mean"), reusedEstimate: reused)
+                decodeTokensPerSecond: (t ?? 0) > 0 ? t : num(live, "tok_s_mean"), reusedEstimate: reused,
+                running: running.count > 1 ? max(running.count, Int(num(live, "running") ?? 0)) : nil)
         }
 
         let recent = reqs.map {
             RequestStats(promptTokens: num($0, "prompt_tokens") ?? 0, reusedTokens: num($0, "reused") ?? 0,
                          promptRead: num($0, "prompt_read") ?? 0, promptMilliseconds: num($0, "prompt_ms") ?? 0,
                          outputTokens: num($0, "output_tokens") ?? 0, decodeTokensPerSecond: num($0, "decode_tok_s"),
-                         durationSeconds: num($0, "duration_s") ?? 0)
+                         durationSeconds: num($0, "duration_s") ?? 0,
+                         finishedAt: Self.finishedAt(num($0, "time")), finish: $0["finish"] as? String, expertHitRate: num($0, "hit_rate"))
         }
 
         var ctxUsed = num(live, "prompt_tokens").map { $0 + (num(live, "generated") ?? 0) }
         if ctxUsed == nil, let l = recent.first { ctxUsed = l.promptTokens + l.outputTokens }
 
         let system = hw.isEmpty ? nil : SystemStats(ramUsedBytes: num(hw, "ram_used"), ramTotalBytes: num(hw, "ram_total"),
-                                                    gpuPercent: num(hw, "gpu_util"), cpuPercent: num(hw, "cpu"))
+                                                    gpuPercent: num(hw, "gpu_util"), cpuPercent: num(hw, "cpu"),
+                                                    gpuTemperatureCelsius: num(hw, "gpu_temp"), gpuPowerWatts: num(hw, "gpu_power"),
+                                                    gpuPowerLimitWatts: num(hw, "gpu_power_limit"),
+                                                    gpuMemoryUsedBytes: num(hw, "gpu_mem_used"), gpuMemoryTotalBytes: num(hw, "gpu_mem_total"))
 
         var cache: CacheStats?
         if !cc.isEmpty {
@@ -199,11 +207,41 @@ public final class StrataProvider: EngineProvider {
                             since: num(tot, "since").map { Date(timeIntervalSince1970: $0) })
         }
 
+        var info: EngineInfo?
+        if !eng.isEmpty {
+            info = EngineInfo(version: eng["version"] as? String, kvFormat: eng["kv"] as? String, draftWindow: Self.text(eng["spec"]),
+                              expertCacheMib: num(eng, "expert_cache_mib"), batchSlots: num(eng, "batch_slots"),
+                              expertHitRate: reqs.first.flatMap { num($0, "hit_rate") })
+        }
+
+        var slots: [BatchSlot]?
+        if !rawSlots.isEmpty {
+            slots = rawSlots.map {
+                BatchSlot(index: Int(num($0, "slot") ?? 0), state: $0["state"] as? String, heldTokens: num($0, "held_tokens"),
+                          promptTokens: num($0, "prompt_tokens"), promptRead: num($0, "prompt_read"), generated: num($0, "generated"),
+                          maxTokens: num($0, "max_tokens"), elapsedSeconds: num($0, "elapsed_s"))
+            }
+        }
+
         return EngineSnapshot(engine: "Strata", model: model, status: status, queued: Int(num(live, "queued") ?? 0),
                               live: liveRequest, recent: recent,
                               context: ContextUsage(used: ctxUsed, max: num(eng, "max_context") ?? 0,   // 0 = the engine did not say
                                                     compactAt: compactAt(model: model)),
                               system: system, cache: cache, totals: totals, links: links(),
-                              engineVersion: eng["version"] as? String)
+                              engineVersion: eng["version"] as? String, info: info, slots: slots)
+    }
+
+    /// The time a request finished, from the engine's seconds since 1970 (UTC); nil for a missing, non-finite or absurd value.
+    static func finishedAt(_ epochSeconds: Double?) -> Date? {
+        guard let t = epochSeconds, t.isFinite, t > 0, t < 253_402_300_000 else { return nil }
+        return Date(timeIntervalSince1970: t)
+    }
+
+    /// The draft window: Strata sends a number, Basalt may send text; kept as text. Nil for anything else.
+    static func text(_ value: Any?) -> String? {
+        if let s = value as? String { return s }
+        guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
+        let d = n.doubleValue
+        return d == d.rounded() && abs(d) < 1e15 ? String(Int64(d)) : String(d)
     }
 }

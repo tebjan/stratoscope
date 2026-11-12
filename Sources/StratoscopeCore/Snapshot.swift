@@ -179,13 +179,16 @@ public struct BatchSlot {
     public var tokensPerSecond: Double?
     public var maxTokens: Double?
     public init(index: Int, state: String? = nil, heldTokens: Double? = nil, promptTokens: Double? = nil, promptRead: Double? = nil,
-                generated: Double? = nil, tokensPerSecond: Double? = nil, maxTokens: Double? = nil) {
+                generated: Double? = nil, tokensPerSecond: Double? = nil, maxTokens: Double? = nil, elapsedSeconds: Double? = nil) {
+        self.elapsedSeconds = elapsedSeconds
         self.index = index; self.state = state; self.heldTokens = heldTokens; self.promptTokens = promptTokens
         self.promptRead = promptRead; self.generated = generated; self.tokensPerSecond = tokensPerSecond; self.maxTokens = maxTokens
     }
 
     /// The tokens in the slot's working memory: what an idle slot holds, what a running one holds (its prompt and what it has written).
     public var tokens: Double? { heldTokens ?? promptTokens.map { $0 + (generated ?? 0) } }
+    /// Seconds the slot's running request has been going (nil while idle or when the engine does not say).
+    public var elapsedSeconds: Double?
     public var isActive: Bool { state != nil && state != "idle" }
     public var isReading: Bool { state == "reading" }
     public var isDecoding: Bool { state == "decoding" }
