@@ -142,6 +142,16 @@ import Testing
         #expect(translate([CustomSeq(state: "admitted", phase: "prefill")]).status == .prefill)
     }
 
+    @Test func testTheHeadlineDecodeSpeedIsTheEnginesSampleTotal() {
+        var ui = CustomUiState()
+        ui.decodeTps = 123.4                                // tick.sample.decode_tps, the engine's total over all requests
+        ui.seqs = [CustomSeq(state: "running", phase: "decode"), CustomSeq(state: "parked", phase: "decode")]
+        let s = reader.translate(busy(), model: "m", ui: ui)
+        #expect(s.status == .decode)
+        #expect(s.live?.decodeTokensPerSecond == 123.4)
+        #expect(s.live?.running == 2)
+    }
+
     @Test func testASeqWithZeroTimeHasNoSpeed() {
         let s = translate(seqs("r4"))
         #expect(s.status == .prefill)

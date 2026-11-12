@@ -101,6 +101,8 @@ struct CustomUiState {
     // tick.sample: the latest NVML sample.
     var util: Double?, memUtil: Double?, power: Double?, powerLimit: Double?, smClock: Double?, memClock: Double?, temp: Double?
     var memUsedBytes: Double?, memTotalBytes: Double?
+    // tick.sample: the engine's own total token rates over all requests (as Strata's live.tok_s)
+    var decodeTps: Double?, prefillTps: Double?
     // tick.vram
     var vramTotal: Double?, vramBudget: Double?, vramFreeAtStart: Double?
     var vramParts: [CustomVramPart] = []
@@ -130,6 +132,7 @@ struct CustomUiState {
             s.util = customNumber(d, "util"); s.memUtil = customNumber(d, "mem_util"); s.power = customNumber(d, "power")
             s.powerLimit = customNumber(d, "power_limit"); s.smClock = customNumber(d, "sm_clock"); s.memClock = customNumber(d, "mem_clock")
             s.temp = customNumber(d, "temp"); s.memUsedBytes = customNumber(d, "used"); s.memTotalBytes = customNumber(d, "total")
+            s.decodeTps = customNumber(d, "decode_tps"); s.prefillTps = customNumber(d, "prefill_tps")
         }
         if let d = tick?["vram"] as? [String: Any] {
             s.vramTotal = customNumber(d, "total"); s.vramBudget = customNumber(d, "budget"); s.vramFreeAtStart = customNumber(d, "free_at_start")
@@ -279,8 +282,10 @@ public final class CustomReader {
                     promptTotal: status == .prefill && !together ? active[0].prompt : nil,
                     generated: status == .decode ? sum(writers.map { $0.out }) : nil,
                     maxTokens: status == .decode && !together ? active[0].maxNew : nil,
-                    prefillTokensPerSecond: status == .prefill ? sum(readers.map { speed($0.computed, $0.prefillSeconds) }) : nil,
-                    decodeTokensPerSecond: sum(writers.map { speed($0.out, $0.decodeSeconds) }),
+                    // The total over all requests comes from the engine's own sample (as Strata's live.tok_s does); the sum of the per-request
+                    // speeds is used only when the sample has no rate.
+                    prefillTokensPerSecond: status == .prefill ? (ui?.prefillTps ?? sum(readers.map { speed($0.computed, $0.prefillSeconds) })) : nil,
+                    decodeTokensPerSecond: ui?.decodeTps ?? sum(writers.map { speed($0.out, $0.decodeSeconds) }),
                     reusedEstimate: sum(active.map { $0.cached }),      // the engine's own count of prompt tokens restored from the cache
                     running: together ? active.count : nil)
             }
