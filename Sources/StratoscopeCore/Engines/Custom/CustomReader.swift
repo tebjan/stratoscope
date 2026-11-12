@@ -1,5 +1,20 @@
 import Foundation
 
+// SPEED RULE (name the source of every value; never estimate).
+// When several requests run together, the headline decode speed (and the headline prefill speed while reading) is the engine's
+// own total over all requests. Each engine reports that total itself:
+//  - Strata: live.tok_s, the total of the generating requests (serve/server.py _tok_s). The prefill headline is
+//    live.prefill_tok_s_mean, the engine's mean. The Windows Strata adapter also has a fallback: when the engine has no total yet,
+//    it sums derived per-slot speeds; the macOS reader does not have that fallback.
+//  - Basalt: live.tok_s, which the engine sums over its slots.
+//  - llama.cpp: /metrics llamacpp:predicted_tokens_seconds, the server-wide decode rate over all slots (prompt_tokens_seconds for
+//    prefill). It needs the server's --metrics flag. No sum is used.
+//  - custom: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps, the engine's counter deltas over all requests between
+//    samples. The per-request sum is used only when the sample has no rate.
+// A request's own speed is shown on its own row only. Never add up the per-request rows to make the headline unless the engine
+// has no total.
+// This file: the custom source is /ui/state tick.sample.decode_tps and tick.sample.prefill_tps.
+
 /// The numbers of the custom 27B server's `GET /metrics` (Prometheus text, series prefix `q27:`). nil means the series was not in the answer.
 /// The scheduler gauges are read at the time of the request; the totals count since the engine started.
 struct CustomMetrics {
@@ -282,8 +297,8 @@ public final class CustomReader {
                     promptTotal: status == .prefill && !together ? active[0].prompt : nil,
                     generated: status == .decode ? sum(writers.map { $0.out }) : nil,
                     maxTokens: status == .decode && !together ? active[0].maxNew : nil,
-                    // The total over all requests comes from the engine's own sample (as Strata's live.tok_s does); the sum of the per-request
-                    // speeds is used only when the sample has no rate.
+                    // Speed rule at the top of this file: the engine's own sample (tick.sample.*_tps) is the total over all requests;
+                    // the sum of the per-request speeds is used only when the sample has no rate.
                     prefillTokensPerSecond: status == .prefill ? (ui?.prefillTps ?? sum(readers.map { speed($0.computed, $0.prefillSeconds) })) : nil,
                     decodeTokensPerSecond: ui?.decodeTps ?? sum(writers.map { speed($0.out, $0.decodeSeconds) }),
                     reusedEstimate: sum(active.map { $0.cached }),      // the engine's own count of prompt tokens restored from the cache

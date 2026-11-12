@@ -1,5 +1,20 @@
 import Foundation
 
+// SPEED RULE (name the source of every value; never estimate).
+// When several requests run together, the headline decode speed (and the headline prefill speed while reading) is the engine's
+// own total over all requests. Each engine reports that total itself:
+//  - Strata: live.tok_s, the total of the generating requests (serve/server.py _tok_s). The prefill headline is
+//    live.prefill_tok_s_mean, the engine's mean. The Windows Strata adapter also has a fallback: when the engine has no total yet,
+//    it sums derived per-slot speeds; the macOS reader does not have that fallback.
+//  - Basalt: live.tok_s, which the engine sums over its slots.
+//  - llama.cpp: /metrics llamacpp:predicted_tokens_seconds, the server-wide decode rate over all slots (prompt_tokens_seconds for
+//    prefill). It needs the server's --metrics flag. No sum is used.
+//  - custom: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps, the engine's counter deltas over all requests between
+//    samples. The per-request sum is used only when the sample has no rate.
+// A request's own speed is shown on its own row only. Never add up the per-request rows to make the headline unless the engine
+// has no total.
+// This file: the llama.cpp source is /metrics llamacpp:predicted_tokens_seconds (decode) and llamacpp:prompt_tokens_seconds (prefill).
+
 // The documents llama-server (tools/server of llama.cpp) sends, read from untyped JSON. Port of LlamaCppDto.cs: every value is optional,
 // nil means the engine did not say, and a value of the wrong type is skipped (never turned into 0).
 

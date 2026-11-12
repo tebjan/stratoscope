@@ -21,7 +21,9 @@ public struct LiveRequest {
     public var generated: Double?
     public var maxTokens: Double?
     public var elapsedSeconds: Double?
+    /// The engine's total over all requests when several run; see the rule at the top of the engine readers.
     public var prefillTokensPerSecond: Double?
+    /// The engine's total over all requests when several run; see the rule at the top of the engine readers.
     public var decodeTokensPerSecond: Double?
     /// Prompt tokens served from cache, as far as the engine lets us tell.
     public var reusedEstimate: Double?
