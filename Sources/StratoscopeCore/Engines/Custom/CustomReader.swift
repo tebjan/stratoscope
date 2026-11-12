@@ -53,23 +53,124 @@ struct CustomSeq {
     var computed: Double?
     var prefillSeconds: Double?
     var decodeSeconds: Double?
+    /// Prompt tokens restored from the cache, and those that could have been (`cached`, `reusable`).
+    var cached: Double?
+    var reusable: Double?
+    /// Seconds to the first token, and how often the request was pushed out by the scheduler (`ttft`, `preempted`).
+    var ttft: Double?
+    var preempted: Double?
 
     func isState(_ word: String) -> Bool { state?.caseInsensitiveCompare(word) == .orderedSame }
     func isPhase(_ word: String) -> Bool { phase?.caseInsensitiveCompare(word) == .orderedSame }
 
-    /// The `seqs` of a `/ui/state` document, or nil when the text is not a JSON object with a `seqs` list.
+    /// The `seqs` of a `/ui/state` document (`tick.seqs`; a top-level `seqs` is accepted too), or nil when the text is not a JSON object with a list.
     static func parse(_ text: String?) -> [CustomSeq]? {
-        guard let text = text, let obj = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any],
-              let list = obj["seqs"] as? [Any] else { return nil }
-        func num(_ d: [String: Any], _ key: String) -> Double? {
-            guard let n = d[key] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite else { return nil }
-            return n.doubleValue
-        }
+        guard let text = text, let obj = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else { return nil }
+        return parse(object: obj)
+    }
+
+    static func parse(object obj: [String: Any]) -> [CustomSeq]? {
+        let tick = obj["tick"] as? [String: Any]
+        guard let list = (tick?["seqs"] as? [Any]) ?? (obj["seqs"] as? [Any]) else { return nil }
         return list.compactMap { ($0 as? [String: Any]).map { d in
             CustomSeq(rid: d["rid"] as? String, state: d["state"] as? String, phase: d["phase"] as? String,
-                      prompt: num(d, "prompt"), fed: num(d, "fed"), out: num(d, "out"), maxNew: num(d, "max_new"),
-                      computed: num(d, "computed"), prefillSeconds: num(d, "prefill_s"), decodeSeconds: num(d, "decode_s"))
+                      prompt: customNumber(d, "prompt"), fed: customNumber(d, "fed"), out: customNumber(d, "out"), maxNew: customNumber(d, "max_new"),
+                      computed: customNumber(d, "computed"), prefillSeconds: customNumber(d, "prefill_s"), decodeSeconds: customNumber(d, "decode_s"),
+                      cached: customNumber(d, "cached"), reusable: customNumber(d, "reusable"), ttft: customNumber(d, "ttft"),
+                      preempted: customNumber(d, "preempted"))
         } }
+    }
+}
+
+/// A finite number of a JSON object; nil when missing, null, boolean or of another type.
+private func customNumber(_ d: [String: Any]?, _ key: String) -> Double? {
+    guard let n = d?[key] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite else { return nil }
+    return n.doubleValue
+}
+
+/// A named byte count of `tick.vram.parts`, with its sub-parts.
+struct CustomVramPart {
+    var name: String
+    var bytes: Double?
+    var parts: [CustomVramPart]
+}
+
+/// The parts of `GET /ui/state` that are not per request (worker.py `Scheduler.stats()`, stats.py `tick()`; the shape is the live capture
+/// Tests/Fixtures/custom/custom-ui-state-idle.json). nil in a field means the key was missing or of another type.
+struct CustomUiState {
+    // tick.sample: the latest NVML sample.
+    var util: Double?, memUtil: Double?, power: Double?, powerLimit: Double?, smClock: Double?, memClock: Double?, temp: Double?
+    var memUsedBytes: Double?, memTotalBytes: Double?
+    // tick.vram
+    var vramTotal: Double?, vramBudget: Double?, vramFreeAtStart: Double?
+    var vramParts: [CustomVramPart] = []
+    // tick.cache
+    var poolPages: Double?, freePages: Double?, parkPages: Double?, checkpointOnlyPages: Double?, checkpoints: Double?
+    var hits: Double?, lookups: Double?, cachedTokens: Double?, evicted: Double?, hasCache = false
+    // tick.sched
+    var running: Double?, waiting: Double?, blocked: String?, targetSeqs: Double?, hasSched = false
+    // tick.engine
+    var engineState: String?
+    // info
+    var maxTokens: Double?, maxSeqs: Double?, spec: Bool?, kvDtype: String?, gpu: String?, hasInfo = false
+    // tick.seqs
+    var seqs: [CustomSeq]?
+    // log events of kind "done", newest first
+    var done: [RequestStats] = []
+
+    func part(_ name: String) -> CustomVramPart? { vramParts.first { $0.name == name } }
+    var hasSample: Bool { util != nil || temp != nil || power != nil || memTotalBytes != nil }
+
+    /// nil when the text is not a JSON object.
+    static func parse(_ text: String?) -> CustomUiState? {
+        guard let text = text, let obj = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else { return nil }
+        var s = CustomUiState()
+        let tick = obj["tick"] as? [String: Any]
+        if let d = tick?["sample"] as? [String: Any] {
+            s.util = customNumber(d, "util"); s.memUtil = customNumber(d, "mem_util"); s.power = customNumber(d, "power")
+            s.powerLimit = customNumber(d, "power_limit"); s.smClock = customNumber(d, "sm_clock"); s.memClock = customNumber(d, "mem_clock")
+            s.temp = customNumber(d, "temp"); s.memUsedBytes = customNumber(d, "used"); s.memTotalBytes = customNumber(d, "total")
+        }
+        if let d = tick?["vram"] as? [String: Any] {
+            s.vramTotal = customNumber(d, "total"); s.vramBudget = customNumber(d, "budget"); s.vramFreeAtStart = customNumber(d, "free_at_start")
+            func parts(_ any: Any?) -> [CustomVramPart] {
+                (any as? [Any] ?? []).compactMap { ($0 as? [String: Any]).flatMap { p in
+                    (p["name"] as? String).map { CustomVramPart(name: $0, bytes: customNumber(p, "bytes"), parts: parts(p["parts"])) } } }
+            }
+            s.vramParts = parts(d["parts"])
+        }
+        if let d = tick?["cache"] as? [String: Any] {
+            s.hasCache = true
+            s.poolPages = customNumber(d, "pool_pages"); s.freePages = customNumber(d, "free_pages"); s.parkPages = customNumber(d, "park_pages")
+            s.checkpointOnlyPages = customNumber(d, "checkpoint_only_pages"); s.checkpoints = customNumber(d, "checkpoints")
+            s.hits = customNumber(d, "hits"); s.lookups = customNumber(d, "lookups"); s.cachedTokens = customNumber(d, "cached_tokens")
+            s.evicted = customNumber(d, "evicted")
+        }
+        if let d = tick?["sched"] as? [String: Any] {
+            s.hasSched = true
+            s.running = customNumber(d, "running"); s.waiting = customNumber(d, "waiting"); s.targetSeqs = customNumber(d, "target_seqs")
+            s.blocked = d["blocked"] as? String
+        }
+        s.engineState = tick?["engine"] as? String
+        if let d = (obj["info"] as? [String: Any]) ?? (tick?["info"] as? [String: Any]) {
+            s.hasInfo = true
+            s.maxTokens = customNumber(d, "max_tokens"); s.maxSeqs = customNumber(d, "max_seqs"); s.kvDtype = d["kv_dtype"] as? String
+            s.gpu = d["gpu"] as? String
+            if let b = d["spec"] as? NSNumber, CFGetTypeID(b) == CFBooleanGetTypeID() { s.spec = b.boolValue }
+        }
+        s.seqs = CustomSeq.parse(object: obj)
+        // The engine's log keeps the last events oldest first; the "done" ones are the finished requests. Newest 20.
+        let events = (obj["log"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }.filter { $0["kind"] as? String == "done" }
+        s.done = events.reversed().prefix(20).compactMap { e in
+            guard let rec = e["rec"] as? [String: Any] else { return nil }
+            return RequestStats(promptTokens: customNumber(rec, "prompt_tokens") ?? 0, reusedTokens: customNumber(rec, "cached_tokens") ?? 0,
+                                promptRead: customNumber(rec, "computed_tokens") ?? 0,
+                                promptMilliseconds: (customNumber(rec, "prefill_s") ?? 0) * 1000,
+                                outputTokens: customNumber(rec, "completion_tokens") ?? 0, decodeTokensPerSecond: customNumber(rec, "decode_tps"),
+                                durationSeconds: customNumber(rec, "total") ?? 0,
+                                finishedAt: customNumber(e, "t").map { Date(timeIntervalSince1970: $0) }, finish: rec["reason"] as? String)
+        }
+        return s
     }
 }
 
@@ -130,20 +231,23 @@ public final class CustomReader {
             }
             http.getText(base + "/metrics") { [self] code, text in
                 guard let code = code, (200..<300).contains(code), let m = CustomMetrics.parse(text) else { completion(nil); return }
-                // Only while requests run. A missing, refused or non-JSON answer leaves seqs nil: the aggregate state stays.
-                guard (m.running ?? 0) > 0 else { completion(translate(m, model: model, compactAt: compactAt, links: links)); return }
+                // Asked on every poll, idle too: the video card, memory parts, cache counters, engine settings and finished requests are only
+                // there. A missing, refused or non-JSON answer leaves ui nil: the aggregate state stays and those parts are not drawn.
                 http.getText(base + "/ui/state") { [self] stateCode, stateText in
-                    let seqs = stateCode.flatMap { (200..<300).contains($0) ? CustomSeq.parse(stateText) : nil }
-                    completion(translate(m, model: model, compactAt: compactAt, links: links, seqs: seqs))
+                    let ui = stateCode.flatMap { (200..<300).contains($0) ? CustomUiState.parse(stateText) : nil }
+                    completion(translate(m, model: model, compactAt: compactAt, links: links, ui: ui))
                 }
             }
         }
     }
 
-    /// Translates the metrics into a snapshot: running requests give `.running`, none give `.idle`. With `seqs` (`/ui/state`, read only while
-    /// requests run) the phase of each running request is the engine's own: phase prefill is reading, decode is writing. Internal so tests can feed payloads.
+    /// Translates the metrics into a snapshot: running requests give `.running`, none give `.idle`. With `seqs` (`/ui/state` `tick.seqs`)
+    /// the phase of each running request is the engine's own: phase prefill is reading, decode is writing. With `ui` (the whole `/ui/state`,
+    /// asked on every poll) the card, memory, KV cache, engine settings, slots, context and finished requests are filled too; `seqs` wins
+    /// over `ui.seqs` when both are given. Internal so tests can feed payloads.
     func translate(_ m: CustomMetrics, model: String, compactAt: Double? = nil,
-                   links: [EngineLink] = [], seqs: [CustomSeq]? = nil) -> EngineSnapshot {
+                   links: [EngineLink] = [], seqs givenSeqs: [CustomSeq]? = nil, ui: CustomUiState? = nil) -> EngineSnapshot {
+        let seqs = givenSeqs ?? ui?.seqs
         let running = m.running ?? 0
         let busy = running > 0
         var status: EngineStatus = busy ? .running : .idle
@@ -177,6 +281,7 @@ public final class CustomReader {
                     maxTokens: status == .decode && !together ? active[0].maxNew : nil,
                     prefillTokensPerSecond: status == .prefill ? sum(readers.map { speed($0.computed, $0.prefillSeconds) }) : nil,
                     decodeTokensPerSecond: sum(writers.map { speed($0.out, $0.decodeSeconds) }),
+                    reusedEstimate: sum(active.map { $0.cached }),      // the engine's own count of prompt tokens restored from the cache
                     running: together ? active.count : nil)
             }
         }
@@ -189,15 +294,72 @@ public final class CustomReader {
         }
 
         let blocked: String? = m.blockedKv == 1 ? "kv" : m.blockedSpeed == 1 ? "speed" : (m.blockedKv == 0 && m.blockedSpeed == 0) ? "none" : nil
+        // Metrics first (asked on every poll); /ui/state fills what they lack.
+        let batchSlotCount = m.engineSeqs ?? ui?.maxSeqs
+        let kvFree = m.kvFreePages ?? ui?.freePages
+        let kvCheckpointOnly = m.kvCheckpointOnlyPages ?? ui?.checkpointOnlyPages
+        let checkpoints = m.prefixCacheCheckpoints ?? ui?.checkpoints
+        let draft: String? = ui?.spec.map { $0 ? "DFlash2" : "none" }
         var info: EngineInfo?
-        if m.engineSeqs != nil || m.kvFreePages != nil || m.prefixCacheCheckpoints != nil || blocked != nil {
-            info = EngineInfo(batchSlots: m.engineSeqs, kvFreePages: m.kvFreePages, kvCheckpointOnlyPages: m.kvCheckpointOnlyPages,
-                              prefixCheckpoints: m.prefixCacheCheckpoints, admissionBlocked: blocked)
+        if batchSlotCount != nil || kvFree != nil || checkpoints != nil || blocked != nil || ui?.hasInfo == true || ui?.hasSched == true {
+            info = EngineInfo(kvFormat: ui?.kvDtype, draftWindow: draft, batchSlots: batchSlotCount,
+                              kvFreePages: kvFree, kvCheckpointOnlyPages: kvCheckpointOnly,
+                              prefixCheckpoints: checkpoints, admissionBlocked: blocked,
+                              gpuName: ui?.gpu, targetSeqs: ui?.targetSeqs)
         }
+
+        // The engine itself says it is loading or restarting (tick.engine): nothing can run yet.
+        if let state = ui?.engineState, state.caseInsensitiveCompare("ready") != .orderedSame { status = .loading("State: " + state) }
+
+        // The video card: the NVML sample (tick.sample). Video memory used is the total minus the "free" part of the engine's own
+        // accounting (tick.vram.parts). RAM and CPU are not in /ui/state: nil.
+        var system: SystemStats?
+        if let u = ui, u.hasSample || u.vramTotal != nil {
+            let free = u.part("free")?.bytes
+            system = SystemStats(gpuPercent: u.util, gpuTemperatureCelsius: u.temp, gpuPowerWatts: u.power, gpuPowerLimitWatts: u.powerLimit,
+                                 gpuMemoryUsedBytes: u.vramTotal.flatMap { t in free.map { t - $0 } },
+                                 gpuMemoryTotalBytes: u.vramTotal, gpuMemoryBusyPercent: u.memUtil)
+        }
+
+        // The KV cache: its budget is the "KV cache" part of the video memory, in use is that minus its own "free" part; the counters are
+        // the engine's (lookups, hits, evicted). No conversation slots or parked list: the engine has none.
+        var cache: CacheStats?
+        if let u = ui, let kv = u.part("KV cache"), let kvBytes = kv.bytes {
+            let kvFreeBytes = kv.parts.first { $0.name == "free" }?.bytes
+            cache = CacheStats(budgetBytes: kvBytes, usedBytes: kvFreeBytes.map { kvBytes - $0 } ?? 0,
+                               requests: u.lookups ?? 0, requestsReused: u.hits ?? 0, evictions: u.evicted ?? 0)
+        }
+
+        // One row per engine slot: a running request fills one, the rest are idle. Only when the slot count is known.
+        var slots: [BatchSlot]?
+        if let count = batchSlotCount, count > 0, let seqs = seqs {
+            let held = seqs.filter { $0.isState("running") || $0.isState("parked") || $0.isState("admitted") }
+            var rows: [BatchSlot] = []
+            for i in 0..<max(Int(count), held.count) {
+                guard i < held.count else { rows.append(BatchSlot(index: i, state: "idle")); continue }
+                let s = held[i], isRunning = s.isState("running")
+                let state = isRunning ? (s.isPhase("decode") ? "decoding" : s.isPhase("prefill") ? "reading" : "running") : (s.state ?? "").lowercased()
+                var tps: Double?
+                if isRunning, s.isPhase("decode"), let out = s.out, let sec = s.decodeSeconds, sec > 0 { tps = out / sec }
+                rows.append(BatchSlot(index: i, state: state, promptTokens: s.prompt, promptRead: s.fed, generated: s.out,
+                                      tokensPerSecond: tps, maxTokens: s.maxNew))
+            }
+            slots = rows
+        }
+
+        // The context of the fullest running request: the prompt fed so far plus what it wrote (the prompt when fed is missing); otherwise
+        // the newest finished one. The maximum is info.max_tokens (0 = unknown).
+        let recent = ui?.done ?? []
+        var ctxUsed: Double?
+        for s in (seqs ?? []) where s.isState("running") {
+            if let basis = s.fed ?? s.prompt { ctxUsed = max(ctxUsed ?? 0, basis + (s.out ?? 0)) }
+        }
+        if ctxUsed == nil, let newest = recent.first { ctxUsed = newest.contextTokens }
 
         return EngineSnapshot(engine: Self.brand, model: model, status: status,
                               queued: waitingFromSeqs ?? m.waiting.map { Int(max(0, min($0, 1e9))) } ?? 0,
-                              live: live, recent: [], context: ContextUsage(max: 0, compactAt: compactAt),
-                              totals: totals, links: links, info: info)
+                              live: live, recent: recent,
+                              context: ContextUsage(used: ctxUsed, max: ui?.maxTokens ?? 0, compactAt: compactAt),
+                              system: system, cache: cache, totals: totals, links: links, info: info, slots: slots)
     }
 }

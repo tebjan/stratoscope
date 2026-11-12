@@ -17,12 +17,17 @@ final class Panels {
         groups.append([Section(id: "live", height: 198) { [unowned self] _ in self.paintLive() }])
         if !s.isLoading {
             groups.append([Section(id: "speed", height: 96) { [unowned self] _ in self.paintSpeed() }])
-            if s.system != nil { groups.append([Section(id: "system", height: 104) { [unowned self] _ in self.paintSystem() }]) }
+            if let sys = s.system {
+                // A fourth row for the video memory when the engine reports it (custom server); the other engines keep three rows.
+                let withVram = sys.gpuMemoryUsedBytes != nil && sys.gpuMemoryTotalBytes != nil
+                groups.append([Section(id: "system", height: withVram ? 130 : 104) { [unowned self] _ in self.paintSystem() }])
+            }
             if let c = s.cache {
                 var g = [Section(id: "cachehead", height: 84) { [unowned self] _ in self.paintCacheHead() }]
                 for i in 0..<min(c.slots, 8) { g.append(Section(id: "cacherow\(i)", height: 38) { [unowned self] _ in self.paintCacheRow(i) }) }
                 groups.append(g)
             }
+            if s.engine == CustomReader.brand, s.info != nil { groups.append([Section(id: "engine", height: 66) { [unowned self] _ in self.paintEngine() }]) }
             if s.totals != nil { groups.append([Section(id: "totals", height: 50) { [unowned self] _ in self.paintTotals() }]) }
         }
         return groups
@@ -144,21 +149,43 @@ final class Panels {
             text(value, x: 0, y: y, size: 11, right: menuWidth - pad)
             bar(pad, y + 15, inner, 6, frac, c)
         }
-        let used = sys.ramUsedBytes ?? 0, total = sys.ramTotalBytes ?? 1
-        row(28, "RAM", "\(Fmt.gib(used)) of \(Fmt.gib(total)) GB", used / total, used / total > 0.9 ? .systemRed : .systemPurple)
-        row(54, "GPU", "\(Fmt.number(sys.gpuPercent ?? 0)) %", (sys.gpuPercent ?? 0) / 100, .systemGreen)
-        row(80, "CPU", "\(Fmt.number(sys.cpuPercent ?? 0)) %", (sys.cpuPercent ?? 0) / 100, .systemIndigo)
+        // An unreported value is "–" with an empty bar, never 0.
+        if let used = sys.ramUsedBytes, let total = sys.ramTotalBytes, total > 0 {
+            row(28, "RAM", "\(Fmt.gib(used)) of \(Fmt.gib(total)) GB", used / total, used / total > 0.9 ? .systemRed : .systemPurple)
+        } else { row(28, "RAM", "–", 0, .systemPurple) }
+        var gpu = sys.gpuPercent.map { "\(Fmt.number($0)) %" } ?? "–"
+        if let t = sys.gpuTemperatureCelsius { gpu += " · \(Fmt.number(t)) °C" }
+        if let p = sys.gpuPowerWatts { gpu += " · \(Fmt.number(p)) W" + (sys.gpuPowerLimitWatts.map { " of \(Fmt.number($0)) W" } ?? "") }
+        row(54, "GPU", gpu, (sys.gpuPercent ?? 0) / 100, .systemGreen)
+        row(80, "CPU", sys.cpuPercent.map { "\(Fmt.number($0)) %" } ?? "–", (sys.cpuPercent ?? 0) / 100, .systemIndigo)
+        if let used = sys.gpuMemoryUsedBytes, let total = sys.gpuMemoryTotalBytes, total > 0 {
+            row(106, "Video memory", "\(Fmt.gib(used)) of \(Fmt.gib(total)) GiB", used / total, used / total > 0.95 ? .systemRed : .systemTeal)
+        }
+    }
+
+    // MARK: Engine (custom server)
+
+    func paintEngine() {
+        guard let s = snap, let i = s.info else { return }
+        func n(_ v: Double?) -> String { v.map { Fmt.number($0) } ?? "–" }
+        text("Engine", x: pad, y: 8, size: 12, bold: true)
+        text(i.gpuName ?? "–", x: 0, y: 8, size: 12, right: menuWidth - pad)
+        let busy = s.slots?.filter { $0.isActive }.count
+        text("Slots \(busy.map { String($0) } ?? "–") of \(n(i.batchSlots)) · target \(n(i.targetSeqs))", x: pad, y: 28, size: 11)
+        text("Draft \(i.draftWindow ?? "–") · KV \(i.kvFormat ?? "–")", x: 0, y: 28, size: 11, right: menuWidth - pad)
+        text("Free KV pages \(n(i.kvFreePages)) · checkpoints \(n(i.prefixCheckpoints))", x: pad, y: 46, size: 11)
+        text("Held back: \(i.admissionBlocked ?? "–")", x: 0, y: 46, size: 11, right: menuWidth - pad)
     }
 
     // MARK: Conversation cache
 
     func paintCacheHead() {
         guard let s = snap, let c = s.cache else { return }
-        text("Conversation cache", x: pad, y: 8, size: 12, bold: true)
+        text(s.engine == CustomReader.brand ? "KV cache" : "Conversation cache", x: pad, y: 8, size: 12, bold: true)
         text("\(Fmt.gib(c.usedBytes)) of \(Fmt.gib(c.budgetBytes)) GiB", x: 0, y: 8, size: 12, right: menuWidth - pad)
         bar(pad, 28, menuWidth - 2 * pad, 9, c.budgetBytes > 0 ? c.usedBytes / c.budgetBytes : 0,
             c.usedBytes / max(c.budgetBytes, 1) > 0.9 ? .systemRed : .systemMint)
-        text("\(c.parked) of \(c.slots) slots used", x: pad, y: 42, size: 11)
+        if c.slots > 0 { text("\(c.parked) of \(c.slots) slots used", x: pad, y: 42, size: 11) }
         text("Hit rate \(c.requests > 0 ? Fmt.number(c.requestsReused / c.requests * 100) : "–") % · evicted \(Fmt.number(c.evictions))", x: 0, y: 42, size: 11, right: menuWidth - pad)
         let recent = Array(s.recent.prefix(12).reversed())
         text("Last \(recent.count):", x: pad, y: 62, size: 11)

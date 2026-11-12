@@ -110,9 +110,12 @@ public struct SystemStats {
     public var gpuPowerLimitWatts: Double?
     public var gpuMemoryUsedBytes: Double?
     public var gpuMemoryTotalBytes: Double?
+    /// Share of time the video memory interface was busy, 0...100 (NVML memory utilisation; custom 27B server), or nil.
+    public var gpuMemoryBusyPercent: Double?
     public init(ramUsedBytes: Double? = nil, ramTotalBytes: Double? = nil, gpuPercent: Double? = nil, cpuPercent: Double? = nil,
                 gpuTemperatureCelsius: Double? = nil, gpuPowerWatts: Double? = nil, gpuPowerLimitWatts: Double? = nil,
-                gpuMemoryUsedBytes: Double? = nil, gpuMemoryTotalBytes: Double? = nil) {
+                gpuMemoryUsedBytes: Double? = nil, gpuMemoryTotalBytes: Double? = nil, gpuMemoryBusyPercent: Double? = nil) {
+        self.gpuMemoryBusyPercent = gpuMemoryBusyPercent
         self.ramUsedBytes = ramUsedBytes; self.ramTotalBytes = ramTotalBytes
         self.gpuPercent = gpuPercent; self.cpuPercent = cpuPercent
         self.gpuTemperatureCelsius = gpuTemperatureCelsius; self.gpuPowerWatts = gpuPowerWatts
@@ -149,13 +152,18 @@ public struct EngineInfo {
     public var totalOutputTokens: Double?
     public var totalPromptMilliseconds: Double?
     public var totalDecodeMilliseconds: Double?
+    /// The name of the video card the engine runs on, and the number of requests the scheduler aims to run together (custom 27B server).
+    public var gpuName: String?
+    public var targetSeqs: Double?
     public init(version: String? = nil, kvFormat: String? = nil, draftWindow: String? = nil, expertCacheMib: Double? = nil,
                 batchSlots: Double? = nil, expertHitRate: Double? = nil,
                 conversationCacheBudgetBytes: Double? = nil, conversationCacheSlots: Int? = nil,
                 kvFreePages: Double? = nil, kvCheckpointOnlyPages: Double? = nil, prefixCheckpoints: Double? = nil,
                 admissionBlocked: String? = nil,
                 totalPromptTokens: Double? = nil, totalReusedTokens: Double? = nil, totalOutputTokens: Double? = nil,
-                totalPromptMilliseconds: Double? = nil, totalDecodeMilliseconds: Double? = nil) {
+                totalPromptMilliseconds: Double? = nil, totalDecodeMilliseconds: Double? = nil,
+                gpuName: String? = nil, targetSeqs: Double? = nil) {
+        self.gpuName = gpuName; self.targetSeqs = targetSeqs
         self.totalPromptTokens = totalPromptTokens; self.totalReusedTokens = totalReusedTokens; self.totalOutputTokens = totalOutputTokens
         self.totalPromptMilliseconds = totalPromptMilliseconds; self.totalDecodeMilliseconds = totalDecodeMilliseconds
         self.kvFreePages = kvFreePages; self.kvCheckpointOnlyPages = kvCheckpointOnlyPages
@@ -178,6 +186,8 @@ public struct BatchSlot {
     public var generated: Double?
     public var tokensPerSecond: Double?
     public var maxTokens: Double?
+    /// Seconds the slot's running request has been going (nil while idle or when the engine does not say).
+    public var elapsedSeconds: Double?
     public init(index: Int, state: String? = nil, heldTokens: Double? = nil, promptTokens: Double? = nil, promptRead: Double? = nil,
                 generated: Double? = nil, tokensPerSecond: Double? = nil, maxTokens: Double? = nil, elapsedSeconds: Double? = nil) {
         self.elapsedSeconds = elapsedSeconds
@@ -187,8 +197,6 @@ public struct BatchSlot {
 
     /// The tokens in the slot's working memory: what an idle slot holds, what a running one holds (its prompt and what it has written).
     public var tokens: Double? { heldTokens ?? promptTokens.map { $0 + (generated ?? 0) } }
-    /// Seconds the slot's running request has been going (nil while idle or when the engine does not say).
-    public var elapsedSeconds: Double?
     public var isActive: Bool { state != nil && state != "idle" }
     public var isReading: Bool { state == "reading" }
     public var isDecoding: Bool { state == "decoding" }
