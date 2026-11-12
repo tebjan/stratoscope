@@ -11,6 +11,21 @@ namespace Stratoscope.Core.Engines.Basalt;
 ///    it is read, and it also carries the request's token limit and its cache reuse.
 /// Basalt has no conversation cache list, no totals and no batch slots in these documents, so those parts of the panel are not drawn.
 /// </summary>
+/// <remarks>
+/// Speed rule: name the source of every value; never estimate.
+/// When several requests run together, the headline decode speed (and the headline prefill speed while reading) is the engine's own total over
+/// all requests. Each engine reports that total itself:
+///  - Strata: live.tok_s, the total of the generating requests (serve/server.py _tok_s). Only when the engine has no total yet (the newest request
+///    still reads its prompt) is the sum of the derived per-slot speeds used (StrataProvider.cs, the branch where rates.Sum() is taken). Prefill:
+///    live.prefill_tok_s_mean, the engine's mean; a value derived from the progress between polls only when that is missing.
+///  - Basalt: live.tok_s, which the engine sums over its slots (BasaltProvider.cs, the speed line).
+///  - llama.cpp: /metrics llamacpp:predicted_tokens_seconds, the server-wide decode rate over all slots (prompt_tokens_seconds for prefill). It
+///    needs the server's --metrics flag. No sum is used (LlamaCppProvider.cs, the DecodeTokensPerSecond line).
+///  - custom: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps, the engine's counter deltas over all requests between samples
+///    (CustomProvider.cs). The per-request sum is used only when the sample has no rate.
+/// A request's own speed is shown on its own row only. Never add up the per-request rows to make the headline unless the engine has no total.
+/// This engine: live.tok_s. Canonical text: RoutedProvider.cs.
+/// </remarks>
 public sealed class BasaltProvider : RoutedProvider
 {
     public const string Id = "basalt";

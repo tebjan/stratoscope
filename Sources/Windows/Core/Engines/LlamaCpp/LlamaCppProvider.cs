@@ -15,6 +15,21 @@ namespace Stratoscope.Core.Engines.LlamaCpp;
 /// What llama-server does not say is not drawn: the size of the whole prompt (so no percentage while it is read), when a request ends and what
 /// it came to (a slot's counters reset when its request ends, so there is no list of finished requests), RAM, video card and CPU.
 /// </summary>
+/// <remarks>
+/// Speed rule: name the source of every value; never estimate.
+/// When several requests run together, the headline decode speed (and the headline prefill speed while reading) is the engine's own total over
+/// all requests. Each engine reports that total itself:
+///  - Strata: live.tok_s, the total of the generating requests (serve/server.py _tok_s). Only when the engine has no total yet (the newest request
+///    still reads its prompt) is the sum of the derived per-slot speeds used (StrataProvider.cs, the branch where rates.Sum() is taken). Prefill:
+///    live.prefill_tok_s_mean, the engine's mean; a value derived from the progress between polls only when that is missing.
+///  - Basalt: live.tok_s, which the engine sums over its slots (BasaltProvider.cs, the speed line).
+///  - llama.cpp: /metrics llamacpp:predicted_tokens_seconds, the server-wide decode rate over all slots (prompt_tokens_seconds for prefill). It
+///    needs the server's --metrics flag. No sum is used (LlamaCppProvider.cs, the DecodeTokensPerSecond line).
+///  - custom: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps, the engine's counter deltas over all requests between samples
+///    (CustomProvider.cs). The per-request sum is used only when the sample has no rate.
+/// A request's own speed is shown on its own row only. Never add up the per-request rows to make the headline unless the engine has no total.
+/// This engine: /metrics llamacpp:predicted_tokens_seconds (prefill: prompt_tokens_seconds). Canonical text: RoutedProvider.cs.
+/// </remarks>
 public sealed class LlamaCppProvider : RoutedProvider
 {
     public const string Id = "llamacpp";

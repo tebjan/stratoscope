@@ -31,8 +31,9 @@ public sealed class LiveRequest
     public double? Generated { get; set; }
     public double? MaxTokens { get; set; }
     public double? ElapsedSeconds { get; set; }
+    /// <summary>The reading speed. The engine's total over all requests when several run; see RoutedProvider.cs.</summary>
     public double? PrefillTokensPerSecond { get; set; }
-    /// <summary>The speed of the generation. With several requests running together it is the total: the sum of the speeds of all generating slots.</summary>
+    /// <summary>The speed of the generation. The engine's total over all requests when several run; see RoutedProvider.cs.</summary>
     public double? DecodeTokensPerSecond { get; set; }
     /// <summary>How many requests run together; null or 1 for a single request.</summary>
     public int? Running { get; set; }

@@ -17,6 +17,21 @@ namespace Stratoscope.Core.Engines.Custom;
 /// What the custom 27B server does not report is not drawn: RAM and CPU. The metrics alone are totals across all
 /// requests: without /ui/state neither reading nor writing is shown, and no speed.
 /// </summary>
+/// <remarks>
+/// Speed rule: name the source of every value; never estimate.
+/// When several requests run together, the headline decode speed (and the headline prefill speed while reading) is the engine's own total over
+/// all requests. Each engine reports that total itself:
+///  - Strata: live.tok_s, the total of the generating requests (serve/server.py _tok_s). Only when the engine has no total yet (the newest request
+///    still reads its prompt) is the sum of the derived per-slot speeds used (StrataProvider.cs, the branch where rates.Sum() is taken). Prefill:
+///    live.prefill_tok_s_mean, the engine's mean; a value derived from the progress between polls only when that is missing.
+///  - Basalt: live.tok_s, which the engine sums over its slots (BasaltProvider.cs, the speed line).
+///  - llama.cpp: /metrics llamacpp:predicted_tokens_seconds, the server-wide decode rate over all slots (prompt_tokens_seconds for prefill). It
+///    needs the server's --metrics flag. No sum is used (LlamaCppProvider.cs, the DecodeTokensPerSecond line).
+///  - custom: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps, the engine's counter deltas over all requests between samples
+///    (CustomProvider.cs). The per-request sum is used only when the sample has no rate.
+/// A request's own speed is shown on its own row only. Never add up the per-request rows to make the headline unless the engine has no total.
+/// This engine: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps. Canonical text: RoutedProvider.cs.
+/// </remarks>
 public sealed class CustomProvider : RoutedProvider
 {
     public const string Id = "custom";
@@ -106,8 +121,8 @@ public sealed class CustomProvider : RoutedProvider
                     PromptTotal = status == EngineStatus.Prefill && !together ? one!.Prompt : null,
                     Generated = status == EngineStatus.Decode ? Sum(writers.Select(s => s.Out)) : null,
                     MaxTokens = status == EngineStatus.Decode && !together ? one!.MaxNew : null,
-                    // The total over all requests comes from the engine's own sample (as Strata's live.tok_s does); the sum of the per-request
-                    // speeds is used only when the sample has no rate.
+                    // Speed rule (full text on this class and in RoutedProvider.cs): the headline is the engine's own total over all requests,
+                    // tick.sample.decode_tps / prefill_tps; the sum of the per-request speeds is used only when the sample has no rate.
                     PrefillTokensPerSecond = status == EngineStatus.Prefill ? (ui?.Tick?.Sample?.PrefillTps ?? Sum(readers.Select(s => Speed(s.Computed, s.PrefillSeconds)))) : null,
                     DecodeTokensPerSecond = ui?.Tick?.Sample?.DecodeTps ??Sum(writers.Select(s => Speed(s.Out, s.DecodeSeconds))),
                     Running = together ? active.Count : null,
