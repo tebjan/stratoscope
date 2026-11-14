@@ -149,22 +149,35 @@ internal static class ReadoutPainter
 
     /// <summary>The most height the stack of request bars may take, of the 48 epx of the taskbar: 8 epx stay free above and below.</summary>
     internal const float MaxStackHeight = 32f;
-    /// <summary>The height a bar of a stack starts at, epx. It shrinks when the stack would not fit.</summary>
-    internal const float StackBarHeight = 3f;
+    /// <summary>The gap between two bars as a share of the bar height they would have without gaps (never under one device pixel).</summary>
+    internal const double StackGapShare = 0.25;
 
     /// <summary>
     /// The rows of <paramref name="count"/> bars in device pixels: the height of each bar, the gap between two and the height of the stack.
-    /// One bar is the bar of old (<see cref="GlyphHeight"/>). With several the stack grows taller, centred on the place of the single bar
-    /// (the glyph box is centred on the centre line): each bar is <see cref="StackBarHeight"/> high with a gap of one epx, and shrinks only
-    /// as far as the stack needs to stay within <see cref="MaxStackHeight"/>; never below 2 device pixels with a gap of at least 1.
+    /// One bar is the bar of old (<see cref="GlyphHeight"/>). With several, the stack height grows with the square root of the count,
+    /// <c>H(n) = H1 * sqrt(n)</c> (H1 is the height of the single bar), so it grows less than the count while every bar gets thinner; it is capped
+    /// at <see cref="MaxStackHeight"/> and stays centred on the place of the single bar. The gap is a quarter of the bar height
+    /// (<see cref="StackGapShare"/>, at least one device pixel); the bar is what is left, <c>(H - gaps) / n</c>, never under two device pixels
+    /// (when that makes the stack taller than H(n), it grows to fit the bars). The stack is exactly the rounded H(n) high: the pixels left over
+    /// after dividing by the count make the first bars one pixel taller, so the total height never jumps with rounding.
     /// </summary>
-    internal static (int Bar, int Gap, int Total) BarRows(int count, UiMetrics m)
+    internal static BarStack BarRows(int count, UiMetrics m)
     {
-        if (count <= 1) { var h = GlyphHeightPx(m, true); return (h, 0, h); }
-        var gap = Math.Max(1, m.Px(1));
-        var bar = Math.Max(2, m.Px(StackBarHeight));
-        while (bar > 2 && count * bar + (count - 1) * gap > m.Px(MaxStackHeight)) bar--;
-        return (bar, gap, bar * count + gap * (count - 1));
+        var single = GlyphHeightPx(m, true);
+        if (count <= 1) return new BarStack(single, 0, single, 0);
+        var cap = m.Px(MaxStackHeight);
+        var height = Math.Min(single * Math.Sqrt(count), cap);
+        var gap = Math.Max(1, (int)Math.Floor(height / count * StackGapShare + 0.5));
+        var total = Math.Min(cap, Math.Max(2 * count + gap * (count - 1), (int)Math.Floor(height + 0.5)));
+        var room = total - gap * (count - 1);
+        return new BarStack(room / count, gap, total, room % count);
+    }
+
+    /// <summary>The bars of a stack: every bar is <paramref name="Bar"/> high, the first <paramref name="Extra"/> of them one pixel more; <paramref name="Gap"/> between two.</summary>
+    internal readonly record struct BarStack(int Bar, int Gap, int Total, int Extra)
+    {
+        public int HeightOf(int i) => Bar + (i < Extra ? 1 : 0);
+        public int TopOf(int i) => i * (Bar + Gap) + Math.Min(i, Extra);
     }
 
     /// <summary>The height of the bar, or the diameter of the dot, in device pixels.</summary>
@@ -423,7 +436,7 @@ internal static class ReadoutPainter
     /// </summary>
     private static void DrawBars(Graphics g, ReadoutItem item, RectangleF box, UiMetrics m, Palette palette)
     {
-        var (barHeight, gap, _) = BarRows(item.Bars.Count, m);
+        var stack = BarRows(item.Bars.Count, m);
         var track = Palette.Alpha(palette.HighContrast ? palette.Gray : Ink(palette), 0.25);
         void Fill(RectangleF r, Color color)
         {
@@ -435,7 +448,8 @@ internal static class ReadoutPainter
         for (int i = 0; i < item.Bars.Count; i++)
         {
             var bar = item.Bars[i];
-            var row = new RectangleF(box.X, box.Y + i * (barHeight + gap), box.Width, barHeight);
+            var barHeight = stack.HeightOf(i);
+            var row = new RectangleF(box.X, box.Y + stack.TopOf(i), box.Width, barHeight);
             Fill(row, track);
             double? fraction;
             Color color;

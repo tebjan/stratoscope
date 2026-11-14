@@ -269,12 +269,56 @@ public class RequestBarTests
         Assert.Equal(ReadoutPainter.GlyphHeightPx(m, true), ReadoutPainter.BarRows(1, m).Total);
         for (int n = 2; n <= 8; n++)
         {
-            var (bar, gap, total) = ReadoutPainter.BarRows(n, m);
+            var stack = ReadoutPainter.BarRows(n, m); var (bar, gap, total) = (stack.Bar, stack.Gap, stack.Total);
             Assert.True(bar >= 2);
-            Assert.Equal(n * bar + (n - 1) * gap, total);
+            Assert.Equal(n * bar + stack.Extra + (n - 1) * gap, total);
             Assert.True(total <= m.Px(ReadoutPainter.MaxStackHeight), n + " bars at " + dpi + " DPI");
             Assert.True(bar >= 2 && gap >= 1, n + " bars at " + dpi + " DPI");
         }
+    }
+
+    [Theory]
+    [InlineData(96)] [InlineData(144)] [InlineData(192)]
+    public void TheStackGrowsWithTheCountButBarsGetThinner(int dpi)
+    {
+        var m = UiMetrics.At(dpi, 1.0, true, true);
+        var single = ReadoutPainter.BarRows(1, m);
+        var previous = single;
+        for (int n = 2; n <= 8; n++)
+        {
+            var rows = ReadoutPainter.BarRows(n, m);
+            Assert.True(rows.Total >= previous.Total, "taller or equal at " + n);
+            Assert.True(rows.HeightOf(0) <= previous.HeightOf(0), "thinner or equal at " + n);
+            Assert.True(rows.HeightOf(0) < single.Bar);
+            Assert.True(rows.Total < single.Total * n, "grows less than the count");
+            previous = rows;
+        }
+    }
+}
+
+public class WindowAverageTests
+{
+    [Fact]
+    public void TheAverageIsOfTheRawSamplesOfTheWindowAndSkipsUnknownOnes()
+    {
+        var h = new SpeedHistory();
+        h.AddSample(0, 0, 0);                      // older than the window at the end: dropped
+        h.AddSample(100, 10, 100);
+        h.AddSample(110, 20, 200);
+        h.AddSample(120, double.NaN, 300);
+        Assert.Equal(15, h.Average(HistoryCurve.Prefill, 120));        // the two known samples
+        Assert.Equal(200, h.Average(HistoryCurve.Decode, 120));
+        Assert.Equal(165, h.Average(HistoryCurve.Total, 120));         // (110 + 220) / 2; the unknown total is skipped
+        Assert.True(double.IsNaN(new SpeedHistory().Average(HistoryCurve.Total, 0)));
+    }
+
+    [Fact]
+    public void TheAverageIgnoresTheSmoothing()
+    {
+        var h = new SpeedHistory();
+        h.AddSample(0, 0, 0);
+        h.AddSample(2, 0, 100);
+        Assert.Equal(50, h.Average(HistoryCurve.Decode, 2));
     }
 }
 

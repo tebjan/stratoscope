@@ -138,6 +138,23 @@ public sealed class SpeedHistory
         return n;
     }
 
+    /// <summary>
+    /// The average of the raw samples of a curve over the last <see cref="WindowSeconds"/> (the smoothing is not applied), counting the samples
+    /// with a known value; NaN when there is none. The legend of the history graph shows it.
+    /// </summary>
+    public double Average(HistoryCurve curve, double nowSeconds)
+    {
+        var source = values[(int)curve];
+        double sum = 0; int n = 0;
+        for (int k = 0; k < count; k++)
+        {
+            var i = (start + k) % Capacity;
+            if (nowSeconds - time[i] > WindowSeconds || double.IsNaN(source[i])) continue;
+            sum += source[i]; n++;
+        }
+        return n == 0 ? double.NaN : sum / n;
+    }
+
     /// <summary>The newest raw value of a curve, or NaN when there is none.</summary>
     public double Latest(HistoryCurve curve) => count == 0 ? double.NaN : values[(int)curve][(start + count - 1) % Capacity];
 }

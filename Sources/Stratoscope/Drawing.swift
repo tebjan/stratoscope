@@ -98,12 +98,14 @@ func progressImage(_ frac: Double, _ hit: CacheHit) -> NSImage {
 /// One request keeps the look of `progressImage` (the outline, the height of 9 pt). Not built or run on the Windows PC this was written on.
 func requestBarsImage(_ bars: [RequestBar], hit: CacheHit?, scaleMax: Double) -> NSImage {
     let w: CGFloat = 46, h: CGFloat = 9
-    let rows = RequestBars.rows(count: bars.count, singleHeight: Double(h), stack: Double(h))
-    let barH = CGFloat(rows.bar), gap = CGFloat(rows.gap), total = CGFloat(rows.total)
+    let scale = NSScreen.main?.backingScaleFactor ?? 2           // device pixels per point
+    let stack = RequestBars.rows(count: bars.count, singlePixels: Int(h * scale), capPixels: Int(16 * scale))
+    let total = CGFloat(stack.total) / scale
     return NSImage(size: NSSize(width: w + 2, height: 18), flipped: false) { _ in
         let top = (18 + total) / 2          // flipped: false, so the first bar is the topmost
         for (i, b) in bars.enumerated() {
-            let box = NSRect(x: 1, y: top - CGFloat(i + 1) * barH - CGFloat(i) * gap, width: w, height: barH)
+            let barH = CGFloat(stack.height(of: i)) / scale
+            let box = NSRect(x: 1, y: top - CGFloat(stack.top(of: i)) / scale - barH, width: w, height: barH)
             let radius = barH >= 3 ? barH / 2 : 0
             NSColor.labelColor.withAlphaComponent(0.25).setFill()
             NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius).fill()

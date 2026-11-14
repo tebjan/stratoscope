@@ -136,13 +136,34 @@ import Testing
         #expect(RequestBars.from(EngineSnapshot(engine: "Strata", model: "m", status: .decode, live: LiveRequest(running: 12), context: ContextUsage(max: 0), slots: many)).count == 8)
     }
 
-    @Test func testTheStackFitsAndOneBarKeepsItsHeight() {
-        #expect(RequestBars.rows(count: 1, singleHeight: 9, stack: 9).total == 9)
-        for n in 2...8 {
-            let r = RequestBars.rows(count: n, singleHeight: 9, stack: 9)
-            #expect(r.bar >= 1)
-            #expect(r.total == r.bar * Double(n) + r.gap * Double(n - 1))
+    @Test func testTheStackGrowsWithTheCountWhileBarsGetThinner() {
+        for single in [12, 18, 24] {
+            let one = RequestBars.rows(count: 1, singlePixels: single, capPixels: single * 3)
+            #expect(one.total == single && one.bar == single)
+            var previous = one
+            for n in 2...8 {
+                let r = RequestBars.rows(count: n, singlePixels: single, capPixels: single * 3)
+                #expect(r.bar >= 2 && r.gap >= 1)
+                #expect(r.total == n * r.bar + r.extra + (n - 1) * r.gap)
+                #expect(r.total <= single * 3)
+                #expect(r.total >= previous.total)
+                #expect(r.height(of: 0) <= previous.height(of: 0))
+                #expect(r.height(of: 0) < single)
+                #expect(r.total < single * n)
+                previous = r
+            }
         }
-        #expect(RequestBars.rows(count: 2, singleHeight: 9, stack: 9).total <= 9)
+    }
+
+    @Test func testTheWindowAverageIsOfTheRawSamplesAndSkipsUnknownOnes() {
+        var h = SpeedHistory()
+        h.addSample(now: 0, prefill: 0, decode: 0)
+        h.addSample(now: 100, prefill: 10, decode: 100)
+        h.addSample(now: 110, prefill: 20, decode: 200)
+        h.addSample(now: 120, prefill: .nan, decode: 300)
+        #expect(h.average(.prefill, now: 120) == 15)
+        #expect(h.average(.decode, now: 120) == 200)
+        #expect(h.average(.total, now: 120) == 165)
+        #expect(SpeedHistory().average(.total, now: 0).isNaN)
     }
 }

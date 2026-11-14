@@ -602,7 +602,7 @@ internal sealed class PanelPainter
     {
         var inner = Width - 2 * Pad;
         T("History", Pad, y + 8, Body, true);
-        T("Last 60 s", 0, y + 9, Caption, false, pal.Dim, Width - Pad);
+        T("Average of the last 60 s, t/s", 0, y + 9, Caption, false, pal.Dim, Width - Pad);
         var column = inner / 3;
         var curves = new[] { (HistoryCurve.Prefill, "Prefill", pal.Orange), (HistoryCurve.Decode, "Decode", pal.Blue), (HistoryCurve.Total, "Total", pal.Label) };
         for (int i = 0; i < curves.Length; i++)
@@ -611,8 +611,9 @@ internal sealed class PanelPainter
             var x = Pad + i * column;
             using (var brush = new SolidBrush(color)) g.FillRectangle(brush, x, y + 33, 8, 3);
             T(name, x + 13, y + 28, Caption, false, pal.Dim);
-            var latest = history.Latest(curve);
-            T(double.IsNaN(latest) ? Fmt.Missing : Fmt.Number(latest), x + 13, y + 41, Body, true, curve == HistoryCurve.Total ? null : color);
+            // The average of the raw samples of the window, not of the smoothed curve. Only the average fits the column without more height.
+            var average = history.Average(curve, SpeedHistory.Seconds(model.Now));
+            T(double.IsNaN(average) ? Fmt.Missing : Fmt.Number(average), x + 13, y + 41, Body, true, curve == HistoryCurve.Total ? null : color);
         }
 
         var left = Pad + HistoryGutter; var right = Width - Pad;

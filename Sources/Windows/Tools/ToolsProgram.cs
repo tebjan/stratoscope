@@ -99,6 +99,13 @@ internal static class ToolsProgram
                 "  {0,3} %: width {1}, left margin {2}, right margin {3}, g {4}, graphics end {5}, anchor {6}, text and number slot start {7}, unit x {8}, text slot end {9}",
                 dpi * 100 / 96, geo.Width, geo.GlyphX, geo.Width - geo.TextRight, mm.Px(ReadoutPainter.AnchorGap), geo.GlyphRight, geo.Anchor, geo.TextX, geo.UnitX, geo.TextRight));
         }
+        Console.WriteLine("Request bars, n = 1 to 8: bar height / gap / stack height in device pixels:");
+        foreach (var dpi in new[] { 96, 144, 192 })
+            Console.WriteLine("  " + dpi * 100 / 96 + " %: " + string.Join(" | ", Enumerable.Range(1, 8).Select(n =>
+            {
+                var rows = ReadoutPainter.BarRows(n, UiMetrics.At(dpi));
+                return n + ": " + rows.Bar + (rows.Extra > 0 ? "+1 (" + rows.Extra + "x)" : "") + "/" + rows.Gap + "/" + rows.Total;
+            })));
         Console.WriteLine("Last pixel column of the glyph from the item's left edge, and the end of the glyph slot (anchor minus gap):");
         foreach (var dpi in new[] { 96, 120, 144, 192 })
             Console.WriteLine("  " + dpi * 100 / 96 + " %: " + string.Join(", ", new[] { ServerState.Reading, ServerState.Writing, ServerState.Offline, ServerState.Loading, ServerState.Error }.Select(s => s + " " + Measurements.GlyphRightEdge(dpi, s).LastColumn)) + " | slot end " + Measurements.GlyphRightEdge(dpi, ServerState.Ready).SlotEnd);

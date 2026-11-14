@@ -42,13 +42,27 @@ public enum RequestBars {
         bars.compactMap { $0.reading ? nil : $0.tokensPerSecond }.filter { $0.isFinite }.max()
     }
 
-    /// The rows of `count` bars in pixels: bar height, gap and total height. One bar keeps `singleHeight`; several share `stack` pixels, packed
-    /// tightly (a one pixel gap while there are at most four), no bar thinner than one pixel.
-    public static func rows(count: Int, singleHeight: Double, stack: Double) -> (bar: Double, gap: Double, total: Double) {
-        if count <= 1 { return (singleHeight, 0, singleHeight) }
-        let gap = count <= 4 ? 1.0 : 0.0
-        let bar = Swift.max(1, ((stack - gap * Double(count - 1)) / Double(count)).rounded(.down))
-        return (bar, gap, bar * Double(count) + gap * Double(count - 1))
+    /// The gap between two bars as a share of the bar height they would have without gaps (never under one device pixel).
+    public static let gapShare = 0.25
+
+    /// The bars of a stack, in device pixels: every bar is `bar` high, the first `extra` of them one pixel more; `gap` between two.
+    public struct Stack: Equatable {
+        public var bar: Int, gap: Int, total: Int, extra: Int
+        public func height(of i: Int) -> Int { bar + (i < extra ? 1 : 0) }
+        public func top(of i: Int) -> Int { i * (bar + gap) + Swift.min(i, extra) }
+    }
+
+    /// The rows of `count` bars in device pixels (twin of BarRows in ReadoutPainter.cs). One bar keeps `singlePixels`. With several, the stack
+    /// height grows with the square root of the count, `H(n) = H1 * sqrt(n)`, capped at `capPixels`, so it grows less than the count while every
+    /// bar gets thinner. The gap is a quarter of the bar height (at least one pixel); the bar is what is left, never under two pixels (then the
+    /// stack grows to fit). The stack is exactly the rounded H(n) high: leftover pixels make the first bars one pixel taller.
+    public static func rows(count: Int, singlePixels: Int, capPixels: Int) -> Stack {
+        if count <= 1 { return Stack(bar: singlePixels, gap: 0, total: singlePixels, extra: 0) }
+        let height = Swift.min(Double(singlePixels) * Double(count).squareRoot(), Double(capPixels))
+        let gap = Swift.max(1, Int((height / Double(count) * gapShare + 0.5).rounded(.down)))
+        let total = Swift.min(capPixels, Swift.max(2 * count + gap * (count - 1), Int((height + 0.5).rounded(.down))))
+        let room = total - gap * (count - 1)
+        return Stack(bar: room / count, gap: gap, total: total, extra: room % count)
     }
 }
 
@@ -126,6 +140,19 @@ public struct SpeedHistory {
             out.append((Swift.max(0, age), filter.step(values[curve.rawValue][i])))
         }
         return out
+    }
+
+    /// The average of the raw samples of a curve over the last `windowSeconds` (smoothing not applied), over the samples with a known value;
+    /// NaN when there is none. The legend of the history graph shows it.
+    public func average(_ curve: HistoryCurve, now: Double) -> Double {
+        var sum = 0.0, n = 0
+        for k in 0..<count {
+            let i = (start + k) % SpeedHistory.capacity
+            let v = values[curve.rawValue][i]
+            if now - times[i] > SpeedHistory.windowSeconds || v.isNaN { continue }
+            sum += v; n += 1
+        }
+        return n == 0 ? .nan : sum / Double(n)
     }
 
     /// The newest raw value of a curve, or NaN when there is none.

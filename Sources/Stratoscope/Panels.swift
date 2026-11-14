@@ -132,14 +132,14 @@ final class Panels {
         guard let h = history else { return }
         let inner = menuWidth - 2 * pad
         text("History", x: pad, y: 8, size: 12, bold: true)
-        text("Last 60 s", x: 0, y: 9, size: 10, color: .secondaryLabelColor, right: menuWidth - pad)
+        text("Average of the last 60 s, t/s", x: 0, y: 9, size: 10, color: .secondaryLabelColor, right: menuWidth - pad)
         let curves: [(HistoryCurve, String, NSColor)] = [(.prefill, "Prefill", .systemOrange), (.decode, "Decode", .systemBlue), (.total, "Total", .labelColor)]
         let column = inner / 3
         for (i, (curve, name, color)) in curves.enumerated() {
             let x = pad + CGFloat(i) * column
             color.setFill(); NSRect(x: x, y: 33, width: 8, height: 3).fill()
             text(name, x: x + 13, y: 28, size: 10, color: .secondaryLabelColor)
-            let v = h.latest(curve)
+            let v = h.average(curve, now: Date().timeIntervalSince1970)     // the average of the raw samples of the window, not of the smoothed curve
             text(v.isNaN ? "–" : Fmt.number(v), x: x + 13, y: 41, size: 12, bold: true, color: curve == .total ? .labelColor : color)
         }
         let gutter: CGFloat = 30, left = pad + gutter, right = menuWidth - pad, top: CGFloat = 66, plotH: CGFloat = 64
