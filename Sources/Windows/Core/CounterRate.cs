@@ -21,9 +21,10 @@ internal sealed class CounterRate
 
     private readonly List<(double T, double V)> events = new();     // the baseline, then every read at which the counter rose
     private double held;
+    private bool heldIsBurst;
 
     /// <summary>Forgets everything: the next <see cref="Update"/> is a new baseline.</summary>
-    public void Reset() { events.Clear(); held = 0; }
+    public void Reset() { events.Clear(); held = 0; heldIsBurst = false; }
 
     /// <summary>
     /// Feeds one read (<paramref name="t"/> seconds on any monotonic clock). Returns the rate in counts per second: 0 while nothing rises, NaN for the
@@ -33,15 +34,18 @@ internal sealed class CounterRate
     {
         if (events.Count == 0) { events.Add((t, v)); return 0; }
         var last = events[^1];
-        if (v < last.V) { events.Clear(); events.Add((t, v)); held = 0; return double.NaN; }
+        if (v < last.V) { events.Clear(); events.Add((t, v)); held = 0; heldIsBurst = false; return double.NaN; }
         if (v > last.V)
         {
             events.Add((t, v));
             if (events.Count > MaxEvents) events.RemoveAt(0);
+            heldIsBurst = false;
             held = RateAtNewestEvent();
         }
         if (events.Count < 2) return 0;
-        return t - events[^1].T <= Math.Clamp(1.5 * TypicalInterval(), MinHold, MaxHold) ? held : 0;
+        // A lone burst is shown for the seconds it was spread over, so it adds up to the tokens that arrived (not to more).
+        var hold = heldIsBurst ? BurstSeconds : Math.Clamp(1.5 * TypicalInterval(), MinHold, MaxHold);
+        return t - events[^1].T <= hold ? held : 0;
     }
 
     private double TypicalInterval()
@@ -66,6 +70,7 @@ internal sealed class CounterRate
         {
             // The window reaches back over a long quiet time: the step is one burst, not a rate over the quiet time.
             var prev = events[^2];
+            heldIsBurst = true;
             return (e.V - prev.V) / Math.Min(Math.Max(e.T - prev.T, 1e-3), BurstSeconds);
         }
         return (e.V - events[b].V) / seconds;

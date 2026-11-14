@@ -16,22 +16,25 @@ struct CounterRate {
 
     private var events: [(t: Double, v: Double)] = []     // the baseline, then every read at which the counter rose
     private var held = 0.0
+    private var heldIsBurst = false
 
     /// Forgets everything: the next `update` is a new baseline.
-    mutating func reset() { events.removeAll(); held = 0 }
+    mutating func reset() { events.removeAll(); held = 0; heldIsBurst = false }
 
     /// Feeds one read. Returns the rate in counts per second: 0 while nothing rises, NaN for the one read at which the counter fell. The first
     /// read after `reset` is the baseline and returns 0.
     mutating func update(t: Double, v: Double) -> Double {
         guard let last = events.last else { events.append((t, v)); return 0 }
-        if v < last.v { events = [(t, v)]; held = 0; return .nan }
+        if v < last.v { events = [(t, v)]; held = 0; heldIsBurst = false; return .nan }
         if v > last.v {
             events.append((t, v))
             if events.count > CounterRate.maxEvents { events.removeFirst() }
+            heldIsBurst = false
             held = rateAtNewestEvent()
         }
         if events.count < 2 { return 0 }
-        let hold = min(max(1.5 * typicalInterval(), CounterRate.minHold), CounterRate.maxHold)
+        // A lone burst is shown for the seconds it was spread over, so it adds up to the tokens that arrived (not to more).
+        let hold = heldIsBurst ? CounterRate.burstSeconds : min(max(1.5 * typicalInterval(), CounterRate.minHold), CounterRate.maxHold)
         return t - events[events.count - 1].t <= hold ? held : 0
     }
 
@@ -46,7 +49,7 @@ struct CounterRate {
         return gaps.isEmpty ? CounterRate.minSpan : gaps[gaps.count / 2]
     }
 
-    private func rateAtNewestEvent() -> Double {
+    private mutating func rateAtNewestEvent() -> Double {
         let e = events[events.count - 1]
         let span = min(max(2 * typicalInterval(), CounterRate.minSpan), CounterRate.maxSpan)
         // The newest earlier event that is at least one span back; else the oldest one we have.
@@ -61,6 +64,7 @@ struct CounterRate {
         if seconds > CounterRate.maxSpan {
             // The window reaches back over a long quiet time: the step is one burst, not a rate over the quiet time.
             let prev = events[events.count - 2]
+            heldIsBurst = true
             return (e.v - prev.v) / min(max(e.t - prev.t, 1e-3), CounterRate.burstSeconds)
         }
         return (e.v - events[b].v) / seconds

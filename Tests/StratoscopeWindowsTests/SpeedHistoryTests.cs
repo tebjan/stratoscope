@@ -233,6 +233,10 @@ public class CounterRateTests
         for (int i = 0; i <= 40; i++) h.AddCounters(At(0.5 * i), C(0, 0));
         h.AddCounters(At(20.5), C(0, 100));
         Assert.Equal(100 / CounterRate.BurstSeconds, h.Latest(HistoryCurve.Decode), 6);
+        h.AddCounters(At(22.0), C(0, 100));
+        Assert.Equal(100 / CounterRate.BurstSeconds, h.Latest(HistoryCurve.Decode), 6);     // still the burst's 1.5 s
+        h.AddCounters(At(22.5), C(0, 100));
+        Assert.Equal(0, h.Latest(HistoryCurve.Decode));                                     // then gone: 100 tokens were shown as 100 tokens
     }
 
     [Fact]
