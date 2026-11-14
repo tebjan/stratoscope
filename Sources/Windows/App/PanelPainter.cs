@@ -615,7 +615,6 @@ internal sealed class PanelPainter
 
         var left = Pad + HistoryGutter; var right = Width - Pad;
         var top = y + 32; var plotH = HistoryPlotHeight;
-        var scale = history.GraphScale;
         using (var brush = new SolidBrush(pal.Faint(0.06)))
             g.FillRectangle(brush, left, top, right - left, plotH);
         using (var pen = new Pen(pal.Faint(0.16), 1f))
@@ -631,6 +630,7 @@ internal sealed class PanelPainter
         foreach (var (curve, _, color) in curves)
         {
             var n = history.ReadSmoothed(curve, model.Smoothing.Damping(), now, historyAges, historyValues);
+            var scale = history.ScaleOf(curve);
             using (var pen = new Pen(color, curve == HistoryCurve.Total ? 2f : 1.5f) { LineJoin = LineJoin.Round })
             {
                 var run = new List<PointF>(n);

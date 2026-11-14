@@ -241,7 +241,8 @@ public sealed class CustomProvider : RoutedProvider
                     Index = i,
                     State = isRunning ? (Is(s.Phase, "decode") ? "decoding" : Is(s.Phase, "prefill") ? "reading" : "running") : s.State!.ToLowerInvariant(),
                     PromptTokens = s.Prompt, PromptRead = s.Fed, Generated = s.Out, MaxTokens = s.MaxNew,
-                    TokensPerSecond = isRunning && Is(s.Phase, "decode") ? Speed(s.Out, s.DecodeSeconds) : null,
+                    // (a parked request decodes too, in turns with the others: its own speed over its decode time)
+                    TokensPerSecond = Is(s.Phase, "decode") ? Speed(s.Out, s.DecodeSeconds) : null,
                 });
             }
         }

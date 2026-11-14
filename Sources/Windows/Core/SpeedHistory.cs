@@ -21,7 +21,9 @@ public static class RequestBars
     public static IReadOnlyList<RequestBar> From(EngineSnapshot? s)
     {
         if (s is null || !s.IsBusy) return Array.Empty<RequestBar>();
-        var active = s.Slots?.Where(sl => sl.IsReading || sl.IsDecoding).ToList();
+        // Every held request counts, as in the panel: with batched decode only one request is "running" at a time and the others are "parked"
+        // between steps, but all of them are decoding.
+        var active = s.Slots?.Where(sl => sl.IsActive).ToList();
         if (active != null && active.Count > 1)
         {
             var list = new List<RequestBar>(Math.Min(MaxBars, active.Count));
@@ -79,6 +81,9 @@ public sealed class SpeedHistory
     public SpeedScale RequestScale { get; } = new SpeedScale();
     /// <summary>The scale of the history graph (the largest of the three curves).</summary>
     public SpeedScale GraphScale { get; } = new SpeedScale();
+    private readonly SpeedScale[] curveScales = { new SpeedScale(100), new SpeedScale(10), new SpeedScale(100) };
+    /// <summary>The scale of one curve in the history graph (each curve is drawn against its own adaptive maximum).</summary>
+    public SpeedScale ScaleOf(HistoryCurve curve) => curveScales[(int)curve];
     /// <summary>The scales of the bar charts of the Speed section (the speed of the last finished requests): prefill from 100 t/s, decode from 10 t/s.</summary>
     public SpeedScale PrefillChartScale { get; } = new SpeedScale(100);
     public SpeedScale DecodeChartScale { get; } = new SpeedScale(10);
@@ -229,6 +234,8 @@ public sealed class SpeedHistory
         count++;
         double Known(double v) => double.IsNaN(v) ? 0 : v;
         GraphScale.Observe(Math.Max(Known(total), Math.Max(Known(prefill), Known(decode))), nowSeconds);
+        // Each curve also has its own scale: prefill runs at thousands of t/s, decode at tens, so one shared axis flattens decode.
+        curveScales[0].Observe(Known(prefill), nowSeconds); curveScales[1].Observe(Known(decode), nowSeconds); curveScales[2].Observe(Known(total), nowSeconds);
     }
 
     /// <summary>
