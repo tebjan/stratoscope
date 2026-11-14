@@ -32,6 +32,25 @@ public sealed class ServerMonitor
     public int DataVersion { get; private set; }
     private int lastContent = int.MinValue;
 
+    private int sampling;
+
+    /// <summary>
+    /// The light counter read between the full polls (<see cref="SpeedHistory.SampleSeconds"/>): feeds the speed curves with fine resolution. Never
+    /// throws and never overlaps itself. Returns true when the history got a new sample, so the panel can repaint.
+    /// </summary>
+    public async Task<bool> SampleAsync(CancellationToken cancellation)
+    {
+        if (!Polled || Snapshot is null || Interlocked.CompareExchange(ref sampling, 1, 0) != 0) return false;
+        try
+        {
+            var counters = await provider.ReadCountersAsync(cancellation).ConfigureAwait(true);
+            return History.AddCounters(DateTime.UtcNow, counters);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return false; }
+        finally { Interlocked.Exchange(ref sampling, 0); }
+    }
+
     /// <summary>Asks the engine once. Returns false when the previous poll is still running.</summary>
     public async Task<bool> PollAsync(CancellationToken cancellation)
     {

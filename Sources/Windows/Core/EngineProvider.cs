@@ -16,7 +16,19 @@ public interface IEngineProvider
 
     /// <summary>Why the last poll returned null, in English. Null when it did not.</summary>
     string? LastError { get; }
+
+    /// <summary>
+    /// A light read of the cumulative counters the speed curves need, asked every <see cref="SpeedHistory.SampleSeconds"/> between the full polls.
+    /// Null when the engine has no such counters or does not answer; the curves then use the full polls.
+    /// </summary>
+    Task<EngineCounters?> ReadCountersAsync(CancellationToken cancellation) => Task.FromResult<EngineCounters?>(null);
 }
+
+/// <summary>
+/// Cumulative counters of an engine since it started. Only counters that advance while a request runs: prompt tokens computed (not served from
+/// cache) per prefill chunk, and generated tokens per delivery. Null where the engine has no such counter.
+/// </summary>
+public sealed record EngineCounters(double? PrefillComputedTokens, double? GeneratedTokens);
 
 public static class EngineRegistry
 {

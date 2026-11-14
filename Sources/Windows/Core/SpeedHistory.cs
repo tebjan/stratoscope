@@ -64,8 +64,12 @@ public static class RequestBars
 /// </summary>
 public sealed class SpeedHistory
 {
-    public const double WindowSeconds = 60;
-    public const int Capacity = 1024;     // a poll every 2 s fills 30 of them; the ring survives much faster polling
+    /// <summary>The length of the history graph and of the averages of its legend, seconds.</summary>
+    public const double WindowSeconds = 120;
+    /// <summary>How often the speed counters are sampled between the full polls, seconds.</summary>
+    public const double SampleSeconds = 0.5;
+    /// <summary>Room for the window at the sample rate, with a margin for the odd extra full-poll sample.</summary>
+    public const int Capacity = (int)(WindowSeconds / SampleSeconds) + 160;
 
     private readonly double[] time = new double[Capacity];
     private readonly double[][] values = { new double[Capacity], new double[Capacity], new double[Capacity] };
@@ -83,11 +87,42 @@ public sealed class SpeedHistory
 
     public static double Seconds(DateTime utc) => (utc - DateTime.UnixEpoch).TotalSeconds;
 
-    /// <summary>Records the state of one poll. A null snapshot (nothing answers) records unknown values.</summary>
+    /// <summary>How long after the last counter sample the full polls leave the curves to the counters (a few sample intervals, and more than a full poll takes).</summary>
+    private const double CounterFreshSeconds = 3;
+    private double lastCounterSeconds = double.NaN, lastCounterPrefill = double.NaN, lastCounterGenerated = double.NaN;
+    private double counterSampleSeconds = double.NegativeInfinity;
+
+    /// <summary>
+    /// A sample from the light counter read (every <see cref="SampleSeconds"/>): prefill speed from the delta of the computed prompt tokens, decode
+    /// speed from the delta of the generated tokens, over the seconds between the two reads; Total is their sum. Returns true when a sample was
+    /// added. The first read only sets the baseline; a counter that fell (the engine restarted) adds an unknown sample (a gap) and a new baseline;
+    /// a gap over <see cref="MaxPollGapSeconds"/> adds nothing. Null or incomplete counters add nothing, and the full polls feed the curves.
+    /// </summary>
+    public bool AddCounters(DateTime utc, EngineCounters? counters)
+    {
+        var now = Seconds(utc);
+        if (counters?.PrefillComputedTokens is not double prefill || counters.GeneratedTokens is not double generated
+            || !double.IsFinite(prefill) || !double.IsFinite(generated)) return false;
+        var elapsed = now - lastCounterSeconds;
+        var hadBaseline = !double.IsNaN(lastCounterSeconds) && elapsed > 0 && elapsed <= MaxPollGapSeconds;
+        var before = (Prefill: lastCounterPrefill, Generated: lastCounterGenerated);
+        lastCounterSeconds = now; lastCounterPrefill = prefill; lastCounterGenerated = generated;
+        if (!hadBaseline) return false;
+        counterSampleSeconds = now;
+        if (prefill < before.Prefill || generated < before.Generated) { AddSample(now, double.NaN, double.NaN); return true; }
+        AddSample(now, (prefill - before.Prefill) / elapsed, (generated - before.Generated) / elapsed);
+        return true;
+    }
+
+    /// <summary>Records the state of one full poll. A null snapshot (nothing answers) records unknown values.</summary>
     public void Add(DateTime utc, EngineSnapshot? s)
     {
-        var (prefill, decode) = Rates(s);
-        AddSample(Seconds(utc), prefill, decode);
+        // While the counters feed the curves (an engine with a light counter read), the full poll leaves them alone: two sources would interleave.
+        if (Seconds(utc) - counterSampleSeconds > CounterFreshSeconds)
+        {
+            var (prefill, decode) = RatesBetweenPolls(Seconds(utc), s);
+            AddSample(Seconds(utc), prefill, decode);
+        }
         if (RequestBars.PeakSpeed(RequestBars.From(s)) is double peak) RequestScale.Observe(peak, Seconds(utc));
         if (s != null && s.Recent.Count > 0)
         {
@@ -98,6 +133,72 @@ public sealed class SpeedHistory
             DecodeChartScale.Observe(decodeMax, Seconds(utc));
             PrefillChartScale.Observe(prefillMax, Seconds(utc));
         }
+    }
+
+    /// <summary>A gap longer than this between two polls (a sleeping PC, a stalled engine) makes no rate: the counters then say nothing about the speed.</summary>
+    private const double MaxPollGapSeconds = 30;
+    private const int MaxSlots = 64;
+    private double lastPollSeconds = double.NaN, lastPrefillCounter = double.NaN, lastGenerationCounter = double.NaN;
+    private readonly double[] lastSlotRead = Enumerable.Repeat(double.NaN, MaxSlots).ToArray();
+
+    /// <summary>
+    /// The prefill and decode speed of a poll, at the source and the same for every engine, in this order:
+    ///  1. The engine's cumulative counters between two polls (<see cref="Totals.PrefillComputedTokens"/> for prompt tokens that were computed,
+    ///     <see cref="Totals.OutputTokens"/> for generated tokens): the delta over the seconds between the polls. This covers every request at
+    ///     once whatever phase the engine's headline status names. Only counters that advance while a request runs are used (the engine adapter
+    ///     fills them only then); a counter that falls (the engine restarted), a missing one, or a gap over <see cref="MaxPollGapSeconds"/>
+    ///     gives no counter rate for that poll.
+    ///  2. The sum over the batch slots: the decoding slots' own speeds, and for the reading slots the prompt tokens read since the last poll.
+    ///     Counted only when the engine reports slots.
+    ///  3. The live request's speeds, <see cref="Rates"/>.
+    /// Total is their sum, as always.
+    /// </summary>
+    internal (double Prefill, double Decode) RatesBetweenPolls(double nowSeconds, EngineSnapshot? s)
+    {
+        var fallback = Rates(s);
+        var elapsed = nowSeconds - lastPollSeconds;
+        var usable = !double.IsNaN(lastPollSeconds) && elapsed > 0 && elapsed <= MaxPollGapSeconds;
+        double prefillCounter = double.NaN, generationCounter = double.NaN;
+        if (s != null && !s.IsError && s.HasModel && !s.IsLoading)
+        {
+            prefillCounter = s.Totals?.PrefillComputedTokens is double p && double.IsFinite(p) ? p : double.NaN;
+            generationCounter = s.Totals?.OutputTokens is double g && double.IsFinite(g) ? g : double.NaN;
+        }
+        double Delta(double now, double before) => usable && !double.IsNaN(now) && !double.IsNaN(before) && now >= before ? (now - before) / elapsed : double.NaN;
+        var prefillRate = Delta(prefillCounter, lastPrefillCounter);
+        var decodeRate = Delta(generationCounter, lastGenerationCounter);
+
+        // The slots: reading ones by the progress of their prompt since the last poll, decoding ones by their own speed.
+        double slotPrefill = double.NaN, slotDecode = double.NaN;
+        var slotRead = Enumerable.Repeat(double.NaN, MaxSlots).ToArray();
+        if (s?.Slots is { Count: > 0 } slots && s.HasModel && !s.IsError && !s.IsLoading)
+        {
+            double? prefillSum = 0, decodeSum = 0;
+            foreach (var slot in slots)
+            {
+                if (slot.Index < 0 || slot.Index >= MaxSlots) continue;
+                if (slot.IsReading && slot.PromptRead is double read)
+                {
+                    slotRead[slot.Index] = read;
+                    var before = lastSlotRead[slot.Index];
+                    if (usable && !double.IsNaN(before) && read >= before) prefillSum += (read - before) / elapsed;
+                    else if (usable) prefillSum = null;          // a slot that just started or reset: its rate is unknown this poll
+                }
+                else if (slot.IsReading) prefillSum = null;
+                if (slot.IsDecoding) decodeSum = slot.TokensPerSecond is double v && double.IsFinite(v) && decodeSum != null ? decodeSum + v : null;
+            }
+            if (!usable && slots.Any(x => x.IsReading)) prefillSum = null;
+            slotPrefill = prefillSum ?? double.NaN;
+            slotDecode = decodeSum ?? double.NaN;
+        }
+
+        lastPollSeconds = nowSeconds; lastPrefillCounter = prefillCounter; lastGenerationCounter = generationCounter;
+        Array.Copy(slotRead, lastSlotRead, MaxSlots);
+
+        if (s is null || s.IsError || !s.HasModel || s.IsLoading || s.Status == EngineStatus.Idle) return fallback;
+        var prefill = !double.IsNaN(prefillRate) ? prefillRate : !double.IsNaN(slotPrefill) ? slotPrefill : fallback.Prefill;
+        var decode = !double.IsNaN(decodeRate) ? decodeRate : !double.IsNaN(slotDecode) ? slotDecode : fallback.Decode;
+        return (prefill, decode);
     }
 
     /// <summary>The prefill and decode speed of a snapshot as the curves take them (see the class comment).</summary>
@@ -145,7 +246,9 @@ public sealed class SpeedHistory
             var i = (start + k) % Capacity;
             var age = nowSeconds - time[i];
             if (age > WindowSeconds) continue;
-            ages[n] = Math.Max(0, age); output[n] = filter.Step(source[i]); n++;
+            // The damping is per second (see HistorySmoothings.Damping); the samples are not evenly spaced, so each step uses its own spacing.
+            var dt = k == 0 ? 1.0 : time[i] - time[(i + Capacity - 1) % Capacity];
+            ages[n] = Math.Max(0, age); output[n] = filter.Step(source[i], dt); n++;
         }
         return n;
     }

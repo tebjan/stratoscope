@@ -116,6 +116,152 @@ public class SpeedScaleTests
     }
 }
 
+public class CounterRateTests
+{
+    private static DateTime At(double seconds) => DateTime.UnixEpoch.AddSeconds(1_000_000 + seconds);
+    private static EngineCounters C(double? prefill, double? generated) => new EngineCounters(prefill, generated);
+
+    [Fact]
+    public void PrefillAndDecodeComeFromTheCounterDeltasAndTotalIsTheirSum()
+    {
+        var h = new SpeedHistory();
+        Assert.False(h.AddCounters(At(0), C(1000, 5000)));                // the first read is only the baseline
+        Assert.True(h.AddCounters(At(0.5), C(2200, 5100)));                // +1200 prompt tokens, +100 generated in half a second
+        Assert.Equal(2400, h.Latest(HistoryCurve.Prefill), 9);
+        Assert.Equal(200, h.Latest(HistoryCurve.Decode), 9);
+        Assert.Equal(2600, h.Latest(HistoryCurve.Total), 9);               // prefill plus decode, both counted
+    }
+
+    [Fact]
+    public void WhileNothingRunsTheCountersStandStillAndTheRatesAreZero()
+    {
+        var h = new SpeedHistory();
+        h.AddCounters(At(0), C(10, 20));
+        h.AddCounters(At(0.5), C(10, 20));
+        Assert.Equal(0, h.Latest(HistoryCurve.Total));
+    }
+
+    [Fact]
+    public void ACounterThatFallsIsAGapAndTheNextReadIsTheBaselineAgain()
+    {
+        var h = new SpeedHistory();
+        h.AddCounters(At(0), C(1000, 5000));
+        Assert.True(h.AddCounters(At(0.5), C(20, 30)));                    // the engine restarted
+        Assert.True(double.IsNaN(h.Latest(HistoryCurve.Total)));
+        Assert.True(h.AddCounters(At(1.0), C(120, 130)));                  // 100 and 100 in half a second
+        Assert.Equal(200, h.Latest(HistoryCurve.Prefill), 9);
+        Assert.Equal(200, h.Latest(HistoryCurve.Decode), 9);
+    }
+
+    [Fact]
+    public void MissingCountersAddNothingAndALongGapRestartsTheBaseline()
+    {
+        var h = new SpeedHistory();
+        Assert.False(h.AddCounters(At(0), null));
+        Assert.False(h.AddCounters(At(0), C(1, null)));
+        Assert.False(h.AddCounters(At(0), C(null, 1)));
+        h.AddCounters(At(1), C(100, 100));
+        Assert.False(h.AddCounters(At(100), C(900, 900)));                 // 99 s later: no rate over such a gap
+        Assert.Equal(0, h.Count);
+        Assert.True(h.AddCounters(At(100.5), C(950, 960)));
+        Assert.Equal(100, h.Latest(HistoryCurve.Prefill), 9);
+    }
+
+    [Fact]
+    public void TheFullPollLeavesTheCurvesToTheCountersWhileTheyAreFresh()
+    {
+        var h = new SpeedHistory();
+        h.AddCounters(At(0), C(0, 0));
+        h.AddCounters(At(0.5), C(500, 100));
+        var before = h.Count;
+        h.Add(At(1.0), new EngineSnapshot("Custom", "m", EngineStatus.Idle));      // a full poll one second later adds no sample of its own
+        Assert.Equal(before, h.Count);
+        h.Add(At(10), new EngineSnapshot("Custom", "m", EngineStatus.Idle));       // counters stale (9.5 s): the full poll feeds the curves again
+        Assert.Equal(before + 1, h.Count);
+    }
+
+    [Fact]
+    public void TheFullPollUsesTheCountersOfItsSnapshotBetweenPolls()
+    {
+        var h = new SpeedHistory();
+        EngineSnapshot Snap(double prefill, double generated) => new EngineSnapshot("Strata", "m", EngineStatus.Decode)
+        {
+            Live = new LiveRequest { Running = 3 },            // parallel, and the headline phase is writing: the live speeds say nothing about prefill
+            Totals = new Totals { PrefillComputedTokens = prefill, OutputTokens = generated },
+        };
+        h.Add(At(0), Snap(100, 1000));
+        h.Add(At(2), Snap(500, 1400));                           // 200 prompt tokens/s and 200 generated tokens/s over 2 s
+        Assert.Equal(200, h.Latest(HistoryCurve.Prefill), 9);
+        Assert.Equal(200, h.Latest(HistoryCurve.Decode), 9);
+        Assert.Equal(400, h.Latest(HistoryCurve.Total), 9);
+    }
+
+    [Fact]
+    public void WithoutCountersTheSlotsGiveTheRatesAndTheLiveRequestIsTheLastFallback()
+    {
+        var h = new SpeedHistory();
+        EngineSnapshot Snap(double read, double tps) => new EngineSnapshot("Basalt", "m", EngineStatus.Decode)
+        {
+            Live = new LiveRequest { Running = 2 },
+            Slots = new List<BatchSlot>
+            {
+                new BatchSlot { Index = 0, State = "decoding", TokensPerSecond = tps },
+                new BatchSlot { Index = 1, State = "reading", PromptTokens = 10_000, PromptRead = read },
+            },
+        };
+        h.Add(At(0), Snap(1000, 30));
+        h.Add(At(2), Snap(1600, 32));                            // the reading slot moved 600 tokens in 2 s
+        Assert.Equal(300, h.Latest(HistoryCurve.Prefill), 9);
+        Assert.Equal(32, h.Latest(HistoryCurve.Decode), 9);
+        Assert.Equal(332, h.Latest(HistoryCurve.Total), 9);
+
+        var plain = new SpeedHistory();                          // no counters, no slots: the live speeds
+        plain.Add(At(0), new EngineSnapshot("Strata", "m", EngineStatus.Decode) { Live = new LiveRequest { DecodeTokensPerSecond = 26, PrefillTokensPerSecond = 0 } });
+        Assert.Equal(26, plain.Latest(HistoryCurve.Decode));
+    }
+
+    [Fact]
+    public void TheCustomEngineMapsItsPerChunkPrefillCounter()
+    {
+        var provider = new Stratoscope.Core.Engines.Custom.CustomProvider(new EngineConfig(), new FakeSource());
+        var metrics = Stratoscope.Core.Engines.Custom.CustomMetrics.Parse("q27:num_requests_running 1\nq27:prefill_tokens_total 273202\nq27:generation_tokens_total 111093\nq27:prompt_tokens_total 9782133\nq27:requests_total 5\nq27:cached_tokens_total 1\n");
+        var snapshot = provider.Translate(metrics!, "m");
+        Assert.Equal(273202, snapshot.Totals?.PrefillComputedTokens);
+        Assert.Equal(111093, snapshot.Totals?.OutputTokens);
+    }
+}
+
+public class DampingPerSecondTests
+{
+    [Theory]
+    [InlineData(HistorySmoothing.Normal)] [InlineData(HistorySmoothing.High)] [InlineData(HistorySmoothing.Highest)]
+    public void TheSmoothingFeelsTheSameAtAnySampleRate(HistorySmoothing smoothing)
+    {
+        // A step from 0 to 100 at t = 0: after two seconds the filtered value is the same whether samples come every 2 s, 0.5 s or 0.1 s.
+        double After(double spacing)
+        {
+            var f = new OnePoleFilter(smoothing.Damping());
+            f.Step(0);
+            double y = 0;
+            for (double t = spacing; t <= 2.0 + 1e-9; t += spacing) y = f.Step(100, spacing);
+            return y;
+        }
+        var expected = 100 * (1 - Math.Pow(smoothing.Damping(), 2));
+        Assert.Equal(expected, After(2), 6);
+        Assert.Equal(expected, After(0.5), 6);
+        Assert.Equal(expected, After(0.1), 6);
+    }
+
+    [Fact]
+    public void ASampleStepUsesDToThePowerDt()
+    {
+        var f = new OnePoleFilter(0.5);
+        f.Step(0);
+        Assert.Equal(100 * (1 - Math.Sqrt(0.5)), f.Step(100, 0.5), 9);
+        Assert.Equal(100, new OnePoleFilter(0).Step(100, 0.5));       // Off passes every value
+    }
+}
+
 public class OnePoleFilterTests
 {
     [Theory]
@@ -165,15 +311,17 @@ public class SpeedHistoryTests
     private static readonly double[] Values = new double[SpeedHistory.Capacity];
 
     [Fact]
-    public void TheBufferKeepsTheLastSixtySeconds()
+    public void TheBufferKeepsTheLastTwoMinutesAtTheSampleSpacing()
     {
         var h = new SpeedHistory();
-        for (int t = 0; t <= 200; t += 2) h.AddSample(t, 10, 20);
-        Assert.Equal(31, h.Count);                        // 140 to 200 s, both ends included
-        var n = h.ReadSmoothed(HistoryCurve.Decode, 0, 200, Ages, Values);
-        Assert.Equal(31, n);
-        Assert.Equal(60, Ages[0]);
+        Assert.Equal(120, SpeedHistory.WindowSeconds);
+        for (int k = 0; k <= 600; k++) h.AddSample(k * SpeedHistory.SampleSeconds, 10, 20);       // 300 s at the sample rate
+        Assert.Equal((int)(SpeedHistory.WindowSeconds / SpeedHistory.SampleSeconds) + 1, h.Count);       // 180 to 300 s, both ends included
+        var n = h.ReadSmoothed(HistoryCurve.Decode, 0, 300, Ages, Values);
+        Assert.Equal(h.Count, n);
+        Assert.Equal(120, Ages[0]);
         Assert.Equal(0, Ages[n - 1]);
+        Assert.Equal(SpeedHistory.SampleSeconds, Ages[n - 2] - Ages[n - 1], 9);            // the spacing is the sample interval
         Assert.All(Values.Take(n), v => Assert.Equal(20, v));
     }
 
@@ -197,7 +345,7 @@ public class SpeedHistoryTests
         Assert.Equal(100, h.Latest(HistoryCurve.Decode));
         var n = h.ReadSmoothed(HistoryCurve.Decode, HistorySmoothing.Normal.Damping(), 2, Ages, Values);
         Assert.Equal(2, n);
-        Assert.Equal(50, Values[1], 9);
+        Assert.Equal(75, Values[1], 9);                  // damping 0.5 per second, 2 s apart: d = 0.5 ^ 2 = 0.25, y = 0.75 * 100
         h.ReadSmoothed(HistoryCurve.Decode, HistorySmoothing.Off.Damping(), 2, Ages, Values);
         Assert.Equal(100, Values[1]);
     }
@@ -326,13 +474,13 @@ public class WindowAverageTests
     public void TheAverageIsOfTheRawSamplesOfTheWindowAndSkipsUnknownOnes()
     {
         var h = new SpeedHistory();
-        h.AddSample(0, 0, 0);                      // older than the window at the end: dropped
+        h.AddSample(0, 0, 0);                      // older than the window at the end (121 s): dropped
         h.AddSample(100, 10, 100);
         h.AddSample(110, 20, 200);
-        h.AddSample(120, double.NaN, 300);
-        Assert.Equal(15, h.Average(HistoryCurve.Prefill, 120));        // the two known samples
-        Assert.Equal(200, h.Average(HistoryCurve.Decode, 120));
-        Assert.Equal(165, h.Average(HistoryCurve.Total, 120));         // (110 + 220) / 2; the unknown total is skipped
+        h.AddSample(121, double.NaN, 300);
+        Assert.Equal(15, h.Average(HistoryCurve.Prefill, 121));        // the two known samples
+        Assert.Equal(200, h.Average(HistoryCurve.Decode, 121));
+        Assert.Equal(165, h.Average(HistoryCurve.Total, 121));         // (110 + 220) / 2; the unknown total is skipped
         Assert.True(double.IsNaN(new SpeedHistory().Average(HistoryCurve.Total, 0)));
     }
 

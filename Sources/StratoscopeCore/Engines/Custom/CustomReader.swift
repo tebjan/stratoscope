@@ -310,7 +310,8 @@ public final class CustomReader {
         // reports all four (an unknown one would show as 0). Prompt tokens are all prompts admitted, reused ones included.
         var totals: Totals?
         if let requests = m.requestsTotal, let prompt = m.promptTokensTotal, let cached = m.cachedTokensTotal, let output = m.generationTokensTotal {
-            totals = Totals(requests: requests, outputTokens: output, promptTokens: prompt, reusedTokens: cached)
+            // q27:prefill_tokens_total is added per prefill chunk, so it advances while a request reads; prompt_tokens_total is added once per request.
+            totals = Totals(requests: requests, outputTokens: output, promptTokens: prompt, reusedTokens: cached, prefillComputedTokens: m.prefillTokensTotal)
         }
 
         let blocked: String? = m.blockedKv == 1 ? "kv" : m.blockedSpeed == 1 ? "speed" : (m.blockedKv == 0 && m.blockedSpeed == 0) ? "none" : nil

@@ -31,7 +31,7 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 <img src="img/windows-readout-parallel.png" alt="The readout with 1, 2, 4 and 8 parallel requests, dark and light" width="720">
 
 - **Position**: centred in the free gap of the taskbar. It moves only when the taskbar geometry changes, then once.
-- **Panel**: the Mac menu, with tabs for several servers. Below the live block a graph shows the last 60 seconds: orange prefill speed, blue decode speed, black total throughput (prompt plus generated tokens per second), with one legend row (colour mark, name, average over the 60 s of the raw samples, not the smoothed curve) and the adaptive maximum labelled at the top. Two or more parallel requests show a sum bar with one smaller bar per request.
+- **Panel**: the Mac menu, with tabs for several servers. Below the live block a graph shows the last two minutes, sampled twice a second: orange prefill speed, blue decode speed, black total throughput (prompt plus generated tokens per second), with one legend row (colour mark, name, average over the 60 s of the raw samples, not the smoothed curve) and the adaptive maximum labelled at the top. Two or more parallel requests show a sum bar with one smaller bar per request.
 - **Tooltips**: only data the element does not show. Nothing to add, no tooltip.
 - **Keys**: Esc closes, Left and Right switch tabs, Ctrl+Q quits.
 <img src="img/windows-readout-states.png" alt="Every state of the readout, dark and light" width="720">
@@ -52,7 +52,7 @@ Open `%LOCALAPPDATA%\Stratoscope\config.json` from the menu (Settings > Open set
 | `STRATOSCOPE_CLIENT_CONFIGS` | `client_configs` | `none` stops reading client configs |
 | | `servers` | list of `{ name, engine, url, router, log, webui, client_model }` |
 | `STRATOSCOPE_READOUT_POSITION` | `readout_position` | `center` (default), `tray`, `after-buttons`, `left` |
-| `STRATOSCOPE_HISTORY_SMOOTHING` | `history_smoothing` | `off`, `normal` (default), `high` or `highest`: the smoothing of the history graph (damping 0, 0.5, 0.9, 0.95); also in the panel under Settings > History smoothing |
+| `STRATOSCOPE_HISTORY_SMOOTHING` | `history_smoothing` | `off`, `normal` (default), `high` or `highest`: the smoothing of the history graph (damping per second 0, 0.5, 0.9, 0.95); also in the panel under Settings > History smoothing |
 | `STRATOSCOPE_UI_SCALE` | `ui_scale` | `auto` (default) or `100` to `250` |
 | `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the panel |
 | `STRATOSCOPE_CONFIG` | | path of the settings file |

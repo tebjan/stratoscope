@@ -28,6 +28,9 @@ internal sealed class ReadoutApp : ApplicationContext
     private readonly IJsonSource source = new HttpJsonSource();
     private readonly System.Windows.Forms.Timer pollTimer = new System.Windows.Forms.Timer { Interval = PollMilliseconds };
     private readonly System.Windows.Forms.Timer reloadTimer = new System.Windows.Forms.Timer { Interval = 600 };
+    /// <summary>The light counter read for the speed curves: every <see cref="SpeedHistory.SampleSeconds"/>, the panel repaints with it while it is open.</summary>
+    private readonly System.Windows.Forms.Timer sampleTimer = new System.Windows.Forms.Timer { Interval = (int)(SpeedHistory.SampleSeconds * 1000) };
+    private bool sampling;
     private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
     private readonly UiController ui;
     private readonly StatusPanel panel;
@@ -54,6 +57,7 @@ internal sealed class ReadoutApp : ApplicationContext
         LoadConfig();
         pollTimer.Tick += async (s, e) => { ui.Notify("poll"); await PollAllAsync(); };
         reloadTimer.Tick += (s, e) => { reloadTimer.Stop(); LoadConfig(); };
+        sampleTimer.Tick += async (s, e) => await SampleAllAsync();
         SystemEvents.UserPreferenceChanged += OnPreferenceChanged;
         SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
 
@@ -64,6 +68,7 @@ internal sealed class ReadoutApp : ApplicationContext
         readout.Start();
         ui.Notify("start");
         pollTimer.Start();
+        sampleTimer.Start();
         var _ = PollAllAsync();
     }
 
@@ -210,6 +215,24 @@ internal sealed class ReadoutApp : ApplicationContext
         finally { polling = false; }
     }
 
+    /// <summary>
+    /// The counter read of every server (light: for the custom engine only /metrics, 46 KB against the 370 KB of the full poll's /ui/state). The panel
+    /// repaints at this rate while it is open; the taskbar readout keeps its own rule and repaints on a change of what it shows, at the full poll.
+    /// </summary>
+    private async Task SampleAllAsync()
+    {
+        if (sampling) return;
+        sampling = true;
+        try
+        {
+            var current = monitors;
+            var added = await Task.WhenAll(current.Select(m => m.SampleAsync(cancellation.Token)));
+            if (ReferenceEquals(current, monitors) && panel.IsOpen && added.Any(a => a)) panel.Refresh();
+        }
+        catch (OperationCanceledException) { }
+        finally { sampling = false; }
+    }
+
     private void UpdateUi()
     {
         // The readout is the only presence of the app, so it is always visible, grey while a server does not answer.
@@ -342,7 +365,7 @@ internal sealed class ReadoutApp : ApplicationContext
     {
         SystemEvents.UserPreferenceChanged -= OnPreferenceChanged;
         SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
-        pollTimer.Stop(); reloadTimer.Stop();
+        pollTimer.Stop(); sampleTimer.Stop(); reloadTimer.Stop();
         quitWait.Unregister(null);
         quitEvent.Dispose();
         cancellation.Cancel();

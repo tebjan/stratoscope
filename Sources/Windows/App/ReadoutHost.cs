@@ -336,7 +336,10 @@ internal sealed class ReadoutHost : IDisposable
         }
         Report(null);
 
-        var signature = string.Join("|", current.Select(i => i.Text.Value + "," + i.Text.Unit + "," + i.State + "," + (i.Fraction.HasValue ? (int)(i.Fraction.Value * 100) : -1)))
+        // (the per-request bars are part of it: a request that starts, ends, or moves its bar by a pixel's worth repaints the readout)
+        var signature = string.Join("|", current.Select(i => i.Text.Value + "," + i.Text.Unit + "," + i.State + "," + (i.Fraction.HasValue ? (int)(i.Fraction.Value * 100) : -1)
+                + "," + string.Join(";", i.Bars.Select(b => (b.Reading ? "r" : "d") + (b.Reading ? (int)(b.Fraction * 100)
+                    : b.TokensPerSecond is double v && i.ScaleMax > 0 ? (int)(Math.Min(1, v / i.ScaleMax) * 100) : -1)))))
             + "#" + rect.Width + "x" + rect.Height + "@" + m.Signature;
         var screen = Point.Empty;
         ClientToScreen(info.Window, ref screen);

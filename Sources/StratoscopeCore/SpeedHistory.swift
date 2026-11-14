@@ -76,8 +76,11 @@ public enum RequestBars {
 /// While the engine is idle all three are 0. One request that reads does not write, so an unreported decode speed is 0 then, and the other
 /// way round; with parallel requests an unreported speed stays unknown. Samples are raw; smoothing is applied when the graph reads them.
 public struct SpeedHistory {
-    public static let windowSeconds = 60.0
-    public static let capacity = 1024
+    /// The length of the history graph and of the averages of its legend, seconds.
+    public static let windowSeconds = 120.0
+    /// How often the speed counters are sampled between the full polls, seconds (the Mac app samples at its two second poll only).
+    public static let sampleSeconds = 0.5
+    public static let capacity = Int(windowSeconds / sampleSeconds) + 160
 
     private var times: [Double] = []
     private var values: [[Double]] = [[], [], []]
@@ -97,11 +100,77 @@ public struct SpeedHistory {
 
     public var sampleCount: Int { count }
 
+    /// A gap longer than this between two polls makes no counter rate.
+    private static let maxPollGapSeconds = 30.0
+    private static let counterFreshSeconds = 3.0
+    private var lastPollSeconds = Double.nan, lastPrefillCounter = Double.nan, lastGenerationCounter = Double.nan
+    private var lastSlotRead: [Int: Double] = [:]
+    private var lastCounterSeconds = Double.nan, lastCounterPrefill = Double.nan, lastCounterGenerated = Double.nan
+    private var counterSampleSeconds = -Double.infinity
+
+    /// A sample from a light counter read (twin of AddCounters in SpeedHistory.cs): prefill speed from the delta of the computed prompt tokens,
+    /// decode speed from the delta of the generated tokens, Total their sum. The first read sets the baseline; a counter that fell adds an unknown
+    /// sample; incomplete counters add nothing. Returns true when a sample was added.
+    @discardableResult
+    public mutating func addCounters(now date: Date, prefillComputed: Double?, generated: Double?) -> Bool {
+        let now = date.timeIntervalSince1970
+        guard let prefill = prefillComputed, let gen = generated, prefill.isFinite, gen.isFinite else { return false }
+        let elapsed = now - lastCounterSeconds
+        let hadBaseline = !lastCounterSeconds.isNaN && elapsed > 0 && elapsed <= SpeedHistory.maxPollGapSeconds
+        let before = (prefill: lastCounterPrefill, generated: lastCounterGenerated)
+        lastCounterSeconds = now; lastCounterPrefill = prefill; lastCounterGenerated = gen
+        guard hadBaseline else { return false }
+        counterSampleSeconds = now
+        if prefill < before.prefill || gen < before.generated { addSample(now: now, prefill: .nan, decode: .nan); return true }
+        addSample(now: now, prefill: (prefill - before.prefill) / elapsed, decode: (gen - before.generated) / elapsed)
+        return true
+    }
+
+    /// The prefill and decode speed of a poll, in this order (twin of RatesBetweenPolls in SpeedHistory.cs): the engine's cumulative counters
+    /// between two polls (`totals.prefillComputedTokens`, `totals.outputTokens`), then the batch slots (decoding slots' own speeds, reading slots'
+    /// prompt progress since the last poll), then the live request's speeds (`rates`).
+    mutating func ratesBetweenPolls(now: Double, _ s: EngineSnapshot?) -> (prefill: Double, decode: Double) {
+        let fallback = SpeedHistory.rates(s)
+        let elapsed = now - lastPollSeconds
+        let usable = !lastPollSeconds.isNaN && elapsed > 0 && elapsed <= SpeedHistory.maxPollGapSeconds
+        let ok = s.map { !$0.isLoading } ?? false
+        let prefillCounter = ok ? (s?.totals?.prefillComputedTokens ?? .nan) : .nan
+        let generationCounter = ok ? (s?.totals.map { $0.outputTokens } ?? .nan) : .nan
+        func delta(_ now: Double, _ before: Double) -> Double {
+            usable && !now.isNaN && !before.isNaN && now >= before ? (now - before) / elapsed : .nan
+        }
+        let prefillRate = delta(prefillCounter, lastPrefillCounter), decodeRate = delta(generationCounter, lastGenerationCounter)
+        var slotPrefill = Double.nan, slotDecode = Double.nan
+        var slotRead: [Int: Double] = [:]
+        if ok, let slots = s?.slots, !slots.isEmpty {
+            var prefillSum: Double? = 0, decodeSum: Double? = 0
+            for slot in slots {
+                if slot.isReading, let read = slot.promptRead {
+                    slotRead[slot.index] = read
+                    if usable, let before = lastSlotRead[slot.index], read >= before { prefillSum = prefillSum.map { $0 + (read - before) / elapsed } }
+                    else if usable { prefillSum = nil }
+                } else if slot.isReading { prefillSum = nil }
+                if slot.isDecoding {
+                    if let v = slot.tokensPerSecond, v.isFinite, let sum = decodeSum { decodeSum = sum + v } else { decodeSum = nil }
+                }
+            }
+            if !usable && slots.contains(where: { $0.isReading }) { prefillSum = nil }
+            slotPrefill = prefillSum ?? .nan; slotDecode = decodeSum ?? .nan
+        }
+        lastPollSeconds = now; lastPrefillCounter = prefillCounter; lastGenerationCounter = generationCounter; lastSlotRead = slotRead
+        guard ok, let s = s, s.status != .idle else { return fallback }
+        return (prefillRate.isNaN ? (slotPrefill.isNaN ? fallback.prefill : slotPrefill) : prefillRate,
+                decodeRate.isNaN ? (slotDecode.isNaN ? fallback.decode : slotDecode) : decodeRate)
+    }
+
     /// Records the state of one poll. A nil snapshot (nothing answers) records unknown values.
     public mutating func add(now: Date, _ s: EngineSnapshot?) {
-        let (prefill, decode) = SpeedHistory.rates(s)
         let seconds = now.timeIntervalSince1970
-        addSample(now: seconds, prefill: prefill, decode: decode)
+        // While a light counter read feeds the curves, the full poll leaves them alone: two sources would interleave.
+        if seconds - counterSampleSeconds > SpeedHistory.counterFreshSeconds {
+            let (prefill, decode) = ratesBetweenPolls(now: seconds, s)
+            addSample(now: seconds, prefill: prefill, decode: decode)
+        }
         if let peak = RequestBars.peakSpeed(RequestBars.from(s)) { requestScale.observe(peak, now: seconds) }
         if let s = s, !s.recent.isEmpty {
             // The charts of the finished requests share the rule of the other scales: they do not change with every poll.
@@ -146,7 +215,9 @@ public struct SpeedHistory {
             let i = (start + k) % SpeedHistory.capacity
             let age = now - times[i]
             if age > SpeedHistory.windowSeconds { continue }
-            out.append((Swift.max(0, age), filter.step(values[curve.rawValue][i])))
+            // The damping is per second; the samples are not evenly spaced, so each step uses its own spacing.
+            let dt = k == 0 ? 1.0 : times[i] - times[(i + SpeedHistory.capacity - 1) % SpeedHistory.capacity]
+            out.append((Swift.max(0, age), filter.step(values[curve.rawValue][i], dt: dt)))
         }
         return out
     }

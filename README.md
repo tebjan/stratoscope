@@ -25,7 +25,7 @@ A speedometer for your local LLM.
 Stratoscope shows what your local LLM inference engine is doing right now, in the macOS menu bar or the Windows taskbar.
 
 - The speed, like `247 t/s` (the engine's total), and one small bar per running request, up to eight: a request that reads shows its prompt progress (with one request the bar's color shows how much came from the cache), one that writes shows its own speed against a scale that adapts to what runs.
-- The panel: the current request, a 60 second graph of prefill, decode and total speed, the context and how its size changed over the last 12 requests, the speed of the last 12 requests, RAM / GPU / CPU, the cache slots, and totals.
+- The panel: the current request, a two minute graph of prefill, decode and total speed, the context and how its size changed over the last 12 requests, the speed of the last 12 requests, RAM / GPU / CPU, the cache slots, and totals.
 **Cache colors**
 
 | Color | Meaning |

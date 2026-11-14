@@ -41,6 +41,9 @@ public sealed class AutoEngineProvider : RoutedProvider
 
     public override string Brand => current.Brand;
 
+    internal override Task<EngineCounters?> ReadCountersFromAsync(string engineBase, CancellationToken cancellation) =>
+        current.ReadCountersFromAsync(engineBase, cancellation);
+
     internal override async Task<EngineRead> ReadAsync(string engineBase, string? routedId, CancellationToken cancellation)
     {
         if (!kinds.TryGetValue(engineBase, out var kind))

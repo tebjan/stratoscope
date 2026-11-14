@@ -588,7 +588,7 @@ internal sealed class PanelPainter
     /// <summary>The height of the history block (a multiple of 4).</summary>
     internal const float HistoryHeight = 144f;
     private const float HistoryPlotHeight = 100f;
-    private const float HistoryGutter = 30f;
+    private const float HistoryGutter = 0f;      // the plot uses the whole width
     [ThreadStatic] private static double[]? historyAges, historyValues;
 
     /// <summary>
@@ -596,7 +596,7 @@ internal sealed class PanelPainter
     /// (generated tokens per second) and the ink colour the total throughput (prompt plus generated tokens per second, the vLLM and
     /// OpenTelemetry GenAI meaning, see <see cref="SpeedHistory"/>). The total is a third curve in the same graph, not a separate sparkline: it shares the axis,
     /// so it reads directly against its two parts, and it costs no height. The legend row above the graph gives, for each curve, the colour mark, the name and its average over the 60 s (of the raw samples).
-    /// The vertical axis is the adaptive scale of the history (0 to its maximum); the horizontal one is the last 60 s, newest on the right, and has no labels.
+    /// The vertical axis is the adaptive scale of the history (0 to its maximum, no label: the gridlines are 0, half and the maximum); the horizontal one is the last 60 s, newest on the right, and has no labels.
     /// </summary>
     private float HistoryBlock(SpeedHistory history, float y)
     {
@@ -624,7 +624,6 @@ internal sealed class PanelPainter
                 var gy = (float)Math.Round(top + plotH - plotH * f) - 0.5f;
                 g.DrawLine(pen, left, gy, right, gy);
             }
-        T(Fmt.Number(scale.Max), 0, top - 6, Caption, false, pal.Dim, left - 4);     // the top of the scale; 0 is the baseline
         historyAges ??= new double[SpeedHistory.Capacity]; historyValues ??= new double[SpeedHistory.Capacity];
         var now = SpeedHistory.Seconds(model.Now);
         var saved = g.SmoothingMode;

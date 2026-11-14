@@ -94,14 +94,16 @@ import Testing
 }
 
 @Suite struct SpeedHistoryTests {
-    @Test func testTheBufferKeepsTheLastSixtySeconds() {
+    @Test func testTheBufferKeepsTheLastTwoMinutesAtTheSampleSpacing() {
         var h = SpeedHistory()
-        for t in stride(from: 0, through: 200, by: 2) { h.addSample(now: Double(t), prefill: 10, decode: 20) }
-        #expect(h.sampleCount == 31)
-        let samples = h.readSmoothed(.decode, damping: 0, now: 200)
-        #expect(samples.count == 31)
-        #expect(samples.first?.age == 60)
+        #expect(SpeedHistory.windowSeconds == 120)
+        for k in 0...600 { h.addSample(now: Double(k) * SpeedHistory.sampleSeconds, prefill: 10, decode: 20) }
+        #expect(h.sampleCount == Int(SpeedHistory.windowSeconds / SpeedHistory.sampleSeconds) + 1)
+        let samples = h.readSmoothed(.decode, damping: 0, now: 300)
+        #expect(samples.count == h.sampleCount)
+        #expect(samples.first?.age == 120)
         #expect(samples.last?.age == 0)
+        #expect(abs((samples[samples.count - 2].age - samples[samples.count - 1].age) - SpeedHistory.sampleSeconds) < 1e-9)
         #expect(samples.allSatisfy { $0.value == 20 })
     }
 
@@ -119,7 +121,7 @@ import Testing
         h.addSample(now: 0, prefill: 0, decode: 0)
         h.addSample(now: 2, prefill: 0, decode: 100)
         #expect(h.latest(.decode) == 100)
-        #expect(abs(h.readSmoothed(.decode, damping: HistorySmoothing.normal.damping, now: 2)[1].value - 50) < 1e-9)
+        #expect(abs(h.readSmoothed(.decode, damping: HistorySmoothing.normal.damping, now: 2)[1].value - 75) < 1e-9)     // 0.5 per second, 2 s apart: d = 0.25
         #expect(h.readSmoothed(.decode, damping: 0, now: 2)[1].value == 100)
     }
 
@@ -177,10 +179,45 @@ import Testing
         h.addSample(now: 0, prefill: 0, decode: 0)
         h.addSample(now: 100, prefill: 10, decode: 100)
         h.addSample(now: 110, prefill: 20, decode: 200)
-        h.addSample(now: 120, prefill: .nan, decode: 300)
-        #expect(h.average(.prefill, now: 120) == 15)
-        #expect(h.average(.decode, now: 120) == 200)
-        #expect(h.average(.total, now: 120) == 165)
+        h.addSample(now: 121, prefill: .nan, decode: 300)
+        #expect(h.average(.prefill, now: 121) == 15)
+        #expect(h.average(.decode, now: 121) == 200)
+        #expect(h.average(.total, now: 121) == 165)
         #expect(SpeedHistory().average(.total, now: 0).isNaN)
+    }
+}
+
+@Suite struct CounterRateTests {
+    @Test func testPrefillAndDecodeComeFromTheCounterDeltasAndTotalIsTheirSum() {
+        var h = SpeedHistory()
+        #expect(!h.addCounters(now: Date(timeIntervalSince1970: 0), prefillComputed: 1000, generated: 5000))
+        #expect(h.addCounters(now: Date(timeIntervalSince1970: 0.5), prefillComputed: 2200, generated: 5100))
+        #expect(abs(h.latest(.prefill) - 2400) < 1e-9)
+        #expect(abs(h.latest(.decode) - 200) < 1e-9)
+        #expect(abs(h.latest(.total) - 2600) < 1e-9)
+    }
+
+    @Test func testACounterThatFallsIsAGapAndMissingCountersAddNothing() {
+        var h = SpeedHistory()
+        h.addCounters(now: Date(timeIntervalSince1970: 0), prefillComputed: 1000, generated: 5000)
+        #expect(h.addCounters(now: Date(timeIntervalSince1970: 0.5), prefillComputed: 20, generated: 30))
+        #expect(h.latest(.total).isNaN)
+        #expect(!h.addCounters(now: Date(timeIntervalSince1970: 1), prefillComputed: nil, generated: 5))
+        #expect(h.addCounters(now: Date(timeIntervalSince1970: 1.5), prefillComputed: 120, generated: 130))
+        #expect(abs(h.latest(.prefill) - 200) < 1e-9)
+    }
+
+    @Test func testTheDampingIsPerSecondAtAnySampleRate() {
+        for damping in [0.5, 0.9, 0.95] {
+            func after(_ spacing: Double) -> Double {
+                var f = OnePoleFilter(damping: damping)
+                _ = f.step(0)
+                var y = 0.0, t = spacing
+                while t <= 2.0 + 1e-9 { y = f.step(100, dt: spacing); t += spacing }
+                return y
+            }
+            let expected = 100 * (1 - pow(damping, 2))
+            for spacing in [2.0, 0.5, 0.1] { #expect(abs(after(spacing) - expected) < 1e-6) }
+        }
     }
 }

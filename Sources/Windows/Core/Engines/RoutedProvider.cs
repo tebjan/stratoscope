@@ -59,6 +59,15 @@ public abstract class RoutedProvider : IEngineProvider
 
     // MARK: Polling
 
+    private string? lastEngineBase;
+
+    /// <summary>The address the last full poll read the engine at, so a light counter read goes to the same place. Null before one succeeded.</summary>
+    public async Task<EngineCounters?> ReadCountersAsync(CancellationToken cancellation) =>
+        lastEngineBase is null ? null : await ReadCountersFromAsync(lastEngineBase, cancellation).ConfigureAwait(false);
+
+    /// <summary>A light read of the cumulative counters at <paramref name="engineBase"/>; an engine that has them for the speed curves overrides it. Never throws.</summary>
+    internal virtual Task<EngineCounters?> ReadCountersFromAsync(string engineBase, CancellationToken cancellation) => Task.FromResult<EngineCounters?>(null);
+
     public async Task<EngineSnapshot?> PollAsync(CancellationToken cancellation)
     {
         LastError = null;
@@ -91,6 +100,7 @@ public abstract class RoutedProvider : IEngineProvider
         if (state != "ready") return Placeholder(title, EngineStatus.Loading, "State: " + state);
 
         var engineBase = Endpoints.Join(router, "upstream", id).AbsoluteUri.TrimEnd('/');
+        lastEngineBase = engineBase;
         BaseForLinks = engineBase;
         var read = await ReadAsync(engineBase, id, cancellation).ConfigureAwait(false);
         if (read.Status == 429)
@@ -120,7 +130,7 @@ public abstract class RoutedProvider : IEngineProvider
             LastError = read.Ok ? "The answer from " + address + "/metrics is not a " + Brand + " metrics document." : Describe(read.Failure, read.Detail, address);
             return null;
         }
-        BaseForLinks = address;
+        BaseForLinks = address; lastEngineBase = address;
         lastSnapshot = read.Snapshot; lastModelId = null;
         return read.Snapshot;
     }

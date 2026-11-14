@@ -62,7 +62,7 @@ public struct Config {
       // The look of the menu: "system" (default), "light" or "dark". The menu bar item always matches macOS.
       // "theme": "system",
 
-      // How smooth the 60 second history graph in the menu is: "off", "normal" (default), "high" or "highest".
+      // How smooth the two minute history graph in the menu is: "off", "normal" (default), "high" or "highest".
       // "history_smoothing": "normal",
 
       // The token count at which your chat client summarises, drawn as a mark on the context bar. Only needed when Stratoscope cannot find it in the Kilo or OpenCode config.

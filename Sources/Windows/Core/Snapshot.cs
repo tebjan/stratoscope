@@ -148,6 +148,12 @@ public sealed class Totals
     public double? OutputTokens { get; set; }
     public double? PromptTokens { get; set; }
     public double? ReusedTokens { get; set; }
+    /// <summary>
+    /// Prompt tokens computed so far, cumulative since the engine started and not counting the ones served from cache. Only for a counter that advances
+    /// while a request reads (per chunk), never one that is added once at the start of a request; null otherwise. The history graph takes the prefill speed
+    /// from its delta between polls.
+    /// </summary>
+    public double? PrefillComputedTokens { get; set; }
     public double? PromptMilliseconds { get; set; }
     public double? DecodeMilliseconds { get; set; }
     public DateTime? Since { get; set; }
@@ -267,7 +273,7 @@ public sealed class EngineSnapshot
             h.Add(c.UsedBytes); h.Add(c.Slots); h.Add(c.Parked); h.Add(c.Requests); h.Add(c.RequestsReused); h.Add(c.Evictions);
             foreach (var e in c.Entries) { h.Add(e.Id); h.Add(e.Tokens); h.Add(e.ParkedAt); }
         }
-        if (Totals is { } t) { h.Add(t.Requests); h.Add(t.OutputTokens); h.Add(t.PromptTokens); h.Add(t.ReusedTokens); }
+        if (Totals is { } t) { h.Add(t.Requests); h.Add(t.OutputTokens); h.Add(t.PromptTokens); h.Add(t.ReusedTokens); h.Add(t.PrefillComputedTokens); }
         if (Info is { } i) { h.Add(i.Version); h.Add(i.BatchSlots); h.Add(i.ExpertHitRate); h.Add(i.KvFreePages); h.Add(i.KvCheckpointOnlyPages); h.Add(i.PrefixCheckpoints); h.Add(i.AdmissionBlocked); h.Add(i.GpuName); h.Add(i.TargetSeqs); h.Add(i.KvFormat); h.Add(i.DraftWindow); }
         if (Slots != null) foreach (var s2 in Slots) { h.Add(s2.State); h.Add(s2.HeldTokens); h.Add(s2.PromptRead); h.Add(s2.Generated); h.Add(s2.TokensPerSecond); h.Add(s2.ElapsedSeconds is double e2 ? Math.Floor(e2) : (double?)null); h.Add(s2.MaxTokens); }
         return h.ToHashCode();

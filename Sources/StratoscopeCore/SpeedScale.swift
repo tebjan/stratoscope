@@ -68,9 +68,11 @@ public struct OnePoleFilter {
     public init(damping: Double) { self.damping = Swift.min(Swift.max(damping, 0), 0.999) }
 
     /// Feeds one sample and returns the filtered one. NaN resets the filter and returns NaN.
-    public mutating func step(_ x: Double) -> Double {
+    /// `dt` is the time since the previous sample in seconds: the damping is per second, a sample step uses `d ^ dt` (dt 1 is the plain y = d*y + (1-d)*x).
+    public mutating func step(_ x: Double, dt: Double = 1) -> Double {
         guard x.isFinite else { primed = false; return .nan }
-        y = primed ? damping * y + (1 - damping) * x : x
+        let d = damping <= 0 ? 0 : pow(damping, Swift.max(0, dt))
+        y = primed ? d * y + (1 - d) * x : x
         primed = true
         return y
     }

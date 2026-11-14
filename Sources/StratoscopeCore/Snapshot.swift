@@ -241,7 +241,10 @@ public struct Totals {
     public var promptTokens: Double
     public var reusedTokens: Double
     public var since: Date?
-    public init(requests: Double = 0, outputTokens: Double = 0, promptTokens: Double = 0, reusedTokens: Double = 0, since: Date? = nil) {
+    /// Prompt tokens computed so far, cumulative, not counting cache hits; only a counter that advances while a request reads (per chunk). The history graph takes the prefill speed from its delta between polls.
+    public var prefillComputedTokens: Double?
+    public init(requests: Double = 0, outputTokens: Double = 0, promptTokens: Double = 0, reusedTokens: Double = 0, since: Date? = nil, prefillComputedTokens: Double? = nil) {
+        self.prefillComputedTokens = prefillComputedTokens
         self.requests = requests; self.outputTokens = outputTokens; self.promptTokens = promptTokens
         self.reusedTokens = reusedTokens; self.since = since
     }

@@ -77,6 +77,24 @@ public sealed class CustomProvider : RoutedProvider
         return new EngineRead(text.Status, true, FetchFailure.None, null, Translate(metrics, model, ui));
     }
 
+    /// <summary>
+    /// The light read for the speed curves: only <c>/metrics</c> (about 46 KB, 60 to 90 ms measured against the live engine through the router),
+    /// not <c>/ui/state</c> (about 370 KB). <c>q27:prefill_tokens_total</c> is added per prefill chunk and <c>q27:generation_tokens_total</c> per
+    /// delivery, so both advance while a request runs (checked live); <c>prompt_tokens_total</c> is added once per request and is not used.
+    /// </summary>
+    internal override async Task<EngineCounters?> ReadCountersFromAsync(string engineBase, CancellationToken cancellation)
+    {
+        try
+        {
+            var text = await http.GetTextAsync(Endpoints.Join(engineBase, "metrics"), cancellation).ConfigureAwait(false);
+            if (!text.Ok) return null;
+            var metrics = CustomMetrics.Parse(text.Body);
+            return metrics is null ? null : new EngineCounters(metrics.PrefillTokensTotal, metrics.GenerationTokensTotal);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { return null; }
+    }
+
     private static bool Is(string? value, string word) => string.Equals(value, word, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Tokens divided by the seconds spent, only when both are exposed and the time is above zero.</summary>
@@ -132,10 +150,13 @@ public sealed class CustomProvider : RoutedProvider
 
         // Counters since the engine started. Prompt tokens are all prompts admitted, reused ones included.
         Totals? totals = null;
-        if (m.PromptTokensTotal.HasValue || m.GenerationTokensTotal.HasValue || m.RequestsTotal.HasValue)
+        if (m.PromptTokensTotal.HasValue || m.GenerationTokensTotal.HasValue || m.RequestsTotal.HasValue || m.PrefillTokensTotal.HasValue)
             totals = new Totals
             {
                 Requests = m.RequestsTotal, PromptTokens = m.PromptTokensTotal, ReusedTokens = m.CachedTokensTotal, OutputTokens = m.GenerationTokensTotal,
+                // q27:prefill_tokens_total is added per prefill chunk (worker.py), so it advances while a request reads (checked live: it moved by 27 tokens
+                // in 4 s during a prefill); q27:prompt_tokens_total is added once when a request starts and is not used for a speed.
+                PrefillComputedTokens = m.PrefillTokensTotal,
             };
 
         string? blocked = m.BlockedKv == 1 ? "kv" : m.BlockedSpeed == 1 ? "speed" : m.BlockedKv == 0 && m.BlockedSpeed == 0 ? "none" : null;

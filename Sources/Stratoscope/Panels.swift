@@ -140,13 +140,12 @@ final class Panels {
             let v = h.average(curve, now: Date().timeIntervalSince1970)     // the average of the raw samples of the window, not of the smoothed curve
             text(v.isNaN ? "–" : Fmt.number(v), x: x + 13 + nameWidth + 5, y: 8, size: 12, bold: true, color: curve == .total ? .labelColor : color)
         }
-        let gutter: CGFloat = 30, left = pad + gutter, right = menuWidth - pad, top: CGFloat = 32, plotH: CGFloat = 100
+        let left = pad, right = menuWidth - pad, top: CGFloat = 32, plotH: CGFloat = 100
         let scale = h.graphScale
         NSColor.labelColor.withAlphaComponent(0.06).setFill()
         NSRect(x: left, y: top, width: right - left, height: plotH).fill()
         NSColor.labelColor.withAlphaComponent(0.16).setFill()
         for f in [0.0, 0.5, 1.0] { NSRect(x: left, y: (top + plotH - plotH * CGFloat(f)).rounded() - 1, width: right - left, height: 1).fill() }
-        text(Fmt.number(scale.max), x: 0, y: top - 6, size: 10, color: .secondaryLabelColor, right: left - 4)     // the top of the scale; 0 is the baseline
 
         NSGraphicsContext.saveGraphicsState()
         NSRect(x: left, y: top - 1, width: right - left, height: plotH + 2).clip()

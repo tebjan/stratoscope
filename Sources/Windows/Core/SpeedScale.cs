@@ -89,11 +89,16 @@ public struct OnePoleFilter
 
     public double Damping { get; }
 
-    /// <summary>Feeds one sample and returns the filtered one. NaN (unknown) resets the filter and returns NaN.</summary>
-    public double Step(double x)
+    /// <summary>
+    /// Feeds one sample and returns the filtered one. <paramref name="dt"/> is the time since the previous sample in seconds: the damping is defined
+    /// per second, so a sample step uses <c>d_sample = d ^ dt</c> and the smoothing feels the same at any sample rate (dt 1 is the plain
+    /// <c>y = d*y + (1-d)*x</c>). NaN (unknown) resets the filter and returns NaN.
+    /// </summary>
+    public double Step(double x, double dt = 1)
     {
         if (!double.IsFinite(x)) { primed = false; return double.NaN; }
-        y = primed ? Damping * y + (1 - Damping) * x : x;
+        var d = Damping <= 0 ? 0 : Math.Pow(Damping, Math.Max(0, dt));
+        y = primed ? d * y + (1 - d) * x : x;
         primed = true;
         return y;
     }
@@ -111,7 +116,7 @@ public enum HistorySmoothing
 
 public static class HistorySmoothings
 {
-    /// <summary>The damping d of the filter: 0 (off), 0.5, 0.9, 0.95.</summary>
+    /// <summary>The damping d of the filter per second: 0 (off), 0.5, 0.9, 0.95.</summary>
     public static double Damping(this HistorySmoothing s) => s switch
     {
         HistorySmoothing.Off => 0, HistorySmoothing.High => 0.9, HistorySmoothing.Highest => 0.95, _ => 0.5,

@@ -123,7 +123,7 @@ public sealed class Config
         "  // The look of the panel: \"system\" (default), \"light\" or \"dark\". The readout always matches the taskbar.\r\n" +
         "  // \"theme\": \"system\",\r\n" +
         "\r\n" +
-        "  // How smooth the 60 second history graph in the panel is: \"off\", \"normal\" (default), \"high\" or \"highest\".\r\n" +
+        "  // How smooth the two minute history graph in the panel is: \"off\", \"normal\" (default), \"high\" or \"highest\".\r\n" +
         "  // \"history_smoothing\": \"normal\",\r\n" +
         "\r\n" +
         "  // Size of the panel and the readout in percent, 100 to 250. Default: as Windows has it.\r\n" +
