@@ -184,6 +184,11 @@ import Testing
         #expect(h.average(.decode, now: 121) == 200)
         #expect(h.average(.total, now: 121) == 165)
         #expect(SpeedHistory().average(.total, now: 0).isNaN)
+        var idle = SpeedHistory()
+        for t in 0..<100 { idle.addSample(now: Double(t), prefill: 0, decode: 0) }
+        idle.addSample(now: 100, prefill: 0, decode: 80); idle.addSample(now: 101, prefill: 0, decode: 120)
+        #expect(idle.average(.decode, now: 101) == 100)          // idle time is not part of the average
+        #expect(idle.average(.prefill, now: 101).isNaN)
     }
 }
 

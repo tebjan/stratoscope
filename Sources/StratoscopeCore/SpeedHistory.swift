@@ -236,7 +236,7 @@ public struct SpeedHistory {
         for k in 0..<count {
             let i = (start + k) % SpeedHistory.capacity
             let v = values[curve.rawValue][i]
-            if now - times[i] > SpeedHistory.windowSeconds || v.isNaN { continue }
+            if now - times[i] > SpeedHistory.windowSeconds || v.isNaN || v <= 0 { continue }     // idle time (0) is not part of the average
             sum += v; n += 1
         }
         return n == 0 ? .nan : sum / Double(n)

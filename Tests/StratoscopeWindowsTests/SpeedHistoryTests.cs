@@ -577,7 +577,18 @@ public class WindowAverageTests
         var h = new SpeedHistory();
         h.AddSample(0, 0, 0);
         h.AddSample(2, 0, 100);
-        Assert.Equal(50, h.Average(HistoryCurve.Decode, 2));
+        h.AddSample(3, 0, 300);
+        Assert.Equal(200, h.Average(HistoryCurve.Decode, 3));          // the raw 100 and 300, not a smoothed curve
+    }
+
+    [Fact]
+    public void TimeInWhichNothingRanIsNotPartOfTheAverage()
+    {
+        var h = new SpeedHistory();
+        for (int t = 0; t < 100; t++) h.AddSample(t, 0, 0);            // 100 s idle
+        h.AddSample(100, 0, 80); h.AddSample(101, 0, 120);             // two seconds of decoding
+        Assert.Equal(100, h.Average(HistoryCurve.Decode, 101));        // not 2 s worth of speed spread over 102 s
+        Assert.True(double.IsNaN(h.Average(HistoryCurve.Prefill, 101)));      // no prefill ran: nothing to average ("–")
     }
 }
 
