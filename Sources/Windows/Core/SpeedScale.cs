@@ -2,10 +2,10 @@ namespace Stratoscope.Core;
 
 /// <summary>
 /// An adaptive speed scale for bars and graphs: 0 to <see cref="Max"/> tokens per second. The maximum is slow on purpose.
-/// Rise: a value above the maximum sets the maximum to that value plus <see cref="RiseMargin"/>, rounded up to a nice number (1, 2, 2.5 or 5 times a power of ten)
-/// (126 becomes 200), so a speed that creeps upwards does not move the scale with every sample.
+/// Rise: a value above the maximum sets the maximum to that value plus <see cref="RiseMargin"/>, rounded up to two significant digits
+/// (120 becomes 130), so a speed that creeps upwards does not move the scale with every sample.
 /// Fall: when every value stays below <see cref="FallBelow"/> of the maximum for <see cref="FallHoldSeconds"/>, the maximum steps back to the
-/// next nice number above the peak of that period (never below <see cref="Floor"/>). The new maximum is above the peak by the margin, so the
+/// next round number above the peak of that period (never below <see cref="Floor"/>). The new maximum is above the peak by the margin, so the
 /// values that caused the step are above half of it: the scale does not oscillate, and a second step needs another full period.
 /// </summary>
 public sealed class SpeedScale
@@ -63,21 +63,16 @@ public sealed class SpeedScale
         return Max;
     }
 
-    private static readonly double[] NiceMantissas = { 1, 2, 2.5, 5, 10 };
-
     /// <summary>
-    /// The smallest "nice number" at or above <paramref name="value"/>: 1, 2, 2.5, 5 times a power of ten (100, 200, 250, 500, 1000, ...).
-    /// Followed: the "nice numbers" of Heckbert's graph-axis algorithm (Graphics Gems, 1990), which axis code in monitoring graphs such as uPlot and
-    /// Grafana uses in the same way (increments of 1, 2, 2.5, 5), and the usual auto-range that rises at once and shrinks only after a hold; so the scale takes a few distinct values
-    /// and the labels stay readable.
+    /// The smallest round number at or above <paramref name="value"/> with two significant digits (126 becomes 130, 283 becomes 290,
+    /// 1260 becomes 1300): the scale stays close to the values, so a graph never wastes half its height (1-2-5 steps put a peak of 283
+    /// under a maximum of 500). The scale still takes few distinct values, because it moves only on a rise above the maximum or after the hold.
     /// </summary>
     public static double RoundUp(double value)
     {
         if (!double.IsFinite(value) || value <= 0) return 1;
-        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
-        foreach (var m in NiceMantissas)
-            if (m * magnitude >= value * (1 - 1e-9)) return m * magnitude;
-        return 10 * magnitude;
+        var step = Math.Pow(10, Math.Floor(Math.Log10(value)) - 1);
+        return Math.Ceiling(value / step * (1 - 1e-9)) * step;
     }
 }
 

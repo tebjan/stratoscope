@@ -1,7 +1,7 @@
 import Foundation
 
 /// An adaptive speed scale for bars and graphs: 0 to `max` tokens per second. The Swift twin of SpeedScale.cs; keep them in step.
-/// Rise: a value above the maximum sets the maximum to that value plus `riseMargin`, rounded up to a nice number (126 becomes 200), so a speed
+/// Rise: a value above the maximum sets the maximum to that value plus `riseMargin`, rounded up to two significant digits (120 becomes 130), so a speed
 /// that creeps upwards does not move the scale with every sample.
 /// Fall: when every value stays below `fallBelow` of the maximum for `fallHoldSeconds`, the maximum steps back to the next nice number above the
 /// peak of that period (never below `floor`). The new maximum is above the peak by the margin, so the scale does not oscillate.
@@ -50,14 +50,12 @@ public struct SpeedScale {
         return max
     }
 
-    /// The smallest "nice number" at or above `value`: 1, 2, 2.5, 5 times a power of ten (100, 200, 250, 500, 1000, ...). Followed: the nice numbers
-    /// of Heckbert's graph-axis algorithm (Graphics Gems, 1990), as used for the axes of monitoring graphs such as uPlot and Grafana, and the usual
-    /// auto-range that rises at once and shrinks only after a hold.
+    /// The smallest round number at or above `value` with two significant digits (126 becomes 130, 283 becomes 290, 1260 becomes 1300): the
+    /// scale stays close to the values, so a graph never wastes half its height. It still moves only on a rise or after the hold.
     public static func roundUp(_ value: Double) -> Double {
         guard value.isFinite, value > 0 else { return 1 }
-        let magnitude = pow(10, Foundation.floor(log10(value)))
-        for m in [1.0, 2, 2.5, 5, 10] where m * magnitude >= value * (1 - 1e-9) { return m * magnitude }
-        return 10 * magnitude
+        let step = pow(10, Foundation.floor(log10(value)) - 1)
+        return (value / step * (1 - 1e-9)).rounded(.up) * step
     }
 }
 

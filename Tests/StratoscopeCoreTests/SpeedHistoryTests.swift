@@ -3,8 +3,8 @@ import Testing
 @testable import StratoscopeCore
 
 @Suite struct SpeedScaleTests {
-    @Test func testARiseAddsAMarginAndRoundsUpToANiceNumber() {
-        for (value, expected) in [(120.0, 200.0), (60, 100), (1200, 2000), (201 / 1.05, 250)] {
+    @Test func testARiseAddsAMarginAndRoundsUpAtOnce() {
+        for (value, expected) in [(120.0, 130.0), (60, 63), (1200, 1300), (283, 300)] {
             var scale = SpeedScale(initialMax: 20)
             scale.observe(value, now: 0)
             #expect(scale.max == expected, "\(value)")
@@ -19,18 +19,18 @@ import Testing
     @Test func testAValueAboveTheMaximumRaisesItOnce() {
         var scale = SpeedScale(initialMax: 100)
         scale.observe(120, now: 0)
-        #expect(scale.max == 200)
-        for v in [121.0, 150, 199, 160, 190] { #expect(scale.observe(v, now: 1) == 200) }
-        #expect(scale.observe(205, now: 2) == 250)
+        #expect(scale.max == 130)
+        for v in [121.0, 125, 128, 126, 129] { #expect(scale.observe(v, now: 1) == 130) }
+        #expect(scale.observe(135, now: 2) == 150)
     }
 
     @Test func testTheMaximumStepsBackOnlyAfterTheHoldTimeAndNeverBelowTheFloor() {
         var scale = SpeedScale(initialMax: 20)
         scale.observe(400, now: 0)
-        #expect(scale.max == 500)
+        #expect(scale.max == 420)
         var t = 1.0
-        while t < SpeedScale.fallHoldSeconds { #expect(scale.observe(100, now: t) == 500); t += 1 }
-        #expect(scale.observe(100, now: SpeedScale.fallHoldSeconds + 1) == 200)
+        while t < SpeedScale.fallHoldSeconds { #expect(scale.observe(100, now: t) == 420); t += 1 }
+        #expect(scale.observe(100, now: SpeedScale.fallHoldSeconds + 1) == 110)
         var now = SpeedScale.fallHoldSeconds + 1
         for _ in 0..<100 { now += 1; scale.observe(0, now: now) }
         #expect(scale.max == 20)
@@ -41,12 +41,12 @@ import Testing
         scale.observe(400, now: 0)
         var seen = Set<Double>()
         for i in 1...120 { seen.insert(scale.observe(100, now: Double(i))) }
-        #expect(seen == [500, 200])
+        #expect(seen == [420, 110])
     }
 
-    @Test func testTheMaximumIsANiceNumber() {
-        for (value, expected) in [(0.8, 1.0), (1.1, 2), (2.2, 2.5), (2.6, 5), (99, 100), (126, 200), (251, 500), (1260, 2000)] {
-            #expect(abs(SpeedScale.roundUp(value) - expected) < 1e-9, "(value)")
+    @Test func testTheMaximumHasTwoSignificantDigits() {
+        for (value, expected) in [(5.1, 5.1), (12.01, 13), (99, 99), (101, 110), (126, 130), (283, 290), (1260, 1300)] {
+            #expect(abs(SpeedScale.roundUp(value) - expected) < 1e-9, "\(value)")
         }
     }
 
@@ -55,10 +55,10 @@ import Testing
         var s = EngineSnapshot(engine: "Strata", model: "m", status: .idle, context: ContextUsage(max: 0))
         s.recent = [RequestStats(decodeTokensPerSecond: 30)]
         h.add(now: Date(timeIntervalSince1970: 1000), s)
-        #expect(h.decodeChartScale.max == 50)
+        #expect(h.decodeChartScale.max == 32)
         s.recent = [RequestStats(decodeTokensPerSecond: 28)]
         h.add(now: Date(timeIntervalSince1970: 1002), s)
-        #expect(h.decodeChartScale.max == 50)
+        #expect(h.decodeChartScale.max == 32)
     }
 
     @Test func testUnknownValuesAreIgnored() {
