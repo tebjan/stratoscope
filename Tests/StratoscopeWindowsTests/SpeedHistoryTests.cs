@@ -316,13 +316,28 @@ public class SpeedHistoryTests
         var h = new SpeedHistory();
         Assert.Equal(120, SpeedHistory.WindowSeconds);
         for (int k = 0; k <= 600; k++) h.AddSample(k * SpeedHistory.SampleSeconds, 10, 20);       // 300 s at the sample rate
-        Assert.Equal((int)(SpeedHistory.WindowSeconds / SpeedHistory.SampleSeconds) + 1, h.Count);       // 180 to 300 s, both ends included
+        // The buffer also keeps the warm-up before the window (160 to 300 s); the graph reads only the window (180 to 300 s), both ends included.
+        Assert.Equal((int)((SpeedHistory.WindowSeconds + SpeedHistory.WarmupSeconds) / SpeedHistory.SampleSeconds) + 1, h.Count);
         var n = h.ReadSmoothed(HistoryCurve.Decode, 0, 300, Ages, Values);
-        Assert.Equal(h.Count, n);
+        Assert.Equal((int)(SpeedHistory.WindowSeconds / SpeedHistory.SampleSeconds) + 1, n);
         Assert.Equal(120, Ages[0]);
         Assert.Equal(0, Ages[n - 1]);
         Assert.Equal(SpeedHistory.SampleSeconds, Ages[n - 2] - Ages[n - 1], 9);            // the spacing is the sample interval
         Assert.All(Values.Take(n), v => Assert.Equal(20, v));
+    }
+
+    [Fact]
+    public void TheOldestSampleOnScreenDoesNotJumpAsTheWindowSlides()
+    {
+        // A value that alternates 0 / 100 every sample: with the warm-up the oldest visible point is already smoothed (near 50) at every
+        // repaint; a filter restarted at the window edge would show the raw 0 or 100 there and flip between them as the window slides.
+        var h = new SpeedHistory();
+        for (int k = 0; k <= 400; k++) h.AddSample(k * SpeedHistory.SampleSeconds, k % 2 == 0 ? 0 : 100, 0);
+        foreach (var now in new[] { 200.0, 200.5 })
+        {
+            Assert.True(h.ReadSmoothed(HistoryCurve.Prefill, 0.9, now, Ages, Values) > 0);
+            Assert.InRange(Values[0], 25, 75);
+        }
     }
 
     [Fact]

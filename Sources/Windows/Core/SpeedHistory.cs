@@ -70,8 +70,13 @@ public sealed class SpeedHistory
     public const double WindowSeconds = 120;
     /// <summary>How often the speed counters are sampled between the full polls, seconds.</summary>
     public const double SampleSeconds = 0.5;
-    /// <summary>Room for the window at the sample rate, with a margin for the odd extra full-poll sample.</summary>
-    public const int Capacity = (int)(WindowSeconds / SampleSeconds) + 160;
+    /// <summary>
+    /// Samples kept before the window, seconds: the smoothing runs through them, so a sample is already filtered when it enters the graph
+    /// (a filter started at the window's oldest sample would restart on every repaint and make the left edge jump).
+    /// </summary>
+    public const double WarmupSeconds = 20;
+    /// <summary>Room for the window and the warm-up at the sample rate, with a margin for the odd extra full-poll sample.</summary>
+    public const int Capacity = (int)((WindowSeconds + WarmupSeconds) / SampleSeconds) + 160;
 
     private readonly double[] time = new double[Capacity];
     private readonly double[][] values = { new double[Capacity], new double[Capacity], new double[Capacity] };
@@ -225,7 +230,7 @@ public sealed class SpeedHistory
     /// <summary>Adds one sample; the total is prefill plus decode. Samples older than <see cref="WindowSeconds"/> are dropped.</summary>
     public void AddSample(double nowSeconds, double prefill, double decode)
     {
-        while (count > 0 && nowSeconds - time[start] > WindowSeconds) { start = (start + 1) % Capacity; count--; }
+        while (count > 0 && nowSeconds - time[start] > WindowSeconds + WarmupSeconds) { start = (start + 1) % Capacity; count--; }
         if (count == Capacity) { start = (start + 1) % Capacity; count--; }
         var i = (start + count) % Capacity;
         var total = double.IsNaN(prefill) || double.IsNaN(decode) ? double.NaN : prefill + decode;
@@ -252,10 +257,12 @@ public sealed class SpeedHistory
         {
             var i = (start + k) % Capacity;
             var age = nowSeconds - time[i];
-            if (age > WindowSeconds) continue;
             // The damping is per second (see HistorySmoothings.Damping); the samples are not evenly spaced, so each step uses its own spacing.
+            // The filter runs through the warm-up samples too; only the window is returned.
             var dt = k == 0 ? 1.0 : time[i] - time[(i + Capacity - 1) % Capacity];
-            ages[n] = Math.Max(0, age); output[n] = filter.Step(source[i], dt); n++;
+            var y = filter.Step(source[i], dt);
+            if (age > WindowSeconds) continue;
+            ages[n] = Math.Max(0, age); output[n] = y; n++;
         }
         return n;
     }
