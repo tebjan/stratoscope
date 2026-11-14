@@ -384,6 +384,22 @@ Cost per view with the current design: one counter read every 0.5 s (46 KB, 60 t
 | Host | `/api/hardware`, `/api/performance` (GPU time series) | **[probe]** |
 | Usual practice | llama-swap UI and SSE for state; scrape the backend through `/upstream/<model>/metrics`; host Prometheus from `/metrics`. (From source reading, not a survey.) | research-B |
 
+Per engine behind llama-swap (all **[src v272]** `internal/server/api.go handleUpstream`, generic proxy; the live probe covered Autobahn only):
+
+| Engine | Monitoring paths reachable via `/upstream/<model>/` | Per-request token extractor in the activity feed |
+|---|---|---|
+| vLLM | `/metrics`, `/health`, `/load`, `/version`, `/v1/models` | yes (`usage/vllm`) |
+| SGLang | `/metrics`, `/health`, `/v1/loads`, `/get_model_info` | via the generic OpenAI extractor |
+| llama.cpp | `/health`, `/props`, `/slots`, `/metrics` (router mode needs `?model=`) | yes (`usage/llamaserver`, uses `timings`) |
+| Ollama | `/api/ps`, `/api/version`, `/api/tags` | via the generic OpenAI extractor (no speeds) |
+| LM Studio | `/api/v1/models`; not a usual llama-swap backend | generic OpenAI extractor |
+| mlx-lm | `/health`, `/v1/models` | generic OpenAI extractor (no speeds) |
+| mlx-vlm, vllm-mlx | `/metrics`, `/health`, `/v1/status`, `/v1/cache/stats` | generic; vllm-mlx may follow the vLLM extractor (UNVERIFIED) |
+| oMLX | `/health`, `/api/status` (API key) | yes (`usage/omlx`, reads `*_per_second` in `usage`) |
+| Strata, Basalt, Autobahn | `/health`, `/metrics`, `/slots` (Basalt, Strata), `/ui/state` (Autobahn) | generic OpenAI extractor; Autobahn **[probe]** shows tokens and both speeds |
+
+Every row inherits the wake rule above: a path outside `upstream.ignorePaths` loads a model that is not `ready`.
+
 Consequences **[proposal]**: (1) the router becomes its own definition (`kind: router`) with `wakes: true` for `/upstream`, so the generic engine asks `/running` first and only reads an upstream that is `ready`, as today. (2) `/api/events` `inflight` gives a request count and per-request elapsed time for every engine behind it, including engines with no gauges: a "parallel requests" fallback. (3) `/api/metrics/activity` is the settlement source of 3.2 E. (4) The per-model 429 risk and `ignorePaths` advice go into the llama-swap definition notes.
 
 ### 5.4 The custom router
