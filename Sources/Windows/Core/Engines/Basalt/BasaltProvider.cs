@@ -9,7 +9,12 @@ namespace Stratoscope.Core.Engines.Basalt;
 ///  - the router's /running (optional), and Basalt's /metrics, reached through the router at /upstream/&lt;model&gt;/metrics
 ///  - Basalt's /slots (the llama.cpp shape), asked only while a request runs: /metrics gives the prompt's size, only /slots says how much of
 ///    it is read, and it also carries the request's token limit and its cache reuse.
-/// Basalt has no conversation cache list, no totals and no batch slots in these documents, so those parts of the panel are not drawn.
+/// Basalt has no conversation cache list and no totals in these documents, so those parts of the panel are not drawn; batch slots come from
+/// <c>/slots</c> when the engine has more than one.
+///
+/// History curves: Basalt sends no cumulative counter (<c>/metrics</c> has the finished requests only), so <see cref="Totals.PrefillComputedTokens"/>
+/// stays empty and the curves take the slots: each decoding slot's own <c>tok_s</c> (the engine's window), and the reading slots' <c>prefill_done</c>
+/// between polls (null while several read: then the live prefill mean is the last fallback).
 /// </summary>
 /// <remarks>
 /// Speed rule: name the source of every value; never estimate.

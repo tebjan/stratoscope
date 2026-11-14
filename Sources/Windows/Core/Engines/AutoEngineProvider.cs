@@ -34,7 +34,7 @@ public sealed class AutoEngineProvider : RoutedProvider
     {
         strata = new StrataProvider(config, http, clock, clients);
         basalt = new BasaltProvider(config, http, clients);
-        llamaCpp = new LlamaCppProvider(config, http, clients);
+        llamaCpp = new LlamaCppProvider(config, http, clients, clock);
         custom = new CustomProvider(config, http, clients);
         current = strata;
     }

@@ -12,6 +12,11 @@ namespace Stratoscope.Core.Engines.LlamaCpp;
 ///  - <c>/metrics</c> (Prometheus text, only with <c>--metrics</c>): the prompt and generation speeds, the waiting requests and the totals. The
 ///    server resets the speed gauges on every scrape, so they are the average since the previous poll (and 0 when nothing ran: shown as unknown).
 ///
+/// History curves: no counter of <c>/metrics</c> is used. In the llama.cpp source (tools/server/server-context.cpp, commit ec91ab5) <c>tokens_predicted_total</c>
+/// is added when a slot is reset at the end of its request (<c>metrics_on_prediction</c>), and <c>prompt_tokens_total</c> only when a batch that
+/// holds an output token is flushed (<c>metrics_post_decode</c>), so a long chunked read does not advance it per chunk. <see cref="Totals.PrefillComputedTokens"/>
+/// stays empty and the curves take the per-slot counts of <c>/slots</c>, which advance per batch and per token (see the speeds above).
+///
 /// What llama-server does not say is not drawn: the size of the whole prompt (so no percentage while it is read), when a request ends and what
 /// it came to (a slot's counters reset when its request ends, so there is no list of finished requests), RAM, video card and CPU.
 /// </summary>
@@ -34,8 +39,15 @@ public sealed class LlamaCppProvider : RoutedProvider
 {
     public const string Id = "llamacpp";
 
-    public LlamaCppProvider(EngineConfig config, IJsonSource http, ClientConfigReader? clients = null)
-        : base(config, http, clients) { }
+    private readonly Func<DateTime> clock;
+    /// <summary>The speed of each decoding slot from its <c>n_decoded</c> between polls, and of each reading slot from its <c>n_prompt_tokens_processed</c>.</summary>
+    private readonly SlotRateTracker decodeSpeeds = new(), readSpeeds = new();
+
+    public LlamaCppProvider(EngineConfig config, IJsonSource http, ClientConfigReader? clients = null, Func<DateTime>? clock = null)
+        : base(config, http, clients)
+    {
+        this.clock = clock ?? (() => DateTime.UtcNow);
+    }
 
     public override string Brand => "llama.cpp";
 
@@ -80,6 +92,17 @@ public sealed class LlamaCppProvider : RoutedProvider
 
         var together = running.Count > 1;
         var row = running.FirstOrDefault();
+
+        // Per-request speeds: /slots has the counts, not a speed (the server keeps the timings per slot to itself). Each running slot's speed is its
+        // count between polls: tokens generated (n_decoded) for a writer, prompt tokens computed (n_prompt_tokens_processed, the cached ones excluded)
+        // for a reader. A slot's first poll, or a request that just started, has no speed yet.
+        int IdOf(LlamaSlotDto s) => (int)(s.Id ?? rows.IndexOf(s));
+        var now = clock();
+        var decodeRates = decodeSpeeds.Update(writers.Select(s => (IdOf(s), s.Generated)), now);
+        var readRates = readSpeeds.Update(readers.Select(s => (IdOf(s), Counting(s) ? s.Processed : null)), now);
+        double? SumOfRates(List<LlamaSlotDto> group, Dictionary<int, double> rates) =>
+            group.Count > 0 && group.All(s => rates.ContainsKey(IdOf(s))) ? group.Sum(s => rates[IdOf(s)]) : null;
+
         LiveRequest? live = null;
         if (status != EngineStatus.Idle)
         {
@@ -99,8 +122,9 @@ public sealed class LlamaCppProvider : RoutedProvider
             {
                 PromptRead = read, PromptTotal = total, Generated = generated,
                 MaxTokens = together ? null : row?.TokenLimit,
-                PrefillTokensPerSecond = reading && metrics?.PromptTokensPerSecond > 0 ? metrics.PromptTokensPerSecond : null,
-                DecodeTokensPerSecond = writers.Count > 0 && metrics?.PredictedTokensPerSecond > 0 ? metrics.PredictedTokensPerSecond : null,
+                // The engine's own gauge first; the sum of the slots' derived speeds only when the gauge says nothing (it is 0 until a request ends).
+                PrefillTokensPerSecond = !reading ? null : metrics?.PromptTokensPerSecond > 0 ? metrics.PromptTokensPerSecond : SumOfRates(readers, readRates),
+                DecodeTokensPerSecond = writers.Count == 0 ? null : metrics?.PredictedTokensPerSecond > 0 ? metrics.PredictedTokensPerSecond : SumOfRates(writers, decodeRates),
                 ReusedEstimate = reused,       // the engine's own count (the field also carries Strata's estimates)
                 Running = together ? running.Count : null,
             };
@@ -112,6 +136,7 @@ public sealed class LlamaCppProvider : RoutedProvider
             batchSlots = rows.Select((s, position) => new BatchSlot
             {
                 Index = (int)(s.Id ?? position),
+                TokensPerSecond = s.Processing && s.Generated > 0 && decodeRates.TryGetValue(IdOf(s), out var speed) ? speed : null,
                 State = !s.Processing ? "idle" : s.Generated > 0 ? "decoding" : "reading",
                 HeldTokens = s.Tokens,        // the slot's memory: the conversation it holds, a running request's prompt and what it wrote
                 PromptTokens = s.Processing && s.Generated is not > 0 ? s.Tokens : null,

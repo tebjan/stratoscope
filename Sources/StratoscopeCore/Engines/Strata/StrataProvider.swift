@@ -33,6 +33,7 @@ public final class StrataProvider: EngineProvider {
     private let custom = CustomReader()      // for the custom server, whose /metrics is Prometheus text
     private var proxy ="http://127.0.0.1:8095"
     private var lastRead: (Double, Date)?
+    private let slotSpeeds = SlotRateTracker()
     private let clients: ClientConfigReader?
 
     /// `clients`: where to look for the summarise threshold of the AI clients that use this engine.
@@ -229,11 +230,16 @@ public final class StrataProvider: EngineProvider {
                               expertHitRate: reqs.first.flatMap { num($0, "hit_rate") })
         }
 
+        // Each decoding slot's own speed from its generated count between polls (a slot's own tok_s counts from before its first token).
+        // Strata's totals are added once when a request ends, so no counter of /metrics advances during a request: the curves take the slots.
+        let decoding = rawSlots.filter { $0["state"] as? String == "decoding" }
+        let slotRates = slotSpeeds.update(decoding.compactMap { s in num(s, "slot").map { (Int($0), num(s, "generated")) } }, now: Date())
         var slots: [BatchSlot]?
         if !rawSlots.isEmpty {
             slots = rawSlots.map {
                 BatchSlot(index: Int(num($0, "slot") ?? 0), state: $0["state"] as? String, heldTokens: num($0, "held_tokens"),
                           promptTokens: num($0, "prompt_tokens"), promptRead: num($0, "prompt_read"), generated: num($0, "generated"),
+                          tokensPerSecond: num($0, "slot").flatMap { slotRates[Int($0)] },
                           maxTokens: num($0, "max_tokens"), elapsedSeconds: num($0, "elapsed_s"))
             }
         }

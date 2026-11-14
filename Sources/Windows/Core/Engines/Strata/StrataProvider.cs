@@ -7,6 +7,11 @@ namespace Stratoscope.Core.Engines.Strata;
 ///  - the router's /running (optional, when a llama-swap style router sits in front of Strata)
 ///  - the Strata server's /metrics, reached through the router at /upstream/&lt;model&gt;/metrics
 ///  - the Strata log, for the parked-conversation list that /metrics does not name
+///
+/// History curves: <c>totals</c> are added once when a request ends (serve/server.py, the request-finished block that does <c>t["output_tokens"] += n</c>),
+/// so no counter of /metrics advances during a request and <see cref="Totals.PrefillComputedTokens"/> stays empty. The curves take the batch slots
+/// (<c>live.slots[]</c>: <c>prompt_read</c> per chunk, <c>generated</c> per token), each decoding slot's speed derived between polls. The v1 telemetry
+/// counter (<c>rates.output_tokens_server_counter</c>, completed plus in-flight tokens) is a separate, heavier endpoint and is not read.
 /// </summary>
 /// <remarks>
 /// Speed rule: name the source of every value; never estimate.
@@ -55,31 +60,8 @@ public sealed class StrataProvider : RoutedProvider
 
     // MARK: Translation
 
-    private readonly Dictionary<int, List<(DateTime At, double Generated)>> slotHistory = new();
-    private static readonly TimeSpan SlotWindow = TimeSpan.FromSeconds(4), SlotMinSpan = TimeSpan.FromSeconds(1);
-
-    /// <summary>
-    /// The speed of each generating slot from its generated count between polls: the oldest sample of the last few seconds against the
-    /// newest, needing at least a second between them. A slot with fewer samples, or one that started a new request, has no speed yet.
-    /// </summary>
-    private Dictionary<int, double> SlotRates(List<SlotDto> decoding, DateTime now)
-    {
-        var rates = new Dictionary<int, double>();
-        var live = decoding.Select(s => (int)(s.Slot ?? -1)).ToHashSet();
-        foreach (var gone in slotHistory.Keys.Where(k => !live.Contains(k)).ToList()) slotHistory.Remove(gone);
-        foreach (var s in decoding)
-        {
-            if (s.Slot is not double slot || s.Generated is not double generated) continue;
-            var id = (int)slot;
-            if (!slotHistory.TryGetValue(id, out var history)) slotHistory[id] = history = new List<(DateTime, double)>();
-            if (history.Count > 0 && (generated < history[^1].Generated || now <= history[^1].At)) history.Clear();      // a new request in this slot
-            history.Add((now, generated));
-            history.RemoveAll(h => now - h.At > SlotWindow);
-            var oldest = history[0];
-            if (now - oldest.At >= SlotMinSpan && generated >= oldest.Generated) rates[id] = (generated - oldest.Generated) / (now - oldest.At).TotalSeconds;
-        }
-        return rates;
-    }
+    /// <summary>The speed of each generating slot from its generated count between polls (see <see cref="SlotRateTracker"/>).</summary>
+    private readonly SlotRateTracker slotSpeeds = new();
 
     /// <summary>Translates one /metrics document into a snapshot. Public so tests can feed recorded payloads.</summary>
     public EngineSnapshot Translate(StrataMetrics m, string model)
@@ -134,7 +116,7 @@ public sealed class StrataProvider : RoutedProvider
             if (together) reused = null;      // the cache verdict is not known per slot
         }
 
-        var slotRates = SlotRates(decoding, now);
+        var slotRates = slotSpeeds.Update(decoding.Where(s => s.Slot.HasValue).Select(s => ((int)s.Slot!.Value, s.Generated)), now);
         LiveRequest? liveRequest = null;
         if (state != "idle")
         {

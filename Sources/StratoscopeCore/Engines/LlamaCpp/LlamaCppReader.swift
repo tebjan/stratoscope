@@ -152,6 +152,10 @@ public final class LlamaCppReader {
 
     private let http = JSONFetcher()
     private var previous: (base: String, snapshot: EngineSnapshot)?
+    /// The speed of each decoding slot from its `n_decoded` between polls, of each reading slot from its `n_prompt_tokens_processed`.
+    private let decodeSpeeds = SlotRateTracker(), readSpeeds = SlotRateTracker()
+    /// The time of a poll; tests replace it.
+    var clock: () -> Date = { Date() }
 
     public init() {}
 
@@ -219,6 +223,17 @@ public final class LlamaCppReader {
 
         let together = running.count > 1
         let row = running.first
+
+        // Per-request speeds: /slots has the counts, not a speed. A writer's speed is its n_decoded between polls, a reader's its
+        // n_prompt_tokens_processed (cached tokens excluded). A slot's first poll, or a request that just started, has no speed yet.
+        func idOf(_ s: LlamaSlot) -> Int { Int(s.id ?? Double(rows.firstIndex(where: { $0.id == s.id && $0.taskId == s.taskId }) ?? 0)) }
+        let now = clock()
+        let decodeRates = decodeSpeeds.update(writers.map { (idOf($0), $0.generated) }, now: now)
+        let readRates = readSpeeds.update(readers.map { (idOf($0), counting($0) ? $0.processed : nil) }, now: now)
+        func sumOfRates(_ group: [LlamaSlot], _ rates: [Int: Double]) -> Double? {
+            !group.isEmpty && group.allSatisfy({ rates[idOf($0)] != nil }) ? group.reduce(0) { $0 + rates[idOf($1)]! } : nil
+        }
+
         var live: LiveRequest?
         if status != .idle {
             let reading = status == .prefill
@@ -236,8 +251,9 @@ public final class LlamaCppReader {
             live = LiveRequest(
                 promptRead: read, promptTotal: nil, generated: generated,
                 maxTokens: together ? nil : row?.tokenLimit,
-                prefillTokensPerSecond: reading && (promptSpeed ?? 0) > 0 ? promptSpeed : nil,
-                decodeTokensPerSecond: !writers.isEmpty && (decodeSpeed ?? 0) > 0 ? decodeSpeed : nil,
+                // The engine's own gauge first; the sum of the slots' derived speeds only when the gauge says nothing (0 until a request ends).
+                prefillTokensPerSecond: !reading ? nil : (promptSpeed ?? 0) > 0 ? promptSpeed : sumOfRates(readers, readRates),
+                decodeTokensPerSecond: writers.isEmpty ? nil : (decodeSpeed ?? 0) > 0 ? decodeSpeed : sumOfRates(writers, decodeRates),
                 reusedEstimate: reused,          // the engine's own count (the field also carries Strata's estimates)
                 running: together ? running.count : nil)
         }
@@ -252,6 +268,7 @@ public final class LlamaCppReader {
                     heldTokens: s.tokens,        // the slot's memory: the conversation it holds, a running request's prompt and what it wrote
                     promptRead: s.processing && !((s.generated ?? 0) > 0) && counting(s) ? s.tokens : nil,
                     generated: s.processing ? s.generated : nil,
+                    tokensPerSecond: s.processing && (s.generated ?? 0) > 0 ? decodeRates[idOf(s)] : nil,
                     maxTokens: s.processing ? s.tokenLimit : nil)
             }
         }
