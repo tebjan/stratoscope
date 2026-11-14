@@ -4,6 +4,7 @@ using System.Windows.Forms;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Dwm;
 using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.UI.WindowsAndMessaging;
 using static Windows.Win32.PInvoke;
 
 namespace Stratoscope.Windows;
@@ -191,14 +192,51 @@ internal sealed class StatusPanel : Form, IPanelSurface
 
     PanelSurfaceCounters IPanelSurface.Counters => new PanelSurfaceCounters(positionChanges, paints, erases);
 
-    void IPanelSurface.SetBounds(Rectangle bounds) => base.SetBounds(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+    private bool resized;
+
+    /// <summary>
+    /// Position and size in one SetWindowPos call. SWP_NOCOPYBITS: Windows does not copy the old pixels into the new window (they would
+    /// sit at the wrong place for a moment); the next <see cref="Present"/> draws the whole new frame in the same call chain.
+    /// </summary>
+    void IPanelSurface.SetBounds(Rectangle bounds)
+    {
+        if (!IsHandleCreated || !Visible) { base.SetBounds(bounds.X, bounds.Y, bounds.Width, bounds.Height); return; }
+        resized = bounds.Size != Size;
+        SetWindowPos((HWND)Handle, HWND.Null, bounds.X, bounds.Y, bounds.Width, bounds.Height,
+            SET_WINDOW_POS_FLAGS.SWP_NOZORDER | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE | SET_WINDOW_POS_FLAGS.SWP_NOOWNERZORDER | (resized ? SET_WINDOW_POS_FLAGS.SWP_NOCOPYBITS : 0));
+    }
 
     void IPanelSurface.Present(Bitmap frame, Rectangle dirty)
     {
         // Not visible: the first paint after Show draws this frame. Visible: paint the rows that changed now, in this call.
         if (!IsHandleCreated || !Visible) return;
+        if (resized)
+        {
+            // The window has its new size and nothing in it yet: the whole frame goes into it right now (one GDI call), and the window is
+            // marked valid so no second paint follows. The next composition by the desktop already sees the finished frame.
+            resized = false;
+            PaintFrame(null);
+            ValidateRect((HWND)Handle, null);
+            paints++;
+            return;
+        }
         Invalidate(dirty);
         Update();
+    }
+
+    /// <summary>Copies the shown frame into the window: to the paint DC (<paramref name="hdc"/>), or to the window's own DC when null.</summary>
+    private unsafe void PaintFrame(IntPtr? hdc)
+    {
+        var frame = presenter.Shown;
+        if (frame == null) return;
+        var info = new BITMAPINFO { bmiHeader = new BITMAPINFOHEADER { biSize = (uint)sizeof(BITMAPINFOHEADER), biWidth = frame.Width, biHeight = -frame.Height, biPlanes = 1, biBitCount = 32 } };
+        var dc = hdc.HasValue ? (HDC)hdc.Value : GetDC((HWND)Handle);
+        try
+        {
+            fixed (byte* bits = presenter.ShownBytes)
+                SetDIBitsToDevice(dc, 0, 0, (uint)frame.Width, (uint)frame.Height, 0, 0, 0, (uint)frame.Height, bits, &info, DIB_USAGE.DIB_RGB_COLORS);
+        }
+        finally { if (!hdc.HasValue) ReleaseDC((HWND)Handle, dc); }
     }
 
     internal float MaxScroll => Math.Max(0, layout.ContentHeight - layout.Size.Height / layout.Scale);
@@ -229,17 +267,10 @@ internal sealed class StatusPanel : Form, IPanelSurface
     protected override unsafe void OnPaint(PaintEventArgs e)
     {
         if (!presenting && ReadoutHost.Tracing) ReadoutHost.Trace("panel paint: system (window uncovered)");
-        var frame = presenter.Shown;
-        if (frame == null) return;
         // One GDI call from the pixels of the frame, top-down, into the part of the window that is being painted (the clip). Measured: this
         // takes about 2 ms for a full panel, DrawImage of the same bitmap about 15 ms.
-        var info = new BITMAPINFO { bmiHeader = new BITMAPINFOHEADER { biSize = (uint)sizeof(BITMAPINFOHEADER), biWidth = frame.Width, biHeight = -frame.Height, biPlanes = 1, biBitCount = 32 } };
         var hdc = e.Graphics.GetHdc();
-        try
-        {
-            fixed (byte* bits = presenter.ShownBytes)
-                SetDIBitsToDevice((HDC)hdc, 0, 0, (uint)frame.Width, (uint)frame.Height, 0, 0, 0, (uint)frame.Height, bits, &info, DIB_USAGE.DIB_RGB_COLORS);
-        }
+        try { PaintFrame(hdc); }
         finally { e.Graphics.ReleaseHdc(hdc); }
     }
 

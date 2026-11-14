@@ -162,6 +162,8 @@ internal sealed class OffscreenPanel : IDisposable
     public OffscreenPanel(int dpi = 96, bool dark = false) { this.dpi = dpi; this.dark = dark; presenter = new PanelPresenter(surface); }
 
     public RecordingPanelSurface Surface => surface;
+    /// <summary>The frame on screen.</summary>
+    public Bitmap? Frame => presenter.Shown;
     public PanelLayout? Layout { get; private set; }
     /// <summary>The sections of the last frame with their top and bottom in logical pixels.</summary>
     public List<(string Name, float Top, float Bottom)> Sections { get; private set; } = new List<(string, float, float)>();

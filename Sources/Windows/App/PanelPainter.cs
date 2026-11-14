@@ -464,9 +464,13 @@ internal sealed class PanelPainter
             T(total.HasValue ? Fmt.Number(total) + " t/s" : Fmt.Missing, 0, y + 40, Body, true, null, Width - Pad);
             Bar(Pad, y + 60, inner, 9, combined.Fraction, main);
             var longest = running.Where(sl => sl.IsDecoding).Select(sl => sl.Generated ?? 0).DefaultIfEmpty(0).Max();
-            var ry = y + 78;
-            foreach (var slot in running) { RunningRow(slot, Display.SlotFraction(slot, longest), ry); ry += RunningRowHeight; }
-            contextY = ry - y + 10;
+            // The rows share an area of fixed height (RunningRows): the panel is as tall for two requests as for eight.
+            var shared = RunningRows.SharedLimit(running);
+            if (shared.HasValue) T("Limit " + Fmt.Number(shared) + " per request", Pad, y + LimitLineTop, Caption, false, pal.Dim);
+            var rows = RunningRows.For(running.Count);
+            for (int i = 0; i < running.Count; i++)
+                RunningRow(running[i], Display.SlotFraction(running[i], longest), y + RowsTop + (float)(i * rows.Pitch), rows, shared.HasValue, s.Slots!.IndexOf(running[i]));
+            contextY = RowsContextY;
         }
         else if (l != null && s.IsReading)
         {
@@ -516,6 +520,10 @@ internal sealed class PanelPainter
             T(Fmt.Number(r.PromptRead) + " read · " + Fmt.Number(r.OutputTokens) + " written · " + Fmt.Number(r.DurationSeconds) + " s", Pad, y + 75, Body);
         }
 
+        // An engine that runs several requests together keeps the height of the rows area for one request too (and for none while a request
+        // runs), so a request that starts or ends never changes the height of the panel.
+        if (l != null && s.Slots != null && s.Slots.Count > 1 && s.Slots.Any(sl => sl.IsActive)) contextY = RowsContextY;
+
         T("Context", Pad, y + contextY, Body, true);
         var max = s.Context.Max;
         var known = max.HasValue && max.Value > 0;
@@ -549,17 +557,17 @@ internal sealed class PanelPainter
 
     /// <summary>The most requests shown as rows under the headline (the engine runs at most this many together).</summary>
     internal const int MaxRunningRows = 8;
-    /// <summary>The height of the row of one running request including the gap below it (a multiple of 4).</summary>
-    internal const float RunningRowHeight = 40f;
-    /// <summary>The bar of a running request: the main live bar (9 high) scaled down, with the same rounded ends.</summary>
-    private const float RunningBarHeight = 6f;
+    /// <summary>Where the shared token limit line sits under the main bar, and where the rows area starts, in the live block (epx).</summary>
+    internal const float LimitLineTop = 70f, RowsTop = 86f;
+    /// <summary>The Context line when the rows area is shown: under the fixed-height area of <see cref="RunningRows"/> (the same for every count).</summary>
+    internal const float RowsContextY = RowsTop + (float)RunningRows.AreaHeight + 8f;
 
     /// <summary>
     /// One running request: the state word in its colour with the slot number ("1  Decoding", "2  Reading 57 %") and its own speed at the
     /// right, the bar, and under it what it has done so far in secondary colour. The engine reports no token limit for a slot, so the bar of
     /// a decoding request is its length against the longest running one (see Display.SlotFraction).
     /// </summary>
-    private void RunningRow(BatchSlot slot, double frac, float y)
+    private void RunningRow(BatchSlot slot, double frac, float y, RunningRowLayout rows, bool limitShared, int tipIndex)
     {
         var number = (slot.Index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
         Color color; string word, detail; string? speed = null;
@@ -573,14 +581,34 @@ internal sealed class PanelPainter
         {
             color = pal.Blue;
             word = "Decoding";
-            detail = slot.MaxTokens > 0 ? Fmt.Number(slot.Generated) + " / " + Fmt.Number(slot.MaxTokens) : Fmt.Number(slot.Generated) + " tokens";
+            // The limit is shown once above the rows when all share it; otherwise each row keeps its own.
+            detail = slot.MaxTokens > 0 && !limitShared ? Fmt.Number(slot.Generated) + " / " + Fmt.Number(slot.MaxTokens) : slot.MaxTokens > 0 ? Fmt.Number(slot.Generated) : Fmt.Number(slot.Generated) + " tokens";
             if (slot.TokensPerSecond is double ts && ts > 0) speed = Fmt.Number(ts) + " t/s";
         }
-        if (slot.ElapsedSeconds is double e) detail += " · " + Fmt.Duration(e);
-        T(number + "  " + word, Pad, y, Body, false, color);
-        if (speed != null) T(speed, 0, y, Body, false, null, Width - Pad);
-        Bar(Pad, y + 16, Width - 2 * Pad, RunningBarHeight, frac, color);
-        T(detail, Pad, y + 23, Caption, false, pal.Dim);
+        var width = Width - 2 * Pad;
+        var bar = (float)rows.Bar;
+        switch (rows.Style)
+        {
+            case RunningRowStyle.Full:
+                if (slot.ElapsedSeconds is double e) detail += " · " + Fmt.Duration(e);
+                T(number + "  " + word, Pad, y, Body, false, color);
+                if (speed != null) T(speed, 0, y, Body, false, null, Width - Pad);
+                Bar(Pad, y + 16, width, bar, frac, color);
+                T(detail, Pad, y + 23, Caption, false, pal.Dim);
+                break;
+            case RunningRowStyle.Compact:
+                // One text line: the word, its count in the secondary colour, the speed at the right; the bar directly under it.
+                var label = number + "  " + word;
+                T(label, Pad, y, Body, false, color);
+                T(detail, Pad + TextWidth(label, F(Body, false)) + 8, y + 1, Caption, false, pal.Dim);
+                if (speed != null) T(speed, 0, y, Body, false, null, Width - Pad);
+                Bar(Pad, y + 17, width, bar, frac, color);
+                break;
+            default:
+                Bar(Pad, y + (float)(rows.Pitch - bar) / 2, width, bar, frac, color);
+                break;
+        }
+        if (tipIndex >= 0) AddTip(Pad, y, width, (float)rows.Pitch, TipKind.BatchSlot, tipIndex);
     }
 
     // MARK: History

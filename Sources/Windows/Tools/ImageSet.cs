@@ -21,7 +21,7 @@ internal static class ImageSet
 
     public static readonly string[] Names =
     {
-        "panel-dark", "panel-light", "panel-decode-dark", "panel-decode-light", "panel-parallel-dark", "panel-parallel-light", "panel-parallel3-dark", "panel-parallel3-light", "hover-states", "chart-slots", "readout-zoom", "readout-slots", "readout-numbers", "readout-glyph-sizes", "panel-hover-dark", "panel-hover-light", "panel-tooltips", "panel-offline", "panel-no-model",
+        "panel-dark", "panel-light", "panel-decode-dark", "panel-decode-light", "panel-parallel-dark", "panel-parallel-light", "panel-parallel3-dark", "panel-parallel3-light", "panel-rows-dark", "panel-rows-light", "hover-states", "chart-slots", "readout-zoom", "readout-slots", "readout-numbers", "readout-glyph-sizes", "panel-hover-dark", "panel-hover-light", "panel-tooltips", "panel-offline", "panel-no-model",
         "readout-states", "readout-parallel", "readout-parallel-100", "readout-parallel-200", "readout-scales", "readout-layouts",
     };
 
@@ -82,6 +82,36 @@ internal static class ImageSet
             ok &= again.PositionChanges == 0 && again.Paints == 0 && again.Erases == 0;
         }
         return ok ? 0 : 1;
+    }
+
+    /// <summary>The panel with 1, 2, 4 and 8 parallel requests side by side (all of the same height), each as the offscreen panel composes it.</summary>
+    private static void RowsSheet(string path, bool dark, int dpi)
+    {
+        var frames = new List<Bitmap>();
+        foreach (var n in new[] { 1, 2, 4, 8 })
+        {
+            var snapshot = Sequence()[2].Snapshot;
+            snapshot.Slots = Enumerable.Range(0, 8).Select(i => new BatchSlot
+            {
+                Index = i, State = i < n ? (i == 1 ? "reading" : "decoding") : "idle", PromptTokens = 38_000, PromptRead = 21_000 + i * 900,
+                Generated = 3_800 - i * 450, TokensPerSecond = 92 - i * 7, MaxTokens = 32_000, ElapsedSeconds = 94 - i * 9,
+            }).ToList();
+            snapshot.Live!.Running = n > 1 ? n : null;
+            using var panel = new OffscreenPanel(dpi, dark);
+            panel.Show("rows", Model(snapshot, ServerState.Writing));
+            frames.Add(new Bitmap(panel.Frame!));
+        }
+        var gap = 12;
+        var heights = string.Join(", ", frames.Select(f => f.Height));
+        using var sheet = new Bitmap(frames.Sum(f => f.Width) + gap * (frames.Count + 1), frames.Max(f => f.Height) + 2 * gap);
+        using (var g = Graphics.FromImage(sheet))
+        {
+            g.Clear(dark ? Color.FromArgb(24, 24, 24) : Color.FromArgb(200, 200, 200));
+            var x = gap;
+            foreach (var f in frames) { g.DrawImageUnscaled(f, x, gap); x += f.Width + gap; f.Dispose(); }
+        }
+        sheet.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        Console.WriteLine(path + ": heights " + heights);
     }
 
     private static PanelModel Model(EngineSnapshot? snapshot, ServerState state, string? error = null)
@@ -154,6 +184,8 @@ internal static class ImageSet
                 case "panel-parallel-light": WithPanel(P(name), Demo("parallel"), ServerState.Writing, false, history: "parallel"); break;
                 case "panel-parallel3-dark": WithPanel(P(name), Demo("parallel3"), ServerState.Writing, true, history: "parallel"); break;
                 case "panel-parallel3-light": WithPanel(P(name), Demo("parallel3"), ServerState.Writing, false, history: "parallel"); break;
+                case "panel-rows-dark": RowsSheet(P(name), true, dpis?.FirstOrDefault() ?? 96); break;
+                case "panel-rows-light": RowsSheet(P(name), false, dpis?.FirstOrDefault() ?? 96); break;
             case "chart-slots": SnapshotRenderer.ChartsSheet(P(name), Model(Demo("idle"), ServerState.Ready), false); break;
                 case "readout-zoom": SnapshotRenderer.ZoomSheet(P(name)); break;
                 case "readout-slots": SnapshotRenderer.SlotsSheet(P(name)); break;
