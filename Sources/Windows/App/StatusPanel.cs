@@ -310,7 +310,7 @@ internal sealed class StatusPanel : Form, IPanelSurface
     private void Activate(PanelHit hit)
     {
         // The tabs and the settings page change what the panel shows; every other row does its job and closes it.
-        if (hit.Action is not (PanelAction.SelectTab or PanelAction.Settings or PanelAction.SettingsBack or PanelAction.ToggleStartup or PanelAction.SetTheme)) HidePanel();
+        if (hit.Action is not (PanelAction.SelectTab or PanelAction.Settings or PanelAction.SettingsBack or PanelAction.ToggleStartup or PanelAction.SetTheme or PanelAction.SetSmoothing)) HidePanel();
         onAction(hit.Action, hit.Index);
     }
 

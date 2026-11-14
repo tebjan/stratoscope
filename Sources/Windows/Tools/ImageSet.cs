@@ -22,7 +22,7 @@ internal static class ImageSet
     public static readonly string[] Names =
     {
         "panel-dark", "panel-light", "panel-decode-dark", "panel-decode-light", "panel-parallel-dark", "panel-parallel-light", "panel-parallel3-dark", "panel-parallel3-light", "hover-states", "chart-slots", "readout-zoom", "readout-slots", "readout-numbers", "readout-glyph-sizes", "panel-hover-dark", "panel-hover-light", "panel-tooltips", "panel-offline", "panel-no-model",
-        "readout-states", "readout-scales", "readout-layouts",
+        "readout-states", "readout-parallel", "readout-scales", "readout-layouts",
     };
 
     private static EngineSnapshot Demo(string scenario) => new DemoProvider(scenario, () => Reference).Snapshot();
@@ -91,9 +91,41 @@ internal static class ImageSet
         return model;
     }
 
-    private static void WithPanel(string path, EngineSnapshot? snapshot, ServerState state, bool dark, string? error = null, bool hovered = false)
+    /// <summary>
+    /// The last minute of a demo scenario, one sample every 2 s up to <see cref="Reference"/>, with a small deterministic ripple so the curves
+    /// are not flat: a prompt that is read (prefill), a prompt read and then written (decode), and several requests that write together.
+    /// </summary>
+    private static SpeedHistory DemoHistory(string scenario)
+    {
+        var history = new SpeedHistory();
+        var end = SpeedHistory.Seconds(Reference);
+        for (int i = 0; i <= 30; i++)
+        {
+            var age = 60 - i * 2;            // seconds before the end
+            double Ripple(double amount) => Math.Sin(i * 1.7) * amount + Math.Sin(i * 0.6) * amount / 2;
+            double prefill = 0, decode = 0;
+            switch (scenario)
+            {
+                case "prefill": if (age < 44) prefill = 238 + Ripple(9) + (44 - age) / 6.0; break;
+                case "decode":
+                    if (age is < 54 and >= 36) prefill = 251 + Ripple(8);
+                    else if (age < 36) decode = 26.4 + Ripple(1.2);
+                    break;
+                case "idle": if (age is < 38 and >= 24) { prefill = 1150 + Ripple(60); } else if (age < 24 && age >= 8) decode = 28.5 + Ripple(1.4); break;
+                default:      // several requests write together; a short prompt is read in the middle
+                    if (age < 54) decode = Math.Min(420, 250 + (54 - age) * 3.4) + Ripple(10);
+                    if (age is < 30 and >= 22) prefill = 640 + Ripple(30);
+                    break;
+            }
+            history.AddSample(end - age, prefill, decode);
+        }
+        return history;
+    }
+
+    private static void WithPanel(string path, EngineSnapshot? snapshot, ServerState state, bool dark, string? error = null, bool hovered = false, string? history = null)
     {
         var model = Model(snapshot, state, error);
+        if (history != null) model.History = DemoHistory(history);
         // Hover: the first link row, the request under the pointer in both charts and the dots, and the first readout item;
         // focus (keyboard): the Quit row.
         if (hovered) { model.Hover = 0; model.Focus = 1; model.HoverRequest = 3; model.Accent = Color.FromArgb(0, 120, 212); }
@@ -114,14 +146,14 @@ internal static class ImageSet
         foreach (var name in wanted)
             switch (name)
             {
-                case "panel-dark": WithPanel(P(name), Demo("prefill"), ServerState.Reading, true); break;
-                case "panel-light": WithPanel(P(name), Demo("prefill"), ServerState.Reading, false); break;
-                case "panel-decode-dark": WithPanel(P(name), Demo("decode"), ServerState.Writing, true); break;
-                case "panel-decode-light": WithPanel(P(name), Demo("decode"), ServerState.Writing, false); break;
-                case "panel-parallel-dark": WithPanel(P(name), Demo("parallel"), ServerState.Writing, true); break;
-                case "panel-parallel-light": WithPanel(P(name), Demo("parallel"), ServerState.Writing, false); break;
-                case "panel-parallel3-dark": WithPanel(P(name), Demo("parallel3"), ServerState.Writing, true); break;
-                case "panel-parallel3-light": WithPanel(P(name), Demo("parallel3"), ServerState.Writing, false); break;
+                case "panel-dark": WithPanel(P(name), Demo("prefill"), ServerState.Reading, true, history: "prefill"); break;
+                case "panel-light": WithPanel(P(name), Demo("prefill"), ServerState.Reading, false, history: "prefill"); break;
+                case "panel-decode-dark": WithPanel(P(name), Demo("decode"), ServerState.Writing, true, history: "decode"); break;
+                case "panel-decode-light": WithPanel(P(name), Demo("decode"), ServerState.Writing, false, history: "decode"); break;
+                case "panel-parallel-dark": WithPanel(P(name), Demo("parallel"), ServerState.Writing, true, history: "parallel"); break;
+                case "panel-parallel-light": WithPanel(P(name), Demo("parallel"), ServerState.Writing, false, history: "parallel"); break;
+                case "panel-parallel3-dark": WithPanel(P(name), Demo("parallel3"), ServerState.Writing, true, history: "parallel"); break;
+                case "panel-parallel3-light": WithPanel(P(name), Demo("parallel3"), ServerState.Writing, false, history: "parallel"); break;
             case "chart-slots": SnapshotRenderer.ChartsSheet(P(name), Model(Demo("idle"), ServerState.Ready), false); break;
                 case "readout-zoom": SnapshotRenderer.ZoomSheet(P(name)); break;
                 case "readout-slots": SnapshotRenderer.SlotsSheet(P(name)); break;
@@ -136,6 +168,7 @@ internal static class ImageSet
                     break;
                 case "panel-no-model": WithPanel(P(name), new EngineSnapshot("Strata", "-", EngineStatus.NoModel), ServerState.NoModel, false); break;
                 case "readout-states": SnapshotRenderer.StatesSheet(P(name)); break;
+                case "readout-parallel": SnapshotRenderer.ParallelSheet(P(name)); break;
                 case "readout-scales": SnapshotRenderer.ScalesSheet(P(name), dpis); break;
                 case "readout-layouts": SnapshotRenderer.LayoutsSheet(P(name)); break;
             }

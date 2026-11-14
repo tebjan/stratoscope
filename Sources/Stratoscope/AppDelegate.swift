@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsStamp: Date?
     private var loginItem: NSMenuItem?
     private var themeItems: [NSMenuItem] = []
+    private var smoothingItems: [NSMenuItem] = []
+    /// The last 60 seconds of speed and the adaptive scales: one sample per poll.
+    private var history = SpeedHistory()
     private lazy var panels = config.engine.lowercased() == DemoProvider.id ? Panels(now: { DemoProvider.referenceDate }) : Panels()
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -117,6 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func apply(_ snap: EngineSnapshot?) {
         panels.snap = snap
+        history.add(now: Date(), snap)
+        panels.history = history
+        panels.smoothing = config.historySmoothing
         guard let s = snap else { showOffline(); return }
         offlineSince = nil
         item.isVisible = true
@@ -150,8 +156,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateMenuBarItem(_ s: EngineSnapshot) {
-        if let (frac, hit) = progress(s) {
+        // One request that reads keeps the progress bar as it always was; every other running request is a bar of its own (see requestBarsImage).
+        let bars = RequestBars.from(s)
+        if bars.count == 1, bars[0].reading, let (frac, hit) = progress(s) {
             item.button?.image = progressImage(frac, hit)
+        } else if !bars.isEmpty {
+            let hit = s.live.flatMap { l in l.promptTotal.map { CacheHit.classify(prompt: $0, reused: l.reusedEstimate ?? 0) } }
+            item.button?.image = requestBarsImage(bars, hit: hit, scaleMax: history.requestScale.max)
         } else {
             item.button?.image = NSImage(systemSymbolName: "cpu", accessibilityDescription: s.engine)
         }
@@ -221,6 +232,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         theme.submenu = themes
         sub.addItem(theme)
+        let smoothing = NSMenuItem(title: "History smoothing", action: nil, keyEquivalent: "")
+        let smoothings = NSMenu(title: "History smoothing")
+        smoothingItems = []
+        for choice in HistorySmoothing.allCases {
+            let mi = NSMenuItem(title: choice.title, action: #selector(pickSmoothing(_:)), keyEquivalent: "")
+            mi.target = self; mi.representedObject = choice.rawValue
+            smoothings.addItem(mi); smoothingItems.append(mi)
+        }
+        smoothing.submenu = smoothings
+        sub.addItem(smoothing)
         sub.addItem(.separator())
         let open = NSMenuItem(title: "Open settings file", action: #selector(openSettingsFile), keyEquivalent: "")
         open.target = self; sub.addItem(open)
@@ -241,6 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         loginItem?.state = SMAppService.mainApp.status == .enabled ? .on : .off
         for mi in themeItems { mi.state = (mi.representedObject as? String) == config.theme.rawValue ? .on : .off }
+        for mi in smoothingItems { mi.state = (mi.representedObject as? String) == config.historySmoothing.rawValue ? .on : .off }
     }
 
     @objc private func toggleLoginItem() {
@@ -256,6 +278,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let raw = sender.representedObject as? String else { return }
         if Config.setValue(raw, for: "theme") { reload() }
         else { tell("Stratoscope could not change the theme in \(Config.settingsPath()).", "Is the file valid JSON?") }
+    }
+
+    @objc private func pickSmoothing(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        if Config.setValue(raw, for: "history_smoothing") { reload() }
+        else { tell("Stratoscope could not change the history smoothing in \(Config.settingsPath()).", "Is the file valid JSON?") }
     }
 
     @objc private func openSettingsFile() {

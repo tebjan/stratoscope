@@ -17,6 +17,9 @@ public sealed class ServerMonitor
     public EngineSnapshot? Snapshot { get; private set; }
     /// <summary>Why the engine does not answer, in English.</summary>
     public string? Error { get; private set; }
+    /// <summary>The last 60 seconds of speed and the adaptive scales: one sample per poll.</summary>
+    public SpeedHistory History { get; } = new SpeedHistory();
+
     /// <summary>True once the first poll has finished.</summary>
     public bool Polled { get; private set; }
 
@@ -49,6 +52,7 @@ public sealed class ServerMonitor
         finally
         {
             Polled = true;
+            History.Add(DateTime.UtcNow, Snapshot);
             var content = HashCode.Combine(Snapshot?.ContentHash() ?? 0, Error, Faulted);
             if (content != lastContent) { lastContent = content; DataVersion++; }
             Interlocked.Exchange(ref busy, 0);

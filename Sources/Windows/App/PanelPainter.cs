@@ -19,6 +19,7 @@ internal sealed class PanelSettings
 {
     public bool StartWithWindows { get; set; }
     public ThemeChoice Theme { get; set; }
+    public HistorySmoothing Smoothing { get; set; } = HistorySmoothing.Normal;
     /// <summary>Things in the settings file that could not be used, in English.</summary>
     public List<string> Problems { get; } = new List<string>();
 }
@@ -33,6 +34,10 @@ internal sealed class PanelModel
     public string ServerName { get; set; } = "";
     public ServerState State { get; set; } = ServerState.Connecting;
     public EngineSnapshot? Snapshot { get; set; }
+    /// <summary>The last 60 seconds of speed of the selected server, or null for no history graph.</summary>
+    public SpeedHistory? History { get; set; }
+    /// <summary>How strongly the history graph is smoothed.</summary>
+    public HistorySmoothing Smoothing { get; set; } = HistorySmoothing.Normal;
     /// <summary>Why the selected server does not answer.</summary>
     public string? Error { get; set; }
     public string VersionLabel { get; set; } = "Stratoscope";
@@ -55,7 +60,7 @@ internal enum TipKind { Server, Request, CacheResult, Context, ContextRequest, R
 /// <summary>An area of the panel with a data tooltip. The text is built on hover (<see cref="PanelPainter.TipText"/>), never while painting.</summary>
 internal readonly record struct TipArea(RectangleF Rect, TipKind Kind, int Index);
 
-internal enum PanelAction { SelectTab, OpenLink, Settings, SettingsBack, ToggleStartup, SetTheme, OpenSettingsFile, ReloadSettings, CheckForUpdates, Quit }
+internal enum PanelAction { SelectTab, OpenLink, Settings, SettingsBack, ToggleStartup, SetTheme, SetSmoothing, OpenSettingsFile, ReloadSettings, CheckForUpdates, Quit }
 
 internal sealed class PanelHit
 {
@@ -259,6 +264,7 @@ internal sealed class PanelPainter
             y += Live(s, y);
             Sections.Add(("Live", liveTop, y));
             var groups = new List<(string, Func<float, float>)>();
+            if (model.History != null) groups.Add(("History", yy => HistoryBlock(model.History, yy)));
             if (s.Recent.Count > 0) groups.Add(("Speed", yy => Speed(s, yy)));
             if (s.System != null && HasSystemRows(s.System)) groups.Add(("System", yy => SystemBlock(s.System, yy)));
             if (s.Cache != null) groups.Add(("Conversation cache", yy => CacheBlock(s, yy)));
@@ -303,6 +309,11 @@ internal sealed class PanelPainter
         y += RowHeight;
         foreach (var (title, choice) in new[] { (MenuText.ThemeSystem, ThemeChoice.System), (MenuText.ThemeLight, ThemeChoice.Light), (MenuText.ThemeDark, ThemeChoice.Dark) })
             y += MenuRow(y, title, settings.Theme == choice ? "✓" : null, false, PanelAction.SetTheme, (int)choice);
+        y = Separator(y);
+        T(MenuText.HistorySmoothing, Pad, y + 4, Body, false, pal.Dim);
+        y += RowHeight;
+        foreach (var (title, choice) in new[] { (MenuText.SmoothingOff, HistorySmoothing.Off), (MenuText.SmoothingNormal, HistorySmoothing.Normal), (MenuText.SmoothingHigh, HistorySmoothing.High), (MenuText.SmoothingHighest, HistorySmoothing.Highest) })
+            y += MenuRow(y, title, settings.Smoothing == choice ? "✓" : null, false, PanelAction.SetSmoothing, (int)choice);
         y = Separator(y);
         y += MenuRow(y, MenuText.OpenSettingsFile, null, false, PanelAction.OpenSettingsFile, 0);
         y += MenuRow(y, MenuText.ReloadSettings, null, false, PanelAction.ReloadSettings, 0);
@@ -570,6 +581,80 @@ internal sealed class PanelPainter
         if (speed != null) T(speed, 0, y, Body, false, null, Width - Pad);
         Bar(Pad, y + 16, Width - 2 * Pad, RunningBarHeight, frac, color);
         T(detail, Pad, y + 23, Caption, false, pal.Dim);
+    }
+
+    // MARK: History
+
+    /// <summary>The height of the history block (a multiple of 4).</summary>
+    internal const float HistoryHeight = 152f;
+    private const float HistoryPlotHeight = 64f;
+    private const float HistoryGutter = 30f;
+    [ThreadStatic] private static double[]? historyAges, historyValues;
+
+    /// <summary>
+    /// The last 60 seconds in one graph, like a frame-rate graph: orange is the prefill speed (prompt tokens per second), blue the decode speed
+    /// (generated tokens per second) and the ink colour the total throughput (prompt plus generated tokens per second, the vLLM and
+    /// OpenTelemetry GenAI meaning, see <see cref="SpeedHistory"/>). The total is a third curve in the same graph, not a separate sparkline: it shares the axis,
+    /// so it reads directly against its two parts, and it costs no height. The legend above the graph gives the current value of each curve.
+    /// The vertical axis is the adaptive scale of the history (0 to its maximum); the horizontal one runs from 60 s ago to now.
+    /// </summary>
+    private float HistoryBlock(SpeedHistory history, float y)
+    {
+        var inner = Width - 2 * Pad;
+        T("History", Pad, y + 8, Body, true);
+        T("Last 60 s", 0, y + 9, Caption, false, pal.Dim, Width - Pad);
+        var column = inner / 3;
+        var curves = new[] { (HistoryCurve.Prefill, "Prefill", pal.Orange), (HistoryCurve.Decode, "Decode", pal.Blue), (HistoryCurve.Total, "Total", pal.Label) };
+        for (int i = 0; i < curves.Length; i++)
+        {
+            var (curve, name, color) = curves[i];
+            var x = Pad + i * column;
+            using (var brush = new SolidBrush(color)) g.FillRectangle(brush, x, y + 33, 8, 3);
+            T(name, x + 13, y + 28, Caption, false, pal.Dim);
+            var latest = history.Latest(curve);
+            T(double.IsNaN(latest) ? Fmt.Missing : Fmt.Number(latest), x + 13, y + 41, Body, true, curve == HistoryCurve.Total ? null : color);
+        }
+
+        var left = Pad + HistoryGutter; var right = Width - Pad;
+        var top = y + 66; var plotH = HistoryPlotHeight;
+        var scale = history.GraphScale;
+        using (var brush = new SolidBrush(pal.Faint(0.06)))
+            g.FillRectangle(brush, left, top, right - left, plotH);
+        using (var pen = new Pen(pal.Faint(0.16), 1f))
+            foreach (var f in new[] { 0.0, 0.5, 1.0 })
+            {
+                var gy = (float)Math.Round(top + plotH - plotH * f) - 0.5f;
+                g.DrawLine(pen, left, gy, right, gy);
+            }
+        T(Fmt.Number(scale.Max), 0, top - 6, Caption, false, pal.Dim, left - 4);
+        T(Fmt.Number(scale.Max / 2), 0, top + plotH / 2 - 6, Caption, false, pal.Dim, left - 4);
+        T(Fmt.Number(scale.Min), 0, top + plotH - 6, Caption, false, pal.Dim, left - 4);
+        T("60 s ago", left, top + plotH + 3, Caption, false, pal.Dim);
+        T("now", 0, top + plotH + 3, Caption, false, pal.Dim, right);
+
+        historyAges ??= new double[SpeedHistory.Capacity]; historyValues ??= new double[SpeedHistory.Capacity];
+        var now = SpeedHistory.Seconds(model.Now);
+        var saved = g.SmoothingMode;
+        g.SetClip(new RectangleF(left, top - 1, right - left, plotH + 2));
+        foreach (var (curve, _, color) in curves)
+        {
+            var n = history.ReadSmoothed(curve, model.Smoothing.Damping(), now, historyAges, historyValues);
+            using (var pen = new Pen(color, curve == HistoryCurve.Total ? 2f : 1.5f) { LineJoin = LineJoin.Round })
+            {
+                var run = new List<PointF>(n);
+                void Flush() { if (run.Count > 1) g.DrawLines(pen, run.ToArray()); else if (run.Count == 1) g.DrawLine(pen, run[0].X - 0.5f, run[0].Y, run[0].X + 0.5f, run[0].Y); run.Clear(); }
+                for (int k = 0; k < n; k++)
+                {
+                    if (double.IsNaN(historyValues[k])) { Flush(); continue; }
+                    var px = right - (float)(historyAges[k] / SpeedHistory.WindowSeconds) * (right - left);
+                    var py = top + plotH - (float)scale.Fraction(historyValues[k]) * plotH;
+                    run.Add(new PointF(px, py));
+                }
+                Flush();
+            }
+        }
+        g.ResetClip(); g.SmoothingMode = saved;
+        return HistoryHeight;
     }
 
     // MARK: Speed

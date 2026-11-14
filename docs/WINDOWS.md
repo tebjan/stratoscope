@@ -25,11 +25,13 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 ## What you see
 
 - **Readout**, one item per server: a glyph and the speed (`[bar] 247 t/s`, `[dot] 26 t/s`). While nothing runs, only the glyph.
-- **Glyph**: bar while a prompt is read, colored like on the Mac by how much came from the cache (green, yellow, orange, gray); blue dot while it writes; green dot when ready; grey ring when offline or no model; dotted ring while loading; red mark on an error.
+- **Glyph**: one bar per running request, up to eight, each as wide as the single bar and packed into the height of one: a request that reads shows its prompt progress (colored by how much came from the cache while it is the only request, orange with several), one that writes shows its own speed in blue against a scale that adapts to what runs (rises with a margin, steps back after 25 s below half). Green dot when ready; grey ring when offline or no model; dotted ring while loading; red mark on an error.
 - **Custom engine**: reading and writing per request from its `/ui/state` while requests run; without it, one busy state ("running") and no speed.
 - **Speed**: plain digits, `10k` from 9,999.5 t/s. With parallel requests it is the total.
+<img src="img/windows-readout-parallel.png" alt="The readout with 1, 2, 4 and 8 parallel requests, dark and light" width="720">
+
 - **Position**: centred in the free gap of the taskbar. It moves only when the taskbar geometry changes, then once.
-- **Panel**: the Mac menu, with tabs for several servers. Two or more parallel requests show a sum bar with one smaller bar per request.
+- **Panel**: the Mac menu, with tabs for several servers. Below the live block a graph shows the last 60 seconds: orange prefill speed, blue decode speed, black total throughput (prompt plus generated tokens per second), with the current value of each and an axis from 0 to the adaptive maximum. Two or more parallel requests show a sum bar with one smaller bar per request.
 - **Tooltips**: only data the element does not show. Nothing to add, no tooltip.
 - **Keys**: Esc closes, Left and Right switch tabs, Ctrl+Q quits.
 <img src="img/windows-readout-states.png" alt="Every state of the readout, dark and light" width="720">
@@ -50,6 +52,7 @@ Open `%LOCALAPPDATA%\Stratoscope\config.json` from the menu (Settings > Open set
 | `STRATOSCOPE_CLIENT_CONFIGS` | `client_configs` | `none` stops reading client configs |
 | | `servers` | list of `{ name, engine, url, router, log, webui, client_model }` |
 | `STRATOSCOPE_READOUT_POSITION` | `readout_position` | `center` (default), `tray`, `after-buttons`, `left` |
+| `STRATOSCOPE_HISTORY_SMOOTHING` | `history_smoothing` | `off`, `normal` (default), `high` or `highest`: the smoothing of the history graph (damping 0, 0.5, 0.9, 0.95); also in the panel under Settings > History smoothing |
 | `STRATOSCOPE_UI_SCALE` | `ui_scale` | `auto` (default) or `100` to `250` |
 | `STRATOSCOPE_THEME` | `theme` | `system` (default), `light` or `dark`: the panel |
 | `STRATOSCOPE_CONFIG` | | path of the settings file |

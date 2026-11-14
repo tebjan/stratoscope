@@ -18,13 +18,14 @@ public class SettingsPageTests
     }
 
     [Fact]
-    public void TheRowsAreBackStartupThreeThemesTheFileAndReload()
+    public void TheRowsAreBackStartupThreeThemesFourSmoothingsTheFileAndReload()
     {
         var page = Paint(new PanelSettings { StartWithWindows = true, Theme = ThemeChoice.Dark }, out var height);
         Assert.Equal(
-            new[] { PanelAction.SettingsBack, PanelAction.ToggleStartup, PanelAction.SetTheme, PanelAction.SetTheme, PanelAction.SetTheme, PanelAction.OpenSettingsFile, PanelAction.ReloadSettings },
+            new[] { PanelAction.SettingsBack, PanelAction.ToggleStartup, PanelAction.SetTheme, PanelAction.SetTheme, PanelAction.SetTheme, PanelAction.SetSmoothing, PanelAction.SetSmoothing, PanelAction.SetSmoothing, PanelAction.SetSmoothing, PanelAction.OpenSettingsFile, PanelAction.ReloadSettings },
             page.Hits.Select(h => h.Action).ToArray());
         Assert.Equal(new[] { 0, 1, 2 }, page.Hits.Where(h => h.Action == PanelAction.SetTheme).Select(h => h.Index).ToArray());
+        Assert.Equal(new[] { 0, 1, 2, 3 }, page.Hits.Where(h => h.Action == PanelAction.SetSmoothing).Select(h => h.Index).ToArray());
         Assert.True(height > 100);
     }
 

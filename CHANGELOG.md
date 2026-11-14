@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Taskbar and menu bar readout: one small bar per running request (up to eight) instead of one. A request that reads shows its prompt progress, one that writes shows its own speed against an adaptive scale (the maximum rises with a margin and steps back after 25 s below half); the writing dot became a blue bar. The total speed stays beside it.
+- Panel: a 60 second history graph with prefill speed (orange), decode speed (blue) and total throughput, prompt plus generated tokens per second (black). Setting `history_smoothing` (`off`, `normal`, `high`, `highest`), also in the settings page. The macOS part is written but not yet built.
+
 - llama.cpp (`llama-server`) connector, on Windows and the Mac: state, slots with the tokens they hold, prompt tokens read and reused per request, context, and with `--metrics` the speeds and totals. A sleeping server is shown as asleep and not woken. Setting value `engine: llamacpp`.
 - Custom 27B engine: one busy state from `/metrics`, and reading and writing per request from `/ui/state` while requests run. Setting value `engine: custom`.
 - Basalt engines: state, prefill progress and speeds, context, finished requests with their cache verdict, engine details, one entry per batch slot, RAM, CPU and the video card, each only where Basalt reports it. The Mac shows the same as Windows. Setting value `engine: basalt`.

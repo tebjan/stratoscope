@@ -5,15 +5,15 @@ namespace Stratoscope.Windows;
 /// <summary>Turns the monitors into what the panel, the readout and the icon show.</summary>
 internal static class PanelModelBuilder
 {
-    public static PanelModel Panel(IList<ServerMonitor> monitors, int selected, DateTime now, PanelSettings? settings = null)
+    public static PanelModel Panel(IList<ServerMonitor> monitors, int selected, DateTime now, PanelSettings? settings = null, HistorySmoothing smoothing = HistorySmoothing.Normal)
     {
-        var model = new PanelModel { Now = now, VersionLabel = AppInfo.Label, Settings = settings };
+        var model = new PanelModel { Now = now, VersionLabel = AppInfo.Label, Settings = settings, Smoothing = smoothing };
         foreach (var m in monitors) model.Tabs.Add(new TabInfo(m.Name, m.State, Display.Word(m.State)));
         model.Selected = Servers.Clamp(selected, monitors.Count);
         if (monitors.Count > 0)
         {
             var m = monitors[model.Selected];
-            model.ServerName = m.Name; model.State = m.State; model.Snapshot = m.Snapshot; model.Error = m.Error;
+            model.ServerName = m.Name; model.State = m.State; model.Snapshot = m.Snapshot; model.Error = m.Error; model.History = m.History;
         }
         return model;
     }

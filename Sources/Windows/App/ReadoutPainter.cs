@@ -9,10 +9,16 @@ namespace Stratoscope.Windows;
 /// <summary>One server in the taskbar readout.</summary>
 internal sealed class ReadoutItem
 {
-    public ReadoutItem(string name, ServerState state, ReadoutText text, double? fraction, string spoken, string? tip = null, bool nameInCaption = true, CacheHit? hit = null)
+    public ReadoutItem(string name, ServerState state, ReadoutText text, double? fraction, string spoken, string? tip = null, bool nameInCaption = true, CacheHit? hit = null,
+        IReadOnlyList<RequestBar>? bars = null, double scaleMax = SpeedScale.DefaultMax)
     {
         Name = name; State = state; Text = text; Fraction = fraction; Spoken = spoken; Tip = tip; NameInCaption = nameInCaption; Hit = hit;
+        Bars = bars ?? Array.Empty<RequestBar>(); ScaleMax = scaleMax;
     }
+    /// <summary>One bar per running request, at most <see cref="RequestBars.MaxBars"/>. Empty: the glyph of the state (dot, ring) is drawn.</summary>
+    public IReadOnlyList<RequestBar> Bars { get; }
+    /// <summary>The end of the speed scale of the decode bars, tokens per second (the start is 0).</summary>
+    public double ScaleMax { get; }
     /// <summary>How much of the prompt came from the cache while it is read: the colour of the bar, as on the Mac (green, yellow, orange, gray). Null when unknown.</summary>
     public CacheHit? Hit { get; }
     public string Name { get; }
@@ -36,7 +42,8 @@ internal sealed class ReadoutItem
         if (nameInCaption) visible.Add(monitor.Name);
         return new ReadoutItem(monitor.Name, monitor.State, text,
             progress?.Fraction, Display.Spoken(monitor.Name, s, monitor.Polled, monitor.Faulted),
-            Tooltips.NotShown(Tooltips.ReadoutExtra(monitor.State, s, nameInCaption ? null : monitor.Name), visible), nameInCaption, progress?.Hit);
+            Tooltips.NotShown(Tooltips.ReadoutExtra(monitor.State, s, nameInCaption ? null : monitor.Name), visible), nameInCaption, progress?.Hit,
+            RequestBars.From(s), monitor.History.RequestScale.Max);
     }
 }
 
@@ -136,6 +143,27 @@ internal static class ReadoutPainter
 
     /// <summary>The width of the glyph this state draws, in device pixels.</summary>
     internal static int GlyphWidth(ServerState state, UiMetrics m) => state == ServerState.Reading ? m.Px(BarWidth) : GlyphHeightPx(m, false);
+
+    /// <summary>The width of the glyph of an item: the bar slot when it shows request bars, else the width of its state's glyph.</summary>
+    internal static int GlyphWidth(ReadoutItem item, UiMetrics m) => item.Bars.Count > 0 ? m.Px(BarWidth) : GlyphWidth(item.State, m);
+
+    /// <summary>The room the stack of request bars may use together: the bar of one request keeps its height, several share this.</summary>
+    internal const float StackHeight = 8f;
+
+    /// <summary>
+    /// The rows of <paramref name="count"/> bars in device pixels: the height of each bar, the gap between two and the height of the stack.
+    /// One bar is the bar of old (<see cref="GlyphHeight"/>). Several share <see cref="StackHeight"/>, packed tightly: a gap of one pixel
+    /// while the bars are at least two pixels high or there are at most four, none otherwise; no bar is thinner than one device pixel.
+    /// </summary>
+    internal static (int Bar, int Gap, int Total) BarRows(int count, UiMetrics m)
+    {
+        if (count <= 1) { var h = GlyphHeightPx(m, true); return (h, 0, h); }
+        var available = m.Px(StackHeight);
+        var gap = count <= 4 ? 1 : 0;
+        var bar = Math.Max(1, (available - gap * (count - 1)) / count);
+        if (bar == 1 && gap == 1 && count > 4) gap = 0;
+        return (bar, gap, bar * count + gap * (count - 1));
+    }
 
     /// <summary>The height of the bar, or the diameter of the dot, in device pixels.</summary>
     internal static int GlyphHeightPx(UiMetrics m, bool bar) => m.Px(GlyphHeightOverride is { } o ? (bar ? o.Bar : o.Dot) : GlyphHeight);
@@ -308,7 +336,7 @@ internal static class ReadoutPainter
     internal static (int GlyphRight, double GlyphCentre) GlyphPosition(ReadoutItem item, UiMetrics m)
     {
         var t = TableFor(m, item.NameInCaption && item.Name.Length > 0);
-        var w = GlyphWidth(item.State, m);
+        var w = GlyphWidth(item, m);
         return (t.GlyphRight, t.GlyphRight - w / 2.0);
     }
 
@@ -329,8 +357,8 @@ internal static class ReadoutPainter
 
         // The glyph: the bar fills its slot; every other shape is right-aligned in it, so it ends where the bar ends: one gap g before the anchor.
         var reading = item.State == ServerState.Reading;
-        var glyphWidth = GlyphWidth(item.State, m);
-        var glyphHeight = GlyphHeightPx(m, reading);
+        var glyphWidth = GlyphWidth(item, m);
+        var glyphHeight = item.Bars.Count > 0 ? BarRows(item.Bars.Count, m).Total : GlyphHeightPx(m, reading);
         var glyphBox = new RectangleF(glyphRight - glyphWidth, (float)Math.Round(rhythm.OpticalCentre - glyphHeight / 2f), glyphWidth, glyphHeight);
 
         var offsetBefore = g.PixelOffsetMode;
@@ -385,6 +413,46 @@ internal static class ReadoutPainter
     }
 
     /// <summary>
+    /// One bar per running request, stacked top to bottom in the order the engine lists them, each as wide as the old progress bar (the same
+    /// faint track). A request that reads shows its prompt progress in the colour of reading (the cache colour while it is the only request);
+    /// one that generates shows its own speed against the adaptive scale of 0 to <see cref="ReadoutItem.ScaleMax"/> t/s in the colour of writing.
+    /// A generating request whose speed the engine does not report is an empty track. Rows of three or more device pixels are pills, thinner
+    /// ones plain rectangles.
+    /// </summary>
+    private static void DrawBars(Graphics g, ReadoutItem item, RectangleF box, UiMetrics m, Palette palette)
+    {
+        var (barHeight, gap, _) = BarRows(item.Bars.Count, m);
+        var track = Palette.Alpha(palette.HighContrast ? palette.Gray : Ink(palette), 0.25);
+        void Fill(RectangleF r, Color color)
+        {
+            if (r.Height >= 3)
+                using (var path = Shapes.Pill(r)) using (var brush = new SolidBrush(color)) g.FillPath(brush, path);
+            else
+                using (var brush = new SolidBrush(color)) g.FillRectangle(brush, r);
+        }
+        for (int i = 0; i < item.Bars.Count; i++)
+        {
+            var bar = item.Bars[i];
+            var row = new RectangleF(box.X, box.Y + i * (barHeight + gap), box.Width, barHeight);
+            Fill(row, track);
+            double? fraction;
+            Color color;
+            if (bar.Reading)
+            {
+                fraction = Math.Clamp(bar.Fraction, 0, 1);
+                color = item.Bars.Count == 1 && item.Hit is CacheHit hit ? palette.HitColor(hit) : palette.StateColor(ServerState.Reading);
+            }
+            else
+            {
+                fraction = bar.TokensPerSecond is double speed && double.IsFinite(speed) && speed > 0 ? Math.Min(1, speed / Math.Max(1, item.ScaleMax)) : (double?)null;
+                color = palette.StateColor(ServerState.Writing);
+            }
+            if (fraction is double f)
+                Fill(new RectangleF(row.X, row.Y, Math.Max(row.Height, (float)Math.Round(row.Width * f)), row.Height), color);
+        }
+    }
+
+    /// <summary>
     /// The mark of a server, all from one rounded pill of one height. A reading server is the bar that fills with the progress of the prompt,
     /// coloured by how much of the prompt came from the cache, on a faint track (like the Mac menu bar item). A filled dot, the pill at its shortest, in the
     /// state colour is ready, writing or thinking. The states that are not busy have another shape as well as another colour: a hollow grey
@@ -396,6 +464,12 @@ internal static class ReadoutPainter
         var savedOffset = g.PixelOffsetMode;
         g.PixelOffsetMode = PixelOffsetMode.Half;
         var state = palette.StateColor(item.State);
+        if (item.Bars.Count > 0)
+        {
+            DrawBars(g, item, box, m, palette);
+            g.PixelOffsetMode = savedOffset;
+            return;
+        }
         switch (item.State)
         {
             case ServerState.Reading:

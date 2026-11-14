@@ -443,14 +443,17 @@ internal static class SnapshotRenderer
 
     // MARK: Sheets
 
-    internal static List<ReadoutItem> Items(params (string Name, ServerState State, EngineSnapshot? Snapshot)[] servers) =>
+    internal static List<ReadoutItem> Items(params (string Name, ServerState State, EngineSnapshot? Snapshot)[] servers) => Items(SpeedScale.DefaultMax, servers);
+
+    internal static List<ReadoutItem> Items(double scaleMax, params (string Name, ServerState State, EngineSnapshot? Snapshot)[] servers) =>
         servers.Select(s =>
         {
             var polled = s.State != ServerState.Connecting;
             var nameInCaption = servers.Length > 1;      // one server: the glyph and the speed alone; several: the name stands before the glyph
             var text = Display.Readout(s.Snapshot);
             var progress = s.Snapshot != null ? Display.Progress(s.Snapshot) : null;
-            return new ReadoutItem(s.Name, s.State, text, progress?.Fraction, Display.Spoken(s.Name, s.Snapshot, polled, s.State == ServerState.Error && s.Snapshot == null), null, nameInCaption, progress?.Hit);
+            return new ReadoutItem(s.Name, s.State, text, progress?.Fraction, Display.Spoken(s.Name, s.Snapshot, polled, s.State == ServerState.Error && s.Snapshot == null), null, nameInCaption, progress?.Hit,
+                RequestBars.From(s.Snapshot), scaleMax);
         }).ToList();
 
     /// <summary>One server in each state, as the readout shows it.</summary>
@@ -512,6 +515,61 @@ internal static class SnapshotRenderer
                         g.DrawString(rows[r].Label, font, new SolidBrush(dark ? Color.White : Color.Black), x + m.Px(8), y + h / 2 - m.Px(8));
                         var size = new Size(Math.Min(w, ReadoutPainter.Measure(rows[r].Items, mm).Width), h);
                         using (var item = ReadoutPainter.Render(rows[r].Items, mm, size, null, hover: r == hoverRow || r == hoverIdleRow ? 0 : -1, pressed: r == pressedRow ? 0 : -1))
+                            g.DrawImage(item, x + labelW, y);
+                    }
+                }
+            bmp.Save(path, ImageFormat.Png);
+        }
+    }
+
+    /// <summary>
+    /// Parallel requests in the readout: one running request that reads and one that writes, then 2, 4 and 8 requests (the first of them
+    /// reading, the others writing at speeds below the scale of 0 to 125 t/s), on dark and light taskbars at 150 %. Opaque PNG.
+    /// </summary>
+    public static void ParallelSheet(string path)
+    {
+        const double scaleMax = 125;
+        List<ReadoutItem> Row(int count, bool firstReads)
+        {
+            var speeds = new[] { 118.0, 96, 82, 74, 61, 47, 33, 21 };
+            var slots = Enumerable.Range(0, count).Select(i => firstReads && i == 0
+                ? new BatchSlot { Index = i, State = "reading", PromptTokens = 60_000, PromptRead = 38_000 }
+                : new BatchSlot { Index = i, State = "decoding", Generated = 900, TokensPerSecond = speeds[i] }).ToList();
+            var reading = count == 1 && firstReads;
+            var total = slots.Where(s => s.IsDecoding).Sum(s => s.TokensPerSecond ?? 0);
+            var snapshot = new EngineSnapshot("Strata", "m", reading ? EngineStatus.Prefill : EngineStatus.Decode)
+            {
+                Slots = slots,
+                Live = reading
+                    ? new LiveRequest { PromptRead = 38_000, PromptTotal = 60_000, PrefillTokensPerSecond = 247, ReusedEstimate = 41_000 }
+                    : new LiveRequest { PrefillTokensPerSecond = null, DecodeTokensPerSecond = count == 1 ? speeds[0] : total, Running = count > 1 ? count : null },
+            };
+            return Items(scaleMax, ("Workstation", reading ? ServerState.Reading : ServerState.Writing, snapshot));
+        }
+        var rows = new List<(string Label, List<ReadoutItem> Items)>
+        {
+            ("1 request, reading", Row(1, true)), ("1 request, writing", Row(1, false)), ("2 requests", Row(2, true)), ("4 requests", Row(4, true)), ("8 requests", Row(8, true)),
+        };
+        var m = UiMetrics.At(144, 1.0, true, true);
+        var w = m.Px(330); var h = m.Px(TaskbarHeight);
+        var labelW = m.Px(150);
+        using (var bmp = new Bitmap(2 * (labelW + w) + m.Px(24), rows.Count * (h + m.Px(6)) + m.Px(8), PixelFormat.Format24bppRgb))
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.Clear(Color.FromArgb(128, 128, 128));
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            using (var font = Typography.Regular(m.Px(12)))
+                for (int c = 0; c < 2; c++)
+                {
+                    var dark = c == 0;
+                    var mm = UiMetrics.At(144, 1.0, dark, dark);
+                    for (int r = 0; r < rows.Count; r++)
+                    {
+                        var x = c * (labelW + w + m.Px(8)); var y = m.Px(4) + r * (h + m.Px(6));
+                        using (var back = new SolidBrush(dark ? Color.FromArgb(32, 32, 32) : Color.FromArgb(243, 243, 243))) g.FillRectangle(back, x, y, labelW + w, h);
+                        using (var ink = new SolidBrush(dark ? Color.White : Color.Black)) g.DrawString(rows[r].Label, font, ink, x + m.Px(8), y + h / 2 - m.Px(8));
+                        var size = new Size(Math.Min(w, ReadoutPainter.Measure(rows[r].Items, mm).Width), h);
+                        using (var item = ReadoutPainter.Render(rows[r].Items, mm, size))
                             g.DrawImage(item, x + labelW, y);
                     }
                 }

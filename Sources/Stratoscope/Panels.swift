@@ -5,6 +5,9 @@ import StratoscopeCore
 /// (`system`, `cache`, `totals` are optional) are left out.
 final class Panels {
     var snap: EngineSnapshot?
+    /// The last 60 seconds of speed, drawn as the history graph; nil leaves the graph out.
+    var history: SpeedHistory?
+    var smoothing = HistorySmoothing.normal
     /// The clock the menu measures ages against. The demo engine pins it so screenshots come out the same every time.
     let now: () -> Date
 
@@ -16,6 +19,7 @@ final class Panels {
         var groups: [[Section]] = []
         groups.append([Section(id: "live", height: 198) { [unowned self] _ in self.paintLive() }])
         if !s.isLoading {
+            if history != nil { groups.append([Section(id: "history", height: 152) { [unowned self] _ in self.paintHistory() }]) }
             groups.append([Section(id: "speed", height: 96) { [unowned self] _ in self.paintSpeed() }])
             if let sys = s.system {
                 // A fourth row for the video memory when the engine reports it (custom server); the other engines keep three rows.
@@ -115,6 +119,58 @@ final class Panels {
         if let top = sizes.max(), top > 0 {
             sparkbars(pad, 165, inner, 24, sizes, top * 1.15, .systemTeal)
         }
+    }
+
+    // MARK: History
+
+    /// The last 60 seconds in one graph, like a frame-rate graph: orange is the prefill speed (prompt tokens per second), blue the decode speed
+    /// (generated tokens per second) and the label colour the total throughput (prompt plus generated tokens per second, the vLLM and
+    /// OpenTelemetry GenAI meaning, see `SpeedHistory`). The total is a third curve in the same graph: it shares the axis, so it reads directly
+    /// against its two parts, and it costs no height. The legend gives the current value of each curve. The vertical axis is the adaptive scale
+    /// of the history (0 to its maximum); the horizontal one runs from 60 s ago to now. Not built or run on the Windows PC this was written on.
+    func paintHistory() {
+        guard let h = history else { return }
+        let inner = menuWidth - 2 * pad
+        text("History", x: pad, y: 8, size: 12, bold: true)
+        text("Last 60 s", x: 0, y: 9, size: 10, color: .secondaryLabelColor, right: menuWidth - pad)
+        let curves: [(HistoryCurve, String, NSColor)] = [(.prefill, "Prefill", .systemOrange), (.decode, "Decode", .systemBlue), (.total, "Total", .labelColor)]
+        let column = inner / 3
+        for (i, (curve, name, color)) in curves.enumerated() {
+            let x = pad + CGFloat(i) * column
+            color.setFill(); NSRect(x: x, y: 33, width: 8, height: 3).fill()
+            text(name, x: x + 13, y: 28, size: 10, color: .secondaryLabelColor)
+            let v = h.latest(curve)
+            text(v.isNaN ? "–" : Fmt.number(v), x: x + 13, y: 41, size: 12, bold: true, color: curve == .total ? .labelColor : color)
+        }
+        let gutter: CGFloat = 30, left = pad + gutter, right = menuWidth - pad, top: CGFloat = 66, plotH: CGFloat = 64
+        let scale = h.graphScale
+        NSColor.labelColor.withAlphaComponent(0.06).setFill()
+        NSRect(x: left, y: top, width: right - left, height: plotH).fill()
+        NSColor.labelColor.withAlphaComponent(0.16).setFill()
+        for f in [0.0, 0.5, 1.0] { NSRect(x: left, y: (top + plotH - plotH * CGFloat(f)).rounded() - 1, width: right - left, height: 1).fill() }
+        text(Fmt.number(scale.max), x: 0, y: top - 6, size: 10, color: .secondaryLabelColor, right: left - 4)
+        text(Fmt.number(scale.max / 2), x: 0, y: top + plotH / 2 - 6, size: 10, color: .secondaryLabelColor, right: left - 4)
+        text(Fmt.number(scale.min), x: 0, y: top + plotH - 6, size: 10, color: .secondaryLabelColor, right: left - 4)
+        text("60 s ago", x: left, y: top + plotH + 3, size: 10, color: .secondaryLabelColor)
+        text("now", x: 0, y: top + plotH + 3, size: 10, color: .secondaryLabelColor, right: right)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSRect(x: left, y: top - 1, width: right - left, height: plotH + 2).clip()
+        let nowSeconds = Date().timeIntervalSince1970     // the wall clock, as the samples are taken: the pinned demo clock would stack them
+        for (curve, _, color) in curves {
+            let path = NSBezierPath()
+            path.lineWidth = curve == .total ? 2 : 1.5
+            path.lineJoinStyle = .round
+            var open = false
+            for sample in h.readSmoothed(curve, damping: smoothing.damping, now: nowSeconds) {
+                if sample.value.isNaN { open = false; continue }
+                let p = NSPoint(x: right - CGFloat(sample.age / SpeedHistory.windowSeconds) * (right - left),
+                                y: top + plotH - CGFloat(scale.fraction(sample.value)) * plotH)
+                if open { path.line(to: p) } else { path.move(to: p); open = true }
+            }
+            color.setStroke(); path.stroke()
+        }
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     // MARK: Speed

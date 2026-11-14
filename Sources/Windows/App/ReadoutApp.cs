@@ -43,7 +43,7 @@ internal sealed class ReadoutApp : ApplicationContext
     {
         configPath = configFile;
         ui = new UiController(new WindowsSystemSettings(), SystemMonitors.Instance, () => config.UiScalePercent, TaskbarCentre, () => config.Theme);
-        panel = new StatusPanel(() => PanelModelBuilder.Panel(monitors, selected, DateTime.UtcNow, SettingsPageModel()), OnPanelAction, ui);
+        panel = new StatusPanel(() => PanelModelBuilder.Panel(monitors, selected, DateTime.UtcNow, SettingsPageModel(), config.HistorySmoothing), OnPanelAction, ui);
         readout = new ReadoutHost(SynchronizationContext.Current, ui);
         readout.ItemClicked += (index, rect) => { SelectServer(index); TogglePanel(rect); };
         readout.ContextMenuRequested += point => TogglePanel(ReadoutAnchor());
@@ -252,6 +252,7 @@ internal sealed class ReadoutApp : ApplicationContext
                 panel.Refresh();
                 break;
             case PanelAction.SetTheme: SetTheme((ThemeChoice)index); break;
+            case PanelAction.SetSmoothing: SetSmoothing((HistorySmoothing)index); break;
             case PanelAction.OpenSettingsFile: OpenSettingsFile(); break;
             case PanelAction.ReloadSettings: LoadConfig(); break;
             case PanelAction.CheckForUpdates: OpenUrl(AppInfo.ReleasesUrl); break;
@@ -268,7 +269,7 @@ internal sealed class ReadoutApp : ApplicationContext
     private PanelSettings? SettingsPageModel()
     {
         if (!settingsOpen) return null;
-        var page = new PanelSettings { StartWithWindows = Autostart.IsEnabled, Theme = config.Theme };
+        var page = new PanelSettings { StartWithWindows = Autostart.IsEnabled, Theme = config.Theme, Smoothing = config.HistorySmoothing };
         page.Problems.AddRange(config.Problems);
         return page;
     }
@@ -293,6 +294,14 @@ internal sealed class ReadoutApp : ApplicationContext
         var path = config.Path ?? Config.DefaultPath(null);
         if (!ConfigFile.SetValue(path, "theme", choice.ToString().ToLowerInvariant()))
             MessageBox.Show("Stratoscope could not change the theme in " + path + ".", AppInfo.Name);
+    }
+
+    /// <summary>Stored like the theme: in the settings file, which the watcher reloads.</summary>
+    private void SetSmoothing(HistorySmoothing choice)
+    {
+        var path = config.Path ?? Config.DefaultPath(null);
+        if (!ConfigFile.SetValue(path, "history_smoothing", choice.ToString().ToLowerInvariant()))
+            MessageBox.Show("Stratoscope could not change the history smoothing in " + path + ".", AppInfo.Name);
     }
 
     private static void OpenUrl(string url)

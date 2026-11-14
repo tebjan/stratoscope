@@ -65,6 +65,7 @@ public enum ReadoutPosition
 ///     STRATOSCOPE_READOUT_POSITION  center (default) | tray (next to the notification area) | after-buttons | left
 ///     STRATOSCOPE_UI_SCALE    auto (default) or 100 to 250
 ///     STRATOSCOPE_THEME       system (default) | light | dark: the look of the panel; the readout always matches the taskbar
+///     STRATOSCOPE_HISTORY_SMOOTHING  off | normal (default) | high | highest: the smoothing of the history graph in the panel
 ///     STRATOSCOPE_CONFIG      path of the JSON file (default: %LOCALAPPDATA%\Stratoscope\config.json)
 ///
 /// The JSON file may hold a "servers" list (objects with name, engine, url, router, log, webui, client_model) to watch several engines.
@@ -81,6 +82,8 @@ public sealed class Config
     public int? UiScalePercent { get; set; }
     /// <summary>The look of the panel: follow the Windows apps theme (default), or always light or dark. The readout always matches the taskbar.</summary>
     public ThemeChoice Theme { get; set; } = ThemeChoice.System;
+    /// <summary>How strongly the history graph in the panel is smoothed: off, normal (default), high or highest.</summary>
+    public HistorySmoothing HistorySmoothing { get; set; } = HistorySmoothing.Normal;
     /// <summary>Things in the settings that could not be used, in English, for the menu and --dump.</summary>
     public List<string> Problems { get; } = new List<string>();
     /// <summary>The file that was read (or would be read).</summary>
@@ -120,6 +123,9 @@ public sealed class Config
         "  // The look of the panel: \"system\" (default), \"light\" or \"dark\". The readout always matches the taskbar.\r\n" +
         "  // \"theme\": \"system\",\r\n" +
         "\r\n" +
+        "  // How smooth the 60 second history graph in the panel is: \"off\", \"normal\" (default), \"high\" or \"highest\".\r\n" +
+        "  // \"history_smoothing\": \"normal\",\r\n" +
+        "\r\n" +
         "  // Size of the panel and the readout in percent, 100 to 250. Default: as Windows has it.\r\n" +
         "  // \"ui_scale\": 125,\r\n" +
         "\r\n" +
@@ -148,7 +154,7 @@ public sealed class Config
     /// <summary>The settings the file understands; anything else in it is named as a problem.</summary>
     private static readonly HashSet<string> KnownSettings = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "servers", "engine", "url", "router", "log", "webui", "scenario", "client_model", "client_configs", "compact_at", "readout_position", "ui_scale", "theme",
+        "servers", "engine", "url", "router", "log", "webui", "scenario", "client_model", "client_configs", "compact_at", "readout_position", "ui_scale", "theme", "history_smoothing",
     };
 
     public static string DefaultPath(IDictionary<string, string?>? environment = null)
@@ -246,6 +252,12 @@ public sealed class Config
         if (theme == "light") config.Theme = ThemeChoice.Light;
         else if (theme == "dark") config.Theme = ThemeChoice.Dark;
         else if (theme != null && theme != "system" && theme != "auto") config.Problems.Add("Ignored theme \"" + theme + "\": use system, light or dark.");
+
+        var smoothing = Get(settings, "history_smoothing")?.Trim().ToLowerInvariant();
+        if (smoothing == "off") config.HistorySmoothing = HistorySmoothing.Off;
+        else if (smoothing == "high") config.HistorySmoothing = HistorySmoothing.High;
+        else if (smoothing == "highest") config.HistorySmoothing = HistorySmoothing.Highest;
+        else if (smoothing != null && smoothing != "normal") config.Problems.Add("Ignored history_smoothing \"" + smoothing + "\": use off, normal, high or highest.");
 
         var defaults = new EngineConfig
         {

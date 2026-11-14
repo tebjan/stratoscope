@@ -14,6 +14,7 @@ import Foundation
 ///     STRATOSCOPE_CLIENT_CONFIGS  "none" stops Stratoscope from reading the config files of clients such as Kilo and
 ///                             OpenCode to find that threshold
 ///     STRATOSCOPE_THEME       system (default) | light | dark: the look of the menu; the menu bar item always matches macOS
+///     STRATOSCOPE_HISTORY_SMOOTHING  off | normal (default) | high | highest: the smoothing of the history graph in the menu
 public struct Config {
     public var engine = "strata"
     public var url: String?
@@ -24,6 +25,8 @@ public struct Config {
     public var readClientConfigs = true
     public var clientModel: String?
     public var theme = Theme.system
+    /// How strongly the history graph in the menu is smoothed: off, normal (default), high or highest.
+    public var historySmoothing = HistorySmoothing.normal
     /// Somebody said where the server is: the settings or the environment name an engine, a URL or a router. Without it the app looks for the server.
     public private(set) var configured = false
 
@@ -59,6 +62,9 @@ public struct Config {
       // The look of the menu: "system" (default), "light" or "dark". The menu bar item always matches macOS.
       // "theme": "system",
 
+      // How smooth the 60 second history graph in the menu is: "off", "normal" (default), "high" or "highest".
+      // "history_smoothing": "normal",
+
       // The token count at which your chat client summarises, drawn as a mark on the context bar. Only needed when Stratoscope cannot find it in the Kilo or OpenCode config.
       // "compact_at": 60000
     }
@@ -75,7 +81,7 @@ public struct Config {
     }
 
     /// The settings the file understands; anything else in it is named as a problem.
-    private static let knownSettings: Set<String> = ["engine", "url", "router", "log", "webui", "client_model", "client_configs", "compact_at", "theme"]
+    private static let knownSettings: Set<String> = ["engine", "url", "router", "log", "webui", "client_model", "client_configs", "compact_at", "theme", "history_smoothing"]
 
     /// Sets one setting of the settings file, for the menu. The file is edited as text, so its comments stay: an active line gets the new value, a
     /// commented example is switched on, and otherwise a line is added at the top. The file is created from the commented starter when it is
@@ -144,6 +150,10 @@ public struct Config {
         if let k = pick(["STRATOSCOPE_COMPACT_AT"], "compact_at"), let v = Double(k) { c.compactAt = v }
         else if let v = (json["compact_at"] as? NSNumber)?.doubleValue { c.compactAt = v }
         if let t = pick(["STRATOSCOPE_THEME"], "theme")?.lowercased() { c.theme = t == "auto" ? .system : (Theme(rawValue: t) ?? .system) }
+        if let h = pick(["STRATOSCOPE_HISTORY_SMOOTHING"], "history_smoothing")?.lowercased() {
+            if let v = HistorySmoothing(rawValue: h) { c.historySmoothing = v }
+            else { problems.append("Ignored history_smoothing \"\(h)\": use off, normal, high or highest.") }
+        }
         c.configured = ["STRATOSCOPE_ENGINE", "STRATOSCOPE_URL", "STRATOSCOPE_ROUTER_URL"].contains { !(environment[$0] ?? "").isEmpty }
             || ["engine", "url", "router"].contains { json[$0] != nil }
         c.problems = problems
