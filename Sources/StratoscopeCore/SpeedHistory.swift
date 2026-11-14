@@ -86,6 +86,9 @@ public struct SpeedHistory {
     public var requestScale = SpeedScale()
     /// The scale of the history graph (the largest of the three curves).
     public var graphScale = SpeedScale()
+    /// The scales of the bar charts of the Speed section (the speed of the last finished requests): prefill from 100 t/s, decode from 10 t/s.
+    public var prefillChartScale = SpeedScale(initialMax: 100)
+    public var decodeChartScale = SpeedScale(initialMax: 10)
 
     public init() {
         times = Array(repeating: 0, count: SpeedHistory.capacity)
@@ -100,6 +103,12 @@ public struct SpeedHistory {
         let seconds = now.timeIntervalSince1970
         addSample(now: seconds, prefill: prefill, decode: decode)
         if let peak = RequestBars.peakSpeed(RequestBars.from(s)) { requestScale.observe(peak, now: seconds) }
+        if let s = s, !s.recent.isEmpty {
+            // The charts of the finished requests share the rule of the other scales: they do not change with every poll.
+            let recent = s.recent.prefix(12)
+            decodeChartScale.observe(recent.map { $0.decodeTokensPerSecond ?? 0 }.max() ?? 0, now: seconds)
+            prefillChartScale.observe(recent.map { $0.prefillTokensPerSecond(minTokens: 1500, minMilliseconds: 2000) ?? 0 }.max() ?? 0, now: seconds)
+        }
     }
 
     /// The prefill and decode speed of a snapshot as the curves take them.

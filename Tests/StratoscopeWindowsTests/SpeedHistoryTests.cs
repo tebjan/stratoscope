@@ -6,14 +6,17 @@ namespace Stratoscope.Tests;
 public class SpeedScaleTests
 {
     [Theory]
-    [InlineData(120, 130)]      // 120 plus 5 % is 126, up to the clean step of 5
-    [InlineData(60, 65)]
-    [InlineData(1200, 1300)]     // 1260, step 50 above 1000
-    public void ARiseAddsAMarginAndRoundsToACleanStep(double value, double expected)
+    [InlineData(0.8, 1)] [InlineData(1, 1)] [InlineData(1.1, 2)] [InlineData(2.2, 2.5)] [InlineData(2.6, 5)] [InlineData(5.1, 10)]
+    [InlineData(99, 100)] [InlineData(126, 200)] [InlineData(201, 250)] [InlineData(251, 500)] [InlineData(501, 1000)] [InlineData(1260, 2000)]
+    public void TheMaximumIsANiceNumber(double value, double expected) => Assert.Equal(expected, SpeedScale.RoundUp(value), 9);
+
+    [Fact]
+    public void ARiseAddsAMarginAndRoundsUpToANiceNumberAtOnce()
     {
-        var scale = new SpeedScale(50);
-        scale.Observe(value, 0);
-        Assert.Equal(expected, scale.Max);
+        var scale = new SpeedScale(100);
+        Assert.Equal(200, scale.Observe(120, 0));       // 120 + 5 % = 126, up to the next of 1, 2, 2.5, 5
+        Assert.Equal(250, scale.Observe(205, 1));       // 215.25
+        Assert.Equal(250, scale.Max);
     }
 
     [Fact]
@@ -21,28 +24,20 @@ public class SpeedScaleTests
     {
         var scale = new SpeedScale(100);
         for (int i = 0; i < 100; i++) Assert.Equal(100, scale.Observe(60 + (i % 7) * 5, i));
+        scale.Observe(150, 100);                        // up to 200
+        foreach (var v in new[] { 151.0, 170, 199, 160, 190 }) Assert.Equal(200, scale.Observe(v, 101));      // a creeping speed does not move it
     }
 
     [Fact]
-    public void AValueAboveTheMaximumRaisesItOnceAndTheNextSmallerOnesDoNotMoveItAgain()
-    {
-        var scale = new SpeedScale(100);
-        scale.Observe(120, 0);
-        Assert.Equal(130, scale.Max);     // 120 + 5 % = 126, up to 130
-        foreach (var v in new[] { 121.0, 125, 128, 126, 129 }) Assert.Equal(130, scale.Observe(v, 1));
-        Assert.Equal(140, scale.Observe(131, 2));     // beyond it: a new step, with margin (137.55 up to 140)
-    }
-
-    [Fact]
-    public void TheMaximumStepsBackOnlyAfterTheHoldTimeAndNeverBelowTheFloor()
+    public void TheMaximumHoldsThenFallsToTheNextNiceNumberAboveThePeak()
     {
         var scale = new SpeedScale(20);
         scale.Observe(400, 0);
-        Assert.Equal(420, scale.Max);
-        // Everything below half of 420 (210) for less than the hold time: nothing changes.
-        for (double t = 1; t < SpeedScale.FallHoldSeconds; t += 1) Assert.Equal(420, scale.Observe(100, t));
-        // At the hold time: the next clean value above the peak of the period (100 + 5 % = 105).
-        Assert.Equal(105, scale.Observe(100, SpeedScale.FallHoldSeconds + 1));
+        Assert.Equal(500, scale.Max);                    // 420 up to 500
+        // Everything below half of 500 (250) for less than the hold time: nothing changes.
+        for (double t = 1; t < SpeedScale.FallHoldSeconds; t += 1) Assert.Equal(500, scale.Observe(100, t));
+        // At the hold time: the next nice number above the peak of the period (100 + 5 % = 105).
+        Assert.Equal(200, scale.Observe(100, SpeedScale.FallHoldSeconds + 1));
         // Idle for another period: down to the floor, not below.
         double now = SpeedScale.FallHoldSeconds + 1;
         for (int i = 0; i < 100; i++) scale.Observe(0, now += 1);
@@ -53,11 +48,11 @@ public class SpeedScaleTests
     public void AValueAtHalfOfTheMaximumRestartsTheHoldTime()
     {
         var scale = new SpeedScale(20);
-        scale.Observe(400, 0);                                   // 420
+        scale.Observe(400, 0);                                   // 500
         for (double t = 1; t < 20; t++) scale.Observe(100, t);
-        scale.Observe(220, 20);                                  // at least half: the period starts over
-        for (double t = 21; t < 20 + SpeedScale.FallHoldSeconds; t++) Assert.Equal(420, scale.Observe(100, t));
-        Assert.True(scale.Observe(100, 20 + SpeedScale.FallHoldSeconds + 1) < 420);
+        scale.Observe(260, 20);                                  // at least half: the period starts over
+        for (double t = 21; t < 20 + SpeedScale.FallHoldSeconds; t++) Assert.Equal(500, scale.Observe(100, t));
+        Assert.True(scale.Observe(100, 20 + SpeedScale.FallHoldSeconds + 1) < 500);
     }
 
     [Fact]
@@ -66,10 +61,24 @@ public class SpeedScaleTests
         var scale = new SpeedScale(20);
         scale.Observe(400, 0);
         double now = 0;
-        // A steady 100 t/s for two minutes: one step down, then it stays (100 is above half of the new maximum, and below it).
+        // A steady 100 t/s for two minutes: one step down, then it stays (100 is at half of the new maximum, and below it).
         var seen = new HashSet<double>();
         for (int i = 0; i < 120; i++) seen.Add(scale.Observe(100, now += 1));
-        Assert.Equal(new HashSet<double> { 420, 105 }, seen);
+        Assert.Equal(new HashSet<double> { 500, 200 }, seen);
+    }
+
+    [Fact]
+    public void ASpeedThatSwingsAroundTheMaximumNeverMakesTheScaleChangePerSample()
+    {
+        var scale = new SpeedScale(100);
+        int changes = 0; double last = scale.Max;
+        for (int i = 0; i < 600; i++)
+        {
+            var v = 90 + 30 * Math.Sin(i * 0.9);        // 60 to 120 around the first maximum
+            var max = scale.Observe(v, i);
+            if (max != last) { changes++; last = max; }
+        }
+        Assert.Equal(1, changes);                        // one rise to 200, never back: the peak stays above half of it
     }
 
     [Fact]
@@ -89,6 +98,20 @@ public class SpeedScaleTests
         Assert.Equal(0.25, scale.Fraction(25));
         Assert.Equal(1, scale.Fraction(500));
         Assert.Equal(0, scale.Min);
+    }
+
+    [Fact]
+    public void TheChartScalesOfTheSpeedSectionFollowTheSameRule()
+    {
+        var h = new SpeedHistory();
+        var s = new EngineSnapshot("Strata", "m", EngineStatus.Idle);
+        s.Recent.Add(new RequestStats { DecodeTokensPerSecond = 30, PromptRead = 20_000, PromptMilliseconds = 40_000 });     // prefill 500 t/s
+        h.Add(DateTime.UnixEpoch.AddSeconds(1000), s);
+        Assert.Equal(50, h.DecodeChartScale.Max);        // 30 + 5 % up from 10
+        Assert.Equal(1000, h.PrefillChartScale.Max);     // 500 + 5 % up from 100
+        s.Recent[0].DecodeTokensPerSecond = 28;
+        h.Add(DateTime.UnixEpoch.AddSeconds(1002), s);
+        Assert.Equal(50, h.DecodeChartScale.Max);        // not changed by the next poll
     }
 }
 

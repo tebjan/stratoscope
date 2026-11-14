@@ -19,7 +19,7 @@ final class Panels {
         var groups: [[Section]] = []
         groups.append([Section(id: "live", height: 198) { [unowned self] _ in self.paintLive() }])
         if !s.isLoading {
-            if history != nil { groups.append([Section(id: "history", height: 100) { [unowned self] _ in self.paintHistory() }]) }
+            if history != nil { groups.append([Section(id: "history", height: 144) { [unowned self] _ in self.paintHistory() }]) }
             groups.append([Section(id: "speed", height: 96) { [unowned self] _ in self.paintSpeed() }])
             if let sys = s.system {
                 // A fourth row for the video memory when the engine reports it (custom server); the other engines keep three rows.
@@ -132,16 +132,15 @@ final class Panels {
         guard let h = history else { return }
         let inner = menuWidth - 2 * pad
         let curves: [(HistoryCurve, String, NSColor)] = [(.prefill, "Prefill", .systemOrange), (.decode, "Decode", .systemBlue), (.total, "Total", .labelColor)]
-        let column = inner / 3
         for (i, (curve, name, color)) in curves.enumerated() {
-            let x = pad + CGFloat(i) * column
+            let x = pad + [0, 0.3, 0.6][i] * inner      // the last name is the longest
             color.setFill(); NSRect(x: x, y: 14, width: 8, height: 3).fill()
             let nameWidth = NSAttributedString(string: name, attributes: [.font: font(12, bold: false)]).size().width
             text(name, x: x + 13, y: 8, size: 12, color: .secondaryLabelColor)
             let v = h.average(curve, now: Date().timeIntervalSince1970)     // the average of the raw samples of the window, not of the smoothed curve
             text(v.isNaN ? "–" : Fmt.number(v), x: x + 13 + nameWidth + 5, y: 8, size: 12, bold: true, color: curve == .total ? .labelColor : color)
         }
-        let gutter: CGFloat = 30, left = pad + gutter, right = menuWidth - pad, top: CGFloat = 32, plotH: CGFloat = 56
+        let gutter: CGFloat = 30, left = pad + gutter, right = menuWidth - pad, top: CGFloat = 32, plotH: CGFloat = 100
         let scale = h.graphScale
         NSColor.labelColor.withAlphaComponent(0.06).setFill()
         NSRect(x: left, y: top, width: right - left, height: plotH).fill()
@@ -181,11 +180,11 @@ final class Panels {
         let dv = dec.compactMap { $0 }, pv = pre.compactMap { $0 }
         text("Prefill", x: pad, y: 30, size: 11, bold: true, color: .systemOrange)
         text("\(pv.last.map { Fmt.number($0) } ?? "–") t/s", x: 0, y: 30, size: 11, right: pad + half)
-        sparkbars(pad, 48, half, 30, pre, max((pv.max() ?? 0) * 1.15, 100), .systemOrange)
+        sparkbars(pad, 48, half, 30, pre, history?.prefillChartScale.max ?? max((pv.max() ?? 0) * 1.15, 100), .systemOrange)
         text("Avg \(pv.isEmpty ? "–" : Fmt.number(pv.reduce(0, +) / Double(pv.count)))", x: pad, y: 80, size: 10)
         text("Decode", x: xr, y: 30, size: 11, bold: true, color: .systemBlue)
         text("\(dv.last.map { Fmt.number($0, 1) } ?? "–") t/s", x: 0, y: 30, size: 11, right: menuWidth - pad)
-        sparkbars(xr, 48, half, 30, dec, max((dv.max() ?? 0) * 1.15, 10), .systemBlue)
+        sparkbars(xr, 48, half, 30, dec, history?.decodeChartScale.max ?? max((dv.max() ?? 0) * 1.15, 10), .systemBlue)
         text("Avg \(dv.isEmpty ? "–" : Fmt.number(dv.reduce(0, +) / Double(dv.count), 1))", x: xr, y: 80, size: 10)
     }
 

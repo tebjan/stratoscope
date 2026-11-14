@@ -586,8 +586,8 @@ internal sealed class PanelPainter
     // MARK: History
 
     /// <summary>The height of the history block (a multiple of 4).</summary>
-    internal const float HistoryHeight = 100f;
-    private const float HistoryPlotHeight = 56f;
+    internal const float HistoryHeight = 144f;
+    private const float HistoryPlotHeight = 100f;
     private const float HistoryGutter = 30f;
     [ThreadStatic] private static double[]? historyAges, historyValues;
 
@@ -601,12 +601,11 @@ internal sealed class PanelPainter
     private float HistoryBlock(SpeedHistory history, float y)
     {
         var inner = Width - 2 * Pad;
-        var column = inner / 3;
         var curves = new[] { (HistoryCurve.Prefill, "Prefill", pal.Orange), (HistoryCurve.Decode, "Decode", pal.Blue), (HistoryCurve.Total, "Total", pal.Label) };
         for (int i = 0; i < curves.Length; i++)
         {
             var (curve, name, color) = curves[i];
-            var x = Pad + i * column;
+            var x = Pad + new[] { 0f, 0.3f, 0.6f }[i] * inner;      // the last name is the longest
             // One row: the colour mark, the name, the number. The number is the average of the raw samples of the 60 s window (not of the smoothed curve).
             using (var brush = new SolidBrush(color)) g.FillRectangle(brush, x, y + 14, 8, 3);
             T(name, x + 13, y + 8, Body, false, pal.Dim);
@@ -666,11 +665,11 @@ internal sealed class PanelPainter
         var pv = pre.Where(v => v.HasValue).Select(v => v!.Value).ToList();
         T("Prefill", Pad, y + 30, Body, true, pal.Orange);
         T((pv.Count > 0 ? Fmt.Number(pv.Last()) : Fmt.Missing) + " t/s", 0, y + 30, Body, false, null, Pad + half);
-        SparkBars(Pad, y + 48, half, 30, pre, Math.Max((pv.Count > 0 ? pv.Max() : 0) * 1.15, 100), pal.Orange);
+        SparkBars(Pad, y + 48, half, 30, pre, model.History?.PrefillChartScale.Max ?? Math.Max((pv.Count > 0 ? pv.Max() : 0) * 1.15, 100), pal.Orange);
         T("avg " + (pv.Count == 0 ? Fmt.Missing : Fmt.Number(pv.Average())), Pad, y + 80, Caption);
         T("Decode", xr, y + 30, Body, true, pal.Blue);
         T((dv.Count > 0 ? Fmt.Number(dv.Last(), 1) : Fmt.Missing) + " t/s", 0, y + 30, Body, false, null, Width - Pad);
-        SparkBars(xr, y + 48, half, 30, dec, Math.Max((dv.Count > 0 ? dv.Max() : 0) * 1.15, 10), pal.Blue);
+        SparkBars(xr, y + 48, half, 30, dec, model.History?.DecodeChartScale.Max ?? Math.Max((dv.Count > 0 ? dv.Max() : 0) * 1.15, 10), pal.Blue);
         T("avg " + (dv.Count == 0 ? Fmt.Missing : Fmt.Number(dv.Average(), 1)), xr, y + 80, Caption);
         return SpeedHeight;
     }

@@ -75,6 +75,9 @@ public sealed class SpeedHistory
     public SpeedScale RequestScale { get; } = new SpeedScale();
     /// <summary>The scale of the history graph (the largest of the three curves).</summary>
     public SpeedScale GraphScale { get; } = new SpeedScale();
+    /// <summary>The scales of the bar charts of the Speed section (the speed of the last finished requests): prefill from 100 t/s, decode from 10 t/s.</summary>
+    public SpeedScale PrefillChartScale { get; } = new SpeedScale(100);
+    public SpeedScale DecodeChartScale { get; } = new SpeedScale(10);
 
     public int Count => count;
 
@@ -86,6 +89,15 @@ public sealed class SpeedHistory
         var (prefill, decode) = Rates(s);
         AddSample(Seconds(utc), prefill, decode);
         if (RequestBars.PeakSpeed(RequestBars.From(s)) is double peak) RequestScale.Observe(peak, Seconds(utc));
+        if (s != null && s.Recent.Count > 0)
+        {
+            // The charts of the finished requests share the rule of the other scales: they do not change with every poll.
+            var recent = s.Recent.Take(12).ToList();
+            var decodeMax = recent.Max(r => r.DecodeTokensPerSecond ?? 0);
+            var prefillMax = recent.Max(r => r.PrefillTokensPerSecond(1500, 2000) ?? 0);
+            DecodeChartScale.Observe(decodeMax, Seconds(utc));
+            PrefillChartScale.Observe(prefillMax, Seconds(utc));
+        }
     }
 
     /// <summary>The prefill and decode speed of a snapshot as the curves take them (see the class comment).</summary>

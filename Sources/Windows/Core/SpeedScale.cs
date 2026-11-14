@@ -2,10 +2,10 @@ namespace Stratoscope.Core;
 
 /// <summary>
 /// An adaptive speed scale for bars and graphs: 0 to <see cref="Max"/> tokens per second. The maximum is slow on purpose.
-/// Rise: a value above the maximum sets the maximum to that value plus <see cref="RiseMargin"/>, rounded up to a clean step
-/// (126 becomes 130), so a speed that creeps upwards does not move the scale with every sample.
+/// Rise: a value above the maximum sets the maximum to that value plus <see cref="RiseMargin"/>, rounded up to a nice number (1, 2, 2.5 or 5 times a power of ten)
+/// (126 becomes 200), so a speed that creeps upwards does not move the scale with every sample.
 /// Fall: when every value stays below <see cref="FallBelow"/> of the maximum for <see cref="FallHoldSeconds"/>, the maximum steps back to the
-/// next clean value above the peak of that period (never below <see cref="Floor"/>). The new maximum is above the peak by the margin, so the
+/// next nice number above the peak of that period (never below <see cref="Floor"/>). The new maximum is above the peak by the margin, so the
 /// values that caused the step are above half of it: the scale does not oscillate, and a second step needs another full period.
 /// </summary>
 public sealed class SpeedScale
@@ -63,20 +63,21 @@ public sealed class SpeedScale
         return Max;
     }
 
-    /// <summary>The step of the clean values around <paramref name="value"/>: 1 below 10, 5 below 100, then a twentieth of the power of ten (100: 5, 1000: 50).</summary>
-    public static double CleanStep(double value)
-    {
-        if (value < 10) return 1;
-        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
-        return magnitude < 100 ? 5 : magnitude / 20;
-    }
+    private static readonly double[] NiceMantissas = { 1, 2, 2.5, 5, 10 };
 
-    /// <summary>The smallest clean value at or above <paramref name="value"/>.</summary>
+    /// <summary>
+    /// The smallest "nice number" at or above <paramref name="value"/>: 1, 2, 2.5, 5 times a power of ten (100, 200, 250, 500, 1000, ...).
+    /// Followed: the "nice numbers" of Heckbert's graph-axis algorithm (Graphics Gems, 1990), which axis code in monitoring graphs such as uPlot and
+    /// Grafana uses in the same way (increments of 1, 2, 2.5, 5), and the usual auto-range that rises at once and shrinks only after a hold; so the scale takes a few distinct values
+    /// and the labels stay readable.
+    /// </summary>
     public static double RoundUp(double value)
     {
         if (!double.IsFinite(value) || value <= 0) return 1;
-        var step = CleanStep(value);
-        return Math.Ceiling(value / step - 1e-9) * step;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
+        foreach (var m in NiceMantissas)
+            if (m * magnitude >= value * (1 - 1e-9)) return m * magnitude;
+        return 10 * magnitude;
     }
 }
 
