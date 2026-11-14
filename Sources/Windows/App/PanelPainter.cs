@@ -630,7 +630,11 @@ internal sealed class PanelPainter
         foreach (var (curve, _, color) in curves)
         {
             var n = history.ReadSmoothed(curve, model.Smoothing.Damping(), now, historyAges, historyValues);
-            var scale = history.ScaleOf(curve);
+            // The axis never cuts a curve: the adaptive maximum may step down after its hold while an older peak is still in the window,
+            // so the drawn maximum is at least the largest value on screen plus the margin (it falls once the peak scrolls out).
+            var visible = 0.0;
+            for (int k = 0; k < n; k++) if (double.IsFinite(historyValues[k])) visible = Math.Max(visible, historyValues[k]);
+            var max = Math.Max(history.ScaleOf(curve).Max, SpeedScale.RoundUp(visible * (1 + SpeedScale.RiseMargin)));
             using (var pen = new Pen(color, curve == HistoryCurve.Total ? 2f : 1.5f) { LineJoin = LineJoin.Round })
             {
                 var run = new List<PointF>(n);
@@ -639,7 +643,7 @@ internal sealed class PanelPainter
                 {
                     if (double.IsNaN(historyValues[k])) { Flush(); continue; }
                     var px = right - (float)(historyAges[k] / SpeedHistory.WindowSeconds) * (right - left);
-                    var py = top + plotH - (float)scale.Fraction(historyValues[k]) * plotH;
+                    var py = top + plotH - (float)Math.Min(1, Math.Max(0, historyValues[k] / max)) * plotH;
                     run.Add(new PointF(px, py));
                 }
                 Flush();
