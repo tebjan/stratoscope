@@ -31,7 +31,7 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 <img src="img/windows-readout-parallel.png" alt="The readout with 1, 2, 4 and 8 parallel requests, dark and light" width="720">
 
 - **Position**: centred in the free gap of the taskbar. It moves only when the taskbar geometry changes, then once.
-- **Panel**: the Mac menu, with tabs for several servers. Below the live block a graph shows the last 60 seconds: orange prefill speed, blue decode speed, black total throughput (prompt plus generated tokens per second), with the average of each over the 60 s (of the raw samples, not the smoothed curve) and an axis from 0 to the adaptive maximum. Two or more parallel requests show a sum bar with one smaller bar per request.
+- **Panel**: the Mac menu, with tabs for several servers. Below the live block a graph shows the last 60 seconds: orange prefill speed, blue decode speed, black total throughput (prompt plus generated tokens per second), with one legend row (colour mark, name, average over the 60 s of the raw samples, not the smoothed curve) and the adaptive maximum labelled at the top. Two or more parallel requests show a sum bar with one smaller bar per request.
 - **Tooltips**: only data the element does not show. Nothing to add, no tooltip.
 - **Keys**: Esc closes, Left and Right switch tabs, Ctrl+Q quits.
 <img src="img/windows-readout-states.png" alt="Every state of the readout, dark and light" width="720">

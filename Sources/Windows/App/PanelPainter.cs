@@ -586,8 +586,8 @@ internal sealed class PanelPainter
     // MARK: History
 
     /// <summary>The height of the history block (a multiple of 4).</summary>
-    internal const float HistoryHeight = 152f;
-    private const float HistoryPlotHeight = 64f;
+    internal const float HistoryHeight = 100f;
+    private const float HistoryPlotHeight = 56f;
     private const float HistoryGutter = 30f;
     [ThreadStatic] private static double[]? historyAges, historyValues;
 
@@ -595,29 +595,27 @@ internal sealed class PanelPainter
     /// The last 60 seconds in one graph, like a frame-rate graph: orange is the prefill speed (prompt tokens per second), blue the decode speed
     /// (generated tokens per second) and the ink colour the total throughput (prompt plus generated tokens per second, the vLLM and
     /// OpenTelemetry GenAI meaning, see <see cref="SpeedHistory"/>). The total is a third curve in the same graph, not a separate sparkline: it shares the axis,
-    /// so it reads directly against its two parts, and it costs no height. The legend above the graph gives the current value of each curve.
-    /// The vertical axis is the adaptive scale of the history (0 to its maximum); the horizontal one runs from 60 s ago to now.
+    /// so it reads directly against its two parts, and it costs no height. The legend row above the graph gives, for each curve, the colour mark, the name and its average over the 60 s (of the raw samples).
+    /// The vertical axis is the adaptive scale of the history (0 to its maximum); the horizontal one is the last 60 s, newest on the right, and has no labels.
     /// </summary>
     private float HistoryBlock(SpeedHistory history, float y)
     {
         var inner = Width - 2 * Pad;
-        T("History", Pad, y + 8, Body, true);
-        T("Average of the last 60 s, t/s", 0, y + 9, Caption, false, pal.Dim, Width - Pad);
         var column = inner / 3;
         var curves = new[] { (HistoryCurve.Prefill, "Prefill", pal.Orange), (HistoryCurve.Decode, "Decode", pal.Blue), (HistoryCurve.Total, "Total", pal.Label) };
         for (int i = 0; i < curves.Length; i++)
         {
             var (curve, name, color) = curves[i];
             var x = Pad + i * column;
-            using (var brush = new SolidBrush(color)) g.FillRectangle(brush, x, y + 33, 8, 3);
-            T(name, x + 13, y + 28, Caption, false, pal.Dim);
-            // The average of the raw samples of the window, not of the smoothed curve. Only the average fits the column without more height.
+            // One row: the colour mark, the name, the number. The number is the average of the raw samples of the 60 s window (not of the smoothed curve).
+            using (var brush = new SolidBrush(color)) g.FillRectangle(brush, x, y + 14, 8, 3);
+            T(name, x + 13, y + 8, Body, false, pal.Dim);
             var average = history.Average(curve, SpeedHistory.Seconds(model.Now));
-            T(double.IsNaN(average) ? Fmt.Missing : Fmt.Number(average), x + 13, y + 41, Body, true, curve == HistoryCurve.Total ? null : color);
+            T(double.IsNaN(average) ? Fmt.Missing : Fmt.Number(average), x + 13 + TextWidth(name, F(Body, false)) + 5, y + 8, Body, true, curve == HistoryCurve.Total ? null : color);
         }
 
         var left = Pad + HistoryGutter; var right = Width - Pad;
-        var top = y + 66; var plotH = HistoryPlotHeight;
+        var top = y + 32; var plotH = HistoryPlotHeight;
         var scale = history.GraphScale;
         using (var brush = new SolidBrush(pal.Faint(0.06)))
             g.FillRectangle(brush, left, top, right - left, plotH);
@@ -627,12 +625,7 @@ internal sealed class PanelPainter
                 var gy = (float)Math.Round(top + plotH - plotH * f) - 0.5f;
                 g.DrawLine(pen, left, gy, right, gy);
             }
-        T(Fmt.Number(scale.Max), 0, top - 6, Caption, false, pal.Dim, left - 4);
-        T(Fmt.Number(scale.Max / 2), 0, top + plotH / 2 - 6, Caption, false, pal.Dim, left - 4);
-        T(Fmt.Number(scale.Min), 0, top + plotH - 6, Caption, false, pal.Dim, left - 4);
-        T("60 s ago", left, top + plotH + 3, Caption, false, pal.Dim);
-        T("now", 0, top + plotH + 3, Caption, false, pal.Dim, right);
-
+        T(Fmt.Number(scale.Max), 0, top - 6, Caption, false, pal.Dim, left - 4);     // the top of the scale; 0 is the baseline
         historyAges ??= new double[SpeedHistory.Capacity]; historyValues ??= new double[SpeedHistory.Capacity];
         var now = SpeedHistory.Seconds(model.Now);
         var saved = g.SmoothingMode;

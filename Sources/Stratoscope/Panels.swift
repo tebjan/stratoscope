@@ -19,7 +19,7 @@ final class Panels {
         var groups: [[Section]] = []
         groups.append([Section(id: "live", height: 198) { [unowned self] _ in self.paintLive() }])
         if !s.isLoading {
-            if history != nil { groups.append([Section(id: "history", height: 152) { [unowned self] _ in self.paintHistory() }]) }
+            if history != nil { groups.append([Section(id: "history", height: 100) { [unowned self] _ in self.paintHistory() }]) }
             groups.append([Section(id: "speed", height: 96) { [unowned self] _ in self.paintSpeed() }])
             if let sys = s.system {
                 // A fourth row for the video memory when the engine reports it (custom server); the other engines keep three rows.
@@ -126,33 +126,28 @@ final class Panels {
     /// The last 60 seconds in one graph, like a frame-rate graph: orange is the prefill speed (prompt tokens per second), blue the decode speed
     /// (generated tokens per second) and the label colour the total throughput (prompt plus generated tokens per second, the vLLM and
     /// OpenTelemetry GenAI meaning, see `SpeedHistory`). The total is a third curve in the same graph: it shares the axis, so it reads directly
-    /// against its two parts, and it costs no height. The legend gives the current value of each curve. The vertical axis is the adaptive scale
-    /// of the history (0 to its maximum); the horizontal one runs from 60 s ago to now. Not built or run on the Windows PC this was written on.
+    /// against its two parts, and it costs no height. The legend is one row: colour mark, name and the average over the 60 s (of the raw samples). The vertical axis is the adaptive scale
+    /// of the history (0 at the baseline, its maximum labelled at the top); the horizontal one is the last 60 s, unlabelled. Not built or run on the Windows PC this was written on.
     func paintHistory() {
         guard let h = history else { return }
         let inner = menuWidth - 2 * pad
-        text("History", x: pad, y: 8, size: 12, bold: true)
-        text("Average of the last 60 s, t/s", x: 0, y: 9, size: 10, color: .secondaryLabelColor, right: menuWidth - pad)
         let curves: [(HistoryCurve, String, NSColor)] = [(.prefill, "Prefill", .systemOrange), (.decode, "Decode", .systemBlue), (.total, "Total", .labelColor)]
         let column = inner / 3
         for (i, (curve, name, color)) in curves.enumerated() {
             let x = pad + CGFloat(i) * column
-            color.setFill(); NSRect(x: x, y: 33, width: 8, height: 3).fill()
-            text(name, x: x + 13, y: 28, size: 10, color: .secondaryLabelColor)
+            color.setFill(); NSRect(x: x, y: 14, width: 8, height: 3).fill()
+            let nameWidth = NSAttributedString(string: name, attributes: [.font: font(12, bold: false)]).size().width
+            text(name, x: x + 13, y: 8, size: 12, color: .secondaryLabelColor)
             let v = h.average(curve, now: Date().timeIntervalSince1970)     // the average of the raw samples of the window, not of the smoothed curve
-            text(v.isNaN ? "–" : Fmt.number(v), x: x + 13, y: 41, size: 12, bold: true, color: curve == .total ? .labelColor : color)
+            text(v.isNaN ? "–" : Fmt.number(v), x: x + 13 + nameWidth + 5, y: 8, size: 12, bold: true, color: curve == .total ? .labelColor : color)
         }
-        let gutter: CGFloat = 30, left = pad + gutter, right = menuWidth - pad, top: CGFloat = 66, plotH: CGFloat = 64
+        let gutter: CGFloat = 30, left = pad + gutter, right = menuWidth - pad, top: CGFloat = 32, plotH: CGFloat = 56
         let scale = h.graphScale
         NSColor.labelColor.withAlphaComponent(0.06).setFill()
         NSRect(x: left, y: top, width: right - left, height: plotH).fill()
         NSColor.labelColor.withAlphaComponent(0.16).setFill()
         for f in [0.0, 0.5, 1.0] { NSRect(x: left, y: (top + plotH - plotH * CGFloat(f)).rounded() - 1, width: right - left, height: 1).fill() }
-        text(Fmt.number(scale.max), x: 0, y: top - 6, size: 10, color: .secondaryLabelColor, right: left - 4)
-        text(Fmt.number(scale.max / 2), x: 0, y: top + plotH / 2 - 6, size: 10, color: .secondaryLabelColor, right: left - 4)
-        text(Fmt.number(scale.min), x: 0, y: top + plotH - 6, size: 10, color: .secondaryLabelColor, right: left - 4)
-        text("60 s ago", x: left, y: top + plotH + 3, size: 10, color: .secondaryLabelColor)
-        text("now", x: 0, y: top + plotH + 3, size: 10, color: .secondaryLabelColor, right: right)
+        text(Fmt.number(scale.max), x: 0, y: top - 6, size: 10, color: .secondaryLabelColor, right: left - 4)     // the top of the scale; 0 is the baseline
 
         NSGraphicsContext.saveGraphicsState()
         NSRect(x: left, y: top - 1, width: right - left, height: plotH + 2).clip()
