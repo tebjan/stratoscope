@@ -22,7 +22,7 @@ internal static class ImageSet
     public static readonly string[] Names =
     {
         "panel-dark", "panel-light", "panel-decode-dark", "panel-decode-light", "panel-parallel-dark", "panel-parallel-light", "panel-parallel3-dark", "panel-parallel3-light", "hover-states", "chart-slots", "readout-zoom", "readout-slots", "readout-numbers", "readout-glyph-sizes", "panel-hover-dark", "panel-hover-light", "panel-tooltips", "panel-offline", "panel-no-model",
-        "readout-states", "readout-parallel", "readout-scales", "readout-layouts",
+        "readout-states", "readout-parallel", "readout-parallel-100", "readout-parallel-200", "readout-scales", "readout-layouts",
     };
 
     private static EngineSnapshot Demo(string scenario) => new DemoProvider(scenario, () => Reference).Snapshot();
@@ -169,6 +169,8 @@ internal static class ImageSet
                 case "panel-no-model": WithPanel(P(name), new EngineSnapshot("Strata", "-", EngineStatus.NoModel), ServerState.NoModel, false); break;
                 case "readout-states": SnapshotRenderer.StatesSheet(P(name)); break;
                 case "readout-parallel": SnapshotRenderer.ParallelSheet(P(name)); break;
+                case "readout-parallel-100": SnapshotRenderer.ParallelSheet(P(name), 96); break;
+                case "readout-parallel-200": SnapshotRenderer.ParallelSheet(P(name), 192); break;
                 case "readout-scales": SnapshotRenderer.ScalesSheet(P(name), dpis); break;
                 case "readout-layouts": SnapshotRenderer.LayoutsSheet(P(name)); break;
             }

@@ -25,7 +25,7 @@ No administrator rights. It installs into `%LOCALAPPDATA%\Stratoscope`, starts w
 ## What you see
 
 - **Readout**, one item per server: a glyph and the speed (`[bar] 247 t/s`, `[dot] 26 t/s`). While nothing runs, only the glyph.
-- **Glyph**: one bar per running request, up to eight, each as wide as the single bar and packed into the height of one: a request that reads shows its prompt progress (colored by how much came from the cache while it is the only request, orange with several), one that writes shows its own speed in blue against a scale that adapts to what runs (rises with a margin, steps back after 25 s below half). Green dot when ready; grey ring when offline or no model; dotted ring while loading; red mark on an error.
+- **Glyph**: one bar per running request, up to eight, each as wide as the single bar; with several the stack grows taller, centred on the single bar (bars 3 epx high with a 1 epx gap, shrinking to at least 2 device pixels so the stack stays within 32 epx of the 48 epx taskbar): a request that reads shows its prompt progress (colored by how much came from the cache while it is the only request, orange with several), one that writes shows its own speed in blue against a scale that adapts to what runs (rises with a margin, steps back after 25 s below half). Green dot when ready; grey ring when offline or no model; dotted ring while loading; red mark on an error.
 - **Custom engine**: reading and writing per request from its `/ui/state` while requests run; without it, one busy state ("running") and no speed.
 - **Speed**: plain digits, `10k` from 9,999.5 t/s. With parallel requests it is the total.
 <img src="img/windows-readout-parallel.png" alt="The readout with 1, 2, 4 and 8 parallel requests, dark and light" width="720">

@@ -270,9 +270,10 @@ public class RequestBarTests
         for (int n = 2; n <= 8; n++)
         {
             var (bar, gap, total) = ReadoutPainter.BarRows(n, m);
-            Assert.True(bar >= 1);
+            Assert.True(bar >= 2);
             Assert.Equal(n * bar + (n - 1) * gap, total);
-            Assert.True(total <= m.Px(ReadoutPainter.StackHeight), n + " bars at " + dpi + " DPI");
+            Assert.True(total <= m.Px(ReadoutPainter.MaxStackHeight), n + " bars at " + dpi + " DPI");
+            Assert.True(bar >= 2 && gap >= 1, n + " bars at " + dpi + " DPI");
         }
     }
 }

@@ -526,16 +526,16 @@ internal static class SnapshotRenderer
     /// Parallel requests in the readout: one running request that reads and one that writes, then 2, 4 and 8 requests (the first of them
     /// reading, the others writing at speeds below the scale of 0 to 125 t/s), on dark and light taskbars at 150 %. Opaque PNG.
     /// </summary>
-    public static void ParallelSheet(string path)
+    public static void ParallelSheet(string path, int dpi = 144)
     {
         const double scaleMax = 125;
-        List<ReadoutItem> Row(int count, bool firstReads)
+        List<ReadoutItem> Row(int count, int readers)
         {
             var speeds = new[] { 118.0, 96, 82, 74, 61, 47, 33, 21 };
-            var slots = Enumerable.Range(0, count).Select(i => firstReads && i == 0
+            var slots = Enumerable.Range(0, count).Select(i => i < readers
                 ? new BatchSlot { Index = i, State = "reading", PromptTokens = 60_000, PromptRead = 38_000 }
                 : new BatchSlot { Index = i, State = "decoding", Generated = 900, TokensPerSecond = speeds[i] }).ToList();
-            var reading = count == 1 && firstReads;
+            var reading = count == 1 && readers == 1;
             var total = slots.Where(s => s.IsDecoding).Sum(s => s.TokensPerSecond ?? 0);
             var snapshot = new EngineSnapshot("Strata", "m", reading ? EngineStatus.Prefill : EngineStatus.Decode)
             {
@@ -548,9 +548,9 @@ internal static class SnapshotRenderer
         }
         var rows = new List<(string Label, List<ReadoutItem> Items)>
         {
-            ("1 request, reading", Row(1, true)), ("1 request, writing", Row(1, false)), ("2 requests", Row(2, true)), ("4 requests", Row(4, true)), ("8 requests", Row(8, true)),
+            ("1 reading", Row(1, 1)), ("1 writing", Row(1, 0)), ("2: 1 reading", Row(2, 1)), ("3: 1 reading", Row(3, 1)), ("4: 1 reading", Row(4, 1)), ("5: 1 reading", Row(5, 1)), ("6: 2 reading", Row(6, 2)), ("7: 1 reading", Row(7, 1)), ("8: 2 reading", Row(8, 2)), ("8 writing", Row(8, 0)),
         };
-        var m = UiMetrics.At(144, 1.0, true, true);
+        var m = UiMetrics.At(dpi, 1.0, true, true);
         var w = m.Px(330); var h = m.Px(TaskbarHeight);
         var labelW = m.Px(150);
         using (var bmp = new Bitmap(2 * (labelW + w) + m.Px(24), rows.Count * (h + m.Px(6)) + m.Px(8), PixelFormat.Format24bppRgb))
@@ -562,7 +562,7 @@ internal static class SnapshotRenderer
                 for (int c = 0; c < 2; c++)
                 {
                     var dark = c == 0;
-                    var mm = UiMetrics.At(144, 1.0, dark, dark);
+                    var mm = UiMetrics.At(dpi, 1.0, dark, dark);
                     for (int r = 0; r < rows.Count; r++)
                     {
                         var x = c * (labelW + w + m.Px(8)); var y = m.Px(4) + r * (h + m.Px(6));

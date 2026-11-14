@@ -147,21 +147,23 @@ internal static class ReadoutPainter
     /// <summary>The width of the glyph of an item: the bar slot when it shows request bars, else the width of its state's glyph.</summary>
     internal static int GlyphWidth(ReadoutItem item, UiMetrics m) => item.Bars.Count > 0 ? m.Px(BarWidth) : GlyphWidth(item.State, m);
 
-    /// <summary>The room the stack of request bars may use together: the bar of one request keeps its height, several share this.</summary>
-    internal const float StackHeight = 8f;
+    /// <summary>The most height the stack of request bars may take, of the 48 epx of the taskbar: 8 epx stay free above and below.</summary>
+    internal const float MaxStackHeight = 32f;
+    /// <summary>The height a bar of a stack starts at, epx. It shrinks when the stack would not fit.</summary>
+    internal const float StackBarHeight = 3f;
 
     /// <summary>
     /// The rows of <paramref name="count"/> bars in device pixels: the height of each bar, the gap between two and the height of the stack.
-    /// One bar is the bar of old (<see cref="GlyphHeight"/>). Several share <see cref="StackHeight"/>, packed tightly: a gap of one pixel
-    /// while the bars are at least two pixels high or there are at most four, none otherwise; no bar is thinner than one device pixel.
+    /// One bar is the bar of old (<see cref="GlyphHeight"/>). With several the stack grows taller, centred on the place of the single bar
+    /// (the glyph box is centred on the centre line): each bar is <see cref="StackBarHeight"/> high with a gap of one epx, and shrinks only
+    /// as far as the stack needs to stay within <see cref="MaxStackHeight"/>; never below 2 device pixels with a gap of at least 1.
     /// </summary>
     internal static (int Bar, int Gap, int Total) BarRows(int count, UiMetrics m)
     {
         if (count <= 1) { var h = GlyphHeightPx(m, true); return (h, 0, h); }
-        var available = m.Px(StackHeight);
-        var gap = count <= 4 ? 1 : 0;
-        var bar = Math.Max(1, (available - gap * (count - 1)) / count);
-        if (bar == 1 && gap == 1 && count > 4) gap = 0;
+        var gap = Math.Max(1, m.Px(1));
+        var bar = Math.Max(2, m.Px(StackBarHeight));
+        while (bar > 2 && count * bar + (count - 1) * gap > m.Px(MaxStackHeight)) bar--;
         return (bar, gap, bar * count + gap * (count - 1));
     }
 
