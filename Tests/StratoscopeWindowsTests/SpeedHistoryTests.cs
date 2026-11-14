@@ -167,6 +167,74 @@ public class CounterRateTests
         Assert.Equal(100, h.Latest(HistoryCurve.Prefill), 9);
     }
 
+    // The custom 27B engine publishes q27:generation_tokens_total once a second, about 100 tokens at a time (recorded 2026-11-14: steps of
+    // 112, 95, 115, ... between reads half a second apart, in between 0). Two neighbouring reads then differ by 0 and 200 in turn.
+    private static double PublishedOncePerSecond(double readSeconds) => 100 * Math.Floor(readSeconds - 0.13) + 100;
+
+    [Fact]
+    public void ACounterPublishedOncePerSecondGivesASteadyRateNotAPingPong()
+    {
+        var h = new SpeedHistory();
+        double[] jitter = { 0, 0.04, -0.03, 0.05, -0.02, 0.01, 0.03, -0.04 };         // the reads do not come exactly every half second
+        double lo = double.MaxValue, hi = double.MinValue;
+        for (int i = 0; i < 80; i++)
+        {
+            var t = 0.5 * i + jitter[i % jitter.Length];
+            h.AddCounters(At(t), C(0, PublishedOncePerSecond(t)));
+            if (t > 5) { var v = h.Latest(HistoryCurve.Decode); lo = Math.Min(lo, v); hi = Math.Max(hi, v); }
+        }
+        Assert.InRange(lo, 85, 115);      // the neighbour deltas gave 0 and 200
+        Assert.InRange(hi, 85, 115);
+    }
+
+    [Fact]
+    public void TheRecordedEngineCountersGiveNoPingPong()
+    {
+        // 80 real reads of the custom engine's counters (see the note in the file): the generation counter rises in steps once a second.
+        var reads = System.Text.Json.JsonDocument.Parse(Fixtures.Text("custom/custom-counters-steps-per-second.json")).RootElement.GetProperty("reads");
+        var h = new SpeedHistory();
+        var rates = new List<double>(); var neighbour = new List<double>();
+        double? previous = null;
+        foreach (var r in reads.EnumerateArray())
+        {
+            var t = r.GetProperty("t").GetDouble(); var g = r.GetProperty("generated").GetDouble();
+            h.AddCounters(At(t), C(r.GetProperty("prefill").GetDouble(), g));
+            if (t > 10) rates.Add(h.Latest(HistoryCurve.Decode));
+            if (previous is double p && t > 10) neighbour.Add((g - p) / 0.5);
+            previous = g;
+        }
+        double Spread(List<double> v) { var m = v.Average(); return Math.Sqrt(v.Average(x => (x - m) * (x - m))); }
+        Assert.True(Spread(rates) < Spread(neighbour) / 2, $"spread {Spread(rates):0.0} against {Spread(neighbour):0.0} of the neighbour deltas");
+        Assert.True(rates.Max() < 150, $"largest {rates.Max():0.0}");
+    }
+
+    [Fact]
+    public void ASteadilyRisingCounterKeepsTheShortWindow()
+    {
+        var h = new SpeedHistory();
+        for (int i = 0; i < 20; i++) h.AddCounters(At(0.5 * i), C(0, 50.0 * i));        // 100 t/s, a rise at every read
+        Assert.Equal(100, h.Latest(HistoryCurve.Decode), 6);
+    }
+
+    [Fact]
+    public void WhenTheCounterStopsTheRateFallsToZeroWithinTheHold()
+    {
+        var h = new SpeedHistory();
+        for (int i = 0; i < 20; i++) h.AddCounters(At(0.5 * i), C(0, 100.0 * Math.Floor(0.5 * i)));
+        Assert.True(h.Latest(HistoryCurve.Decode) > 50);
+        for (int i = 20; i < 28; i++) h.AddCounters(At(0.5 * i), C(0, 100.0 * 9));       // nothing more is published
+        Assert.Equal(0, h.Latest(HistoryCurve.Decode));
+    }
+
+    [Fact]
+    public void AStepAfterALongQuietTimeIsOneBurstNotARateOverTheQuietTime()
+    {
+        var h = new SpeedHistory();
+        for (int i = 0; i <= 40; i++) h.AddCounters(At(0.5 * i), C(0, 0));
+        h.AddCounters(At(20.5), C(0, 100));
+        Assert.Equal(100 / CounterRate.BurstSeconds, h.Latest(HistoryCurve.Decode), 6);
+    }
+
     [Fact]
     public void TheFullPollLeavesTheCurvesToTheCountersWhileTheyAreFresh()
     {

@@ -99,14 +99,16 @@ public sealed class SpeedHistory
 
     /// <summary>How long after the last counter sample the full polls leave the curves to the counters (a few sample intervals, and more than a full poll takes).</summary>
     private const double CounterFreshSeconds = 3;
-    private double lastCounterSeconds = double.NaN, lastCounterPrefill = double.NaN, lastCounterGenerated = double.NaN;
+    private double lastCounterSeconds = double.NaN;
     private double counterSampleSeconds = double.NegativeInfinity;
+    private readonly CounterRate prefillRate = new(), generatedRate = new();
 
     /// <summary>
-    /// A sample from the light counter read (every <see cref="SampleSeconds"/>): prefill speed from the delta of the computed prompt tokens, decode
-    /// speed from the delta of the generated tokens, over the seconds between the two reads; Total is their sum. Returns true when a sample was
-    /// added. The first read only sets the baseline; a counter that fell (the engine restarted) adds an unknown sample (a gap) and a new baseline;
-    /// a gap over <see cref="MaxPollGapSeconds"/> adds nothing. Null or incomplete counters add nothing, and the full polls feed the curves.
+    /// A sample from the light counter read (every <see cref="SampleSeconds"/>): prefill speed from the computed prompt tokens, decode speed from
+    /// the generated tokens, each the rate of its counter between the reads at which it rose (<see cref="CounterRate"/>: an engine that publishes
+    /// its counter once a second gives no 0, 2x, 0, 2x ping-pong); Total is their sum. Returns true when a sample was added. The first read only
+    /// sets the baseline; a counter that fell (the engine restarted) adds an unknown sample (a gap) and a new baseline; a gap over
+    /// <see cref="MaxPollGapSeconds"/> adds nothing and starts over. Null or incomplete counters add nothing, and the full polls feed the curves.
     /// </summary>
     public bool AddCounters(DateTime utc, EngineCounters? counters)
     {
@@ -115,12 +117,18 @@ public sealed class SpeedHistory
             || !double.IsFinite(prefill) || !double.IsFinite(generated)) return false;
         var elapsed = now - lastCounterSeconds;
         var hadBaseline = !double.IsNaN(lastCounterSeconds) && elapsed > 0 && elapsed <= MaxPollGapSeconds;
-        var before = (Prefill: lastCounterPrefill, Generated: lastCounterGenerated);
-        lastCounterSeconds = now; lastCounterPrefill = prefill; lastCounterGenerated = generated;
-        if (!hadBaseline) return false;
+        lastCounterSeconds = now;
+        if (!hadBaseline)
+        {
+            prefillRate.Reset(); generatedRate.Reset();
+            prefillRate.Update(now, prefill); generatedRate.Update(now, generated);
+            return false;
+        }
         counterSampleSeconds = now;
-        if (prefill < before.Prefill || generated < before.Generated) { AddSample(now, double.NaN, double.NaN); return true; }
-        AddSample(now, (prefill - before.Prefill) / elapsed, (generated - before.Generated) / elapsed);
+        var p = prefillRate.Update(now, prefill);
+        var g = generatedRate.Update(now, generated);
+        if (double.IsNaN(p) || double.IsNaN(g)) { AddSample(now, double.NaN, double.NaN); return true; }     // a counter fell: a gap
+        AddSample(now, p, g);
         return true;
     }
 

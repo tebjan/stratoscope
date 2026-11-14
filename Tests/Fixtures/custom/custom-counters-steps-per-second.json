@@ -1,0 +1,405 @@
+{
+ "note": "q27:generation_tokens_total and q27:prefill_tokens_total of the custom 27B engine (rc serving-rc4-20261114-0745) behind llama-swap v270, read every 0.5 s with GET /upstream/<model>/metrics while one request decoded, 2026-11-14. t is the receive time in seconds from the first read. The generation counter rises in steps of about 100 tokens once a second.",
+ "reads": [
+  {
+   "t": 0.0,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 0.467,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 0.995,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 1.435,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 1.991,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 2.49,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 2.988,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 3.452,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 3.989,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 4.488,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 4.985,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 5.513,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 5.978,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 6.506,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 6.956,
+   "generated": 447990.0,
+   "prefill": 1252687.0
+  },
+  {
+   "t": 7.435,
+   "generated": 447991.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 7.996,
+   "generated": 447991.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 8.528,
+   "generated": 448103.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 9.026,
+   "generated": 448103.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 9.46,
+   "generated": 448198.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 10.024,
+   "generated": 448198.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 10.49,
+   "generated": 448313.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 11.0,
+   "generated": 448313.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 11.475,
+   "generated": 448313.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 11.99,
+   "generated": 448313.0,
+   "prefill": 1252837.0
+  },
+  {
+   "t": 12.487,
+   "generated": 448314.0,
+   "prefill": 1253286.0
+  },
+  {
+   "t": 13.001,
+   "generated": 448406.0,
+   "prefill": 1253286.0
+  },
+  {
+   "t": 13.466,
+   "generated": 448406.0,
+   "prefill": 1253286.0
+  },
+  {
+   "t": 14.026,
+   "generated": 448406.0,
+   "prefill": 1253286.0
+  },
+  {
+   "t": 14.52,
+   "generated": 448407.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 14.99,
+   "generated": 448407.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 15.513,
+   "generated": 448517.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 15.99,
+   "generated": 448517.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 16.516,
+   "generated": 448605.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 17.03,
+   "generated": 448605.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 17.444,
+   "generated": 448685.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 17.99,
+   "generated": 448685.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 18.52,
+   "generated": 448802.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 19.02,
+   "generated": 448802.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 19.546,
+   "generated": 448901.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 19.997,
+   "generated": 448901.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 20.525,
+   "generated": 448994.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 21.024,
+   "generated": 448994.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 21.486,
+   "generated": 449115.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 22.018,
+   "generated": 449115.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 22.544,
+   "generated": 449188.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 22.992,
+   "generated": 449188.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 23.485,
+   "generated": 449263.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 24.043,
+   "generated": 449263.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 24.513,
+   "generated": 449359.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 25.021,
+   "generated": 449359.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 25.506,
+   "generated": 449463.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 25.986,
+   "generated": 449463.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 26.497,
+   "generated": 449541.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 26.993,
+   "generated": 449541.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 27.522,
+   "generated": 449672.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 28.02,
+   "generated": 449672.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 28.518,
+   "generated": 449777.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 29.014,
+   "generated": 449777.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 29.48,
+   "generated": 449894.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 29.99,
+   "generated": 449894.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 30.516,
+   "generated": 450000.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 31.016,
+   "generated": 450000.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 31.45,
+   "generated": 450000.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 31.988,
+   "generated": 450085.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 32.516,
+   "generated": 450174.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 32.986,
+   "generated": 450174.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 33.434,
+   "generated": 450174.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 34.028,
+   "generated": 450301.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 34.49,
+   "generated": 450301.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 35.0,
+   "generated": 450301.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 35.435,
+   "generated": 450301.0,
+   "prefill": 1253600.0
+  },
+  {
+   "t": 36.022,
+   "generated": 450302.0,
+   "prefill": 1253986.0
+  },
+  {
+   "t": 36.523,
+   "generated": 450302.0,
+   "prefill": 1253986.0
+  },
+  {
+   "t": 37.018,
+   "generated": 450398.0,
+   "prefill": 1253986.0
+  },
+  {
+   "t": 37.519,
+   "generated": 450398.0,
+   "prefill": 1253986.0
+  },
+  {
+   "t": 38.019,
+   "generated": 450492.0,
+   "prefill": 1253986.0
+  },
+  {
+   "t": 38.529,
+   "generated": 450492.0,
+   "prefill": 1253986.0
+  },
+  {
+   "t": 39.011,
+   "generated": 450596.0,
+   "prefill": 1253986.0
+  },
+  {
+   "t": 39.433,
+   "generated": 450596.0,
+   "prefill": 1253986.0
+  }
+ ]
+}

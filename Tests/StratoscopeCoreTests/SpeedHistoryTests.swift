@@ -204,7 +204,28 @@ import Testing
         #expect(h.latest(.total).isNaN)
         #expect(!h.addCounters(now: Date(timeIntervalSince1970: 1), prefillComputed: nil, generated: 5))
         #expect(h.addCounters(now: Date(timeIntervalSince1970: 1.5), prefillComputed: 120, generated: 130))
-        #expect(abs(h.latest(.prefill) - 200) < 1e-9)
+        #expect(abs(h.latest(.prefill) - 100) < 1e-9)      // +100 in the second since the new baseline at 0.5
+    }
+
+    /// The custom 27B engine publishes its generation counter once a second, about 100 tokens at a time; neighbouring reads differ by 0 and 200.
+    @Test func testACounterPublishedOncePerSecondGivesASteadyRateNotAPingPong() {
+        var h = SpeedHistory()
+        let jitter = [0.0, 0.04, -0.03, 0.05, -0.02, 0.01, 0.03, -0.04]
+        var lo = Double.greatestFiniteMagnitude, hi = -Double.greatestFiniteMagnitude
+        for i in 0..<80 {
+            let t = 0.5 * Double(i) + jitter[i % jitter.count]
+            h.addCounters(now: Date(timeIntervalSince1970: t), prefillComputed: 0, generated: 100 * floor(t - 0.13) + 100)
+            if t > 5 { lo = min(lo, h.latest(.decode)); hi = max(hi, h.latest(.decode)) }
+        }
+        #expect(lo >= 85 && hi <= 115)
+    }
+
+    @Test func testASteadilyRisingCounterKeepsTheShortWindowAndAStoppedOneFallsToZero() {
+        var h = SpeedHistory()
+        for i in 0..<20 { h.addCounters(now: Date(timeIntervalSince1970: 0.5 * Double(i)), prefillComputed: 0, generated: 50 * Double(i)) }
+        #expect(abs(h.latest(.decode) - 100) < 1e-6)
+        for i in 20..<28 { h.addCounters(now: Date(timeIntervalSince1970: 0.5 * Double(i)), prefillComputed: 0, generated: 950) }
+        #expect(h.latest(.decode) == 0)
     }
 
     @Test func testTheDampingIsPerSecondAtAnySampleRate() {

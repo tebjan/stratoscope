@@ -105,24 +105,31 @@ public struct SpeedHistory {
     private static let counterFreshSeconds = 3.0
     private var lastPollSeconds = Double.nan, lastPrefillCounter = Double.nan, lastGenerationCounter = Double.nan
     private var lastSlotRead: [Int: Double] = [:]
-    private var lastCounterSeconds = Double.nan, lastCounterPrefill = Double.nan, lastCounterGenerated = Double.nan
+    private var lastCounterSeconds = Double.nan
     private var counterSampleSeconds = -Double.infinity
+    private var prefillRate = CounterRate(), generatedRate = CounterRate()
 
-    /// A sample from a light counter read (twin of AddCounters in SpeedHistory.cs): prefill speed from the delta of the computed prompt tokens,
-    /// decode speed from the delta of the generated tokens, Total their sum. The first read sets the baseline; a counter that fell adds an unknown
-    /// sample; incomplete counters add nothing. Returns true when a sample was added.
+    /// A sample from a light counter read (twin of AddCounters in SpeedHistory.cs): prefill speed from the computed prompt tokens, decode speed
+    /// from the generated tokens, each the rate of its counter between the reads at which it rose (`CounterRate`: an engine that publishes its
+    /// counter once a second gives no 0, 2x, 0, 2x ping-pong), Total their sum. The first read sets the baseline; a counter that fell adds an
+    /// unknown sample; incomplete counters add nothing. Returns true when a sample was added.
     @discardableResult
     public mutating func addCounters(now date: Date, prefillComputed: Double?, generated: Double?) -> Bool {
         let now = date.timeIntervalSince1970
         guard let prefill = prefillComputed, let gen = generated, prefill.isFinite, gen.isFinite else { return false }
         let elapsed = now - lastCounterSeconds
         let hadBaseline = !lastCounterSeconds.isNaN && elapsed > 0 && elapsed <= SpeedHistory.maxPollGapSeconds
-        let before = (prefill: lastCounterPrefill, generated: lastCounterGenerated)
-        lastCounterSeconds = now; lastCounterPrefill = prefill; lastCounterGenerated = gen
-        guard hadBaseline else { return false }
+        lastCounterSeconds = now
+        guard hadBaseline else {
+            prefillRate.reset(); generatedRate.reset()
+            _ = prefillRate.update(t: now, v: prefill); _ = generatedRate.update(t: now, v: gen)
+            return false
+        }
         counterSampleSeconds = now
-        if prefill < before.prefill || gen < before.generated { addSample(now: now, prefill: .nan, decode: .nan); return true }
-        addSample(now: now, prefill: (prefill - before.prefill) / elapsed, decode: (gen - before.generated) / elapsed)
+        let p = prefillRate.update(t: now, v: prefill)
+        let g = generatedRate.update(t: now, v: gen)
+        if p.isNaN || g.isNaN { addSample(now: now, prefill: .nan, decode: .nan); return true }     // a counter fell: a gap
+        addSample(now: now, prefill: p, decode: g)
         return true
     }
 
