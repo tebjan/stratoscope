@@ -138,13 +138,21 @@ internal sealed class PanelPainter
             }
             // Figures take one cell each (the widest figure), so a changing number does not change the width of its text or move what is next to it.
             if (!figureCells.TryGetValue(f, out var cell)) figureCells[f] = cell = Typography.FigureWidth(g, f);
-            var px = right.HasValue ? right.Value - Typography.TabularWidth(g, s, f, 0) : x;
+            // Runs of non-figures are drawn whole (a lone space measures as nothing, so its width is taken from the run between two bars).
+            float RunWidth(string run) => TextWidth("|" + run + "|", f) - TextWidth("||", f);
+            var runs = new List<(string Text, bool Figure)>();
             foreach (var c in s)
             {
-                var text = c.ToString();
-                var w = TextWidth(text, f);
-                if (c >= '0' && c <= '9') { g.DrawString(text, f, brush, px + (cell - w) / 2, y - 1.5f, StringFormat.GenericTypographic); px += cell; }
-                else { g.DrawString(text, f, brush, px, y - 1.5f, StringFormat.GenericTypographic); px += w; }
+                var figure = c >= '0' && c <= '9';
+                if (runs.Count > 0 && !figure && !runs[^1].Figure) runs[^1] = (runs[^1].Text + c, false);
+                else runs.Add((c.ToString(), figure));
+            }
+            var total = runs.Sum(r => r.Figure ? cell : RunWidth(r.Text));
+            var px = right.HasValue ? right.Value - total : x;
+            foreach (var (text, figure) in runs)
+            {
+                if (figure) { g.DrawString(text, f, brush, px + (cell - TextWidth(text, f)) / 2, y - 1.5f, StringFormat.GenericTypographic); px += cell; }
+                else { g.DrawString(text, f, brush, px, y - 1.5f, StringFormat.GenericTypographic); px += RunWidth(text); }
             }
         }
     }
