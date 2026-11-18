@@ -27,8 +27,17 @@ public interface IEngineProvider
 /// <summary>
 /// Cumulative counters of an engine since it started. Only counters that advance while a request runs: prompt tokens computed (not served from
 /// cache) per prefill chunk, and generated tokens per delivery. Null where the engine has no such counter.
+/// The phase clocks, when the engine keeps them (custom 27B: <c>q27:prefill_busy_seconds_total</c>, <c>q27:decode_busy_seconds_total</c>,
+/// <c>q27:decode_step_tokens_total</c>): the seconds it spent on prompt work and on decode steps, and the tokens those decode steps delivered.
+/// With them the curves are tokens per second of the time spent on that phase, not per second of wall time between reads.
 /// </summary>
-public sealed record EngineCounters(double? PrefillComputedTokens, double? GeneratedTokens);
+public sealed record EngineCounters(double? PrefillComputedTokens, double? GeneratedTokens,
+    double? PrefillBusySeconds = null, double? DecodeBusySeconds = null, double? DecodeStepTokens = null)
+{
+    /// <summary>True when all three phase clocks are known.</summary>
+    public bool HasPhaseClocks => PrefillBusySeconds is double p && DecodeBusySeconds is double d && DecodeStepTokens is double t
+        && double.IsFinite(p) && double.IsFinite(d) && double.IsFinite(t);
+}
 
 public static class EngineRegistry
 {

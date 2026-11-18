@@ -58,10 +58,14 @@ public sealed record CustomSample
     [JsonPropertyName("power")] public double? Power { get; init; }
     [JsonPropertyName("power_limit")] public double? PowerLimit { get; init; }
     [JsonPropertyName("temp")] public double? Temp { get; init; }
-    /// <summary>The engine's total decode rate over all requests (stats.py: generated tokens per second between samples).</summary>
+    /// <summary>The engine's total decode rate over all requests (stats.py: generated tokens per second of wall time between samples).</summary>
     [JsonPropertyName("decode_tps")] public double? DecodeTps { get; init; }
-    /// <summary>The engine's total prefill rate over all requests (stats.py: prompt tokens per second between samples).</summary>
+    /// <summary>The engine's total prefill rate over all requests (stats.py: prompt tokens per second of wall time between samples).</summary>
     [JsonPropertyName("prefill_tps")] public double? PrefillTps { get; init; }
+    /// <summary>Newer servers: prompt tokens per second of the time the engine spent on prompt work in the sample (stats.py <c>phase_rates</c>); 0 when none ran.</summary>
+    [JsonPropertyName("prefill_busy_tps")] public double? PrefillBusyTps { get; init; }
+    /// <summary>Newer servers: decode-step tokens per second of the time the engine spent on decode steps in the sample; 0 when none ran.</summary>
+    [JsonPropertyName("decode_busy_tps")] public double? DecodeBusyTps { get; init; }
 }
 
 public sealed record CustomSched
@@ -163,6 +167,10 @@ public sealed record CustomMetrics
     public double? KvCheckpointOnlyPages { get; init; }
     public double? PrefixCacheCheckpoints { get; init; }
     public double? PrefillTokensTotal { get; init; }
+    /// <summary>The phase clocks of newer servers (seconds of prompt work, seconds of decode steps, tokens of decode steps); null on older ones.</summary>
+    public double? PrefillBusySecondsTotal { get; init; }
+    public double? DecodeBusySecondsTotal { get; init; }
+    public double? DecodeStepTokensTotal { get; init; }
     public double? PromptTokensTotal { get; init; }
     public double? CachedTokensTotal { get; init; }
     public double? GenerationTokensTotal { get; init; }
@@ -183,6 +191,8 @@ public sealed record CustomMetrics
             Running = V("num_requests_running"), Waiting = V("num_requests_waiting"), EngineSeqs = V("engine_seqs"),
             KvFreePages = V("kv_free_pages"), KvCheckpointOnlyPages = V("kv_checkpoint_only_pages"), PrefixCacheCheckpoints = V("prefix_cache_checkpoints"),
             PrefillTokensTotal = V("prefill_tokens_total"), PromptTokensTotal = V("prompt_tokens_total"), CachedTokensTotal = V("cached_tokens_total"),
+            PrefillBusySecondsTotal = V("prefill_busy_seconds_total"), DecodeBusySecondsTotal = V("decode_busy_seconds_total"),
+            DecodeStepTokensTotal = V("decode_step_tokens_total"),
             GenerationTokensTotal = V("generation_tokens_total"), RequestsTotal = V("requests_total"),
             BlockedKv = V("admission_blocked{reason=\"kv\"}"), BlockedSpeed = V("admission_blocked{reason=\"speed\"}"),
         };

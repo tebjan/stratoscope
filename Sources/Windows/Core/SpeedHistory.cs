@@ -54,11 +54,13 @@ public static class RequestBars
 /// <summary>
 /// The last 60 seconds of speed of one server, for the history graph and the adaptive scales. One sample per poll.
 /// Curves (tokens per second, all from the engine's own numbers; an unknown value is NaN and breaks the line):
-///  - Prefill: <c>Live.PrefillTokensPerSecond</c>, prompt tokens per second.
-///  - Decode: <c>Live.DecodeTokensPerSecond</c>, generated tokens per second.
+///  - Prefill: prompt tokens per second over all requests. With the engine's phase clocks (<see cref="AddCounters"/>) per second of the time the
+///    engine spent on prompt work, else per second of wall time.
+///  - Decode: generated tokens per second over all requests, likewise per second of decode time with the phase clocks.
 ///  - Total: tokens processed per second through the system, prompt plus generated, the throughput meaning of vLLM
 ///    (<c>vllm:prompt_tokens_total</c> + <c>vllm:generation_tokens_total</c> as a rate) and of the OpenTelemetry GenAI token usage
-///    (<c>gen_ai.client.token.usage</c>, input and output tokens). It is the sum of the two curves above and is unknown when either is unknown.
+///    (<c>gen_ai.client.token.usage</c>, input and output tokens), per second of wall time. Without phase clocks it is the sum of the two curves
+///    above; with them it is not (their seconds are the phases' own), and it is unknown when either is unknown.
 /// While the engine reports it is idle, all three are 0 (nothing runs). While one request reads, it does not write, so an unreported
 /// decode speed is 0 then, and the other way round; with parallel requests an unreported speed stays unknown.
 /// The samples are raw. The smoothing (<see cref="OnePoleFilter"/>) is applied when the graph reads them, so changing the setting changes
@@ -102,13 +104,19 @@ public sealed class SpeedHistory
     private double lastCounterSeconds = double.NaN;
     private double counterSampleSeconds = double.NegativeInfinity;
     private readonly CounterRate prefillRate = new(), generatedRate = new();
+    private readonly PhaseRate prefillPhase = new(), decodePhase = new();
+    private bool phaseBaseline;
 
     /// <summary>
-    /// A sample from the light counter read (every <see cref="SampleSeconds"/>): prefill speed from the computed prompt tokens, decode speed from
-    /// the generated tokens, each the rate of its counter between the reads at which it rose (<see cref="CounterRate"/>: an engine that publishes
-    /// its counter once a second gives no 0, 2x, 0, 2x ping-pong); Total is their sum. Returns true when a sample was added. The first read only
-    /// sets the baseline; a counter that fell (the engine restarted) adds an unknown sample (a gap) and a new baseline; a gap over
-    /// <see cref="MaxPollGapSeconds"/> adds nothing and starts over. Null or incomplete counters add nothing, and the full polls feed the curves.
+    /// A sample from the light counter read (every <see cref="SampleSeconds"/>). With the engine's phase clocks
+    /// (<see cref="EngineCounters.HasPhaseClocks"/>), Prefill is the prompt tokens per second of the time the engine spent on prompt work and Decode
+    /// the decode-step tokens per second of the time it spent on decode steps (<see cref="PhaseRate"/>: the sampling interval does not dilute
+    /// them; 0 while the phase does not run), and Total stays the throughput, prompt plus generated tokens per second of wall time. Without them,
+    /// prefill and decode are the rates of the computed prompt tokens and the generated tokens per second of wall time, each between the reads at
+    /// which its counter rose (<see cref="CounterRate"/>: an engine that publishes its counter once a second gives no 0, 2x, 0, 2x ping-pong), and
+    /// Total is their sum. Returns true when a sample was added. The first read only sets the baseline; a counter that fell (the engine restarted)
+    /// adds an unknown sample (a gap) and a new baseline; a gap over <see cref="MaxPollGapSeconds"/> adds nothing and starts over. Null or
+    /// incomplete token counters add nothing, and the full polls feed the curves.
     /// </summary>
     public bool AddCounters(DateTime utc, EngineCounters? counters)
     {
@@ -118,17 +126,36 @@ public sealed class SpeedHistory
         var elapsed = now - lastCounterSeconds;
         var hadBaseline = !double.IsNaN(lastCounterSeconds) && elapsed > 0 && elapsed <= MaxPollGapSeconds;
         lastCounterSeconds = now;
+        var phases = counters.HasPhaseClocks;
+        if (!phases) { prefillPhase.Reset(); decodePhase.Reset(); }
         if (!hadBaseline)
         {
-            prefillRate.Reset(); generatedRate.Reset();
+            prefillRate.Reset(); generatedRate.Reset(); prefillPhase.Reset(); decodePhase.Reset();
             prefillRate.Update(now, prefill); generatedRate.Update(now, generated);
+            if (phases)
+            {
+                prefillPhase.Update(now, prefill, counters.PrefillBusySeconds!.Value);
+                decodePhase.Update(now, counters.DecodeStepTokens!.Value, counters.DecodeBusySeconds!.Value);
+            }
+            phaseBaseline = phases;
             return false;
         }
         counterSampleSeconds = now;
         var p = prefillRate.Update(now, prefill);
         var g = generatedRate.Update(now, generated);
-        if (double.IsNaN(p) || double.IsNaN(g)) { AddSample(now, double.NaN, double.NaN); return true; }     // a counter fell: a gap
-        AddSample(now, p, g);
+        double pp = 0, dp = 0;
+        var hadPhaseBaseline = phaseBaseline;
+        if (phases)
+        {
+            // (fed on every read, a gap included, so a restart gives all rates their new baseline at the same read)
+            pp = prefillPhase.Update(now, prefill, counters.PrefillBusySeconds!.Value);
+            dp = decodePhase.Update(now, counters.DecodeStepTokens!.Value, counters.DecodeBusySeconds!.Value);
+        }
+        phaseBaseline = phases;
+        if (double.IsNaN(p) || double.IsNaN(g) || double.IsNaN(pp) || double.IsNaN(dp)) { AddSample(now, double.NaN, double.NaN); return true; }     // a counter fell: a gap
+        // The read that first brings the phase clocks is their baseline; until the next one the wall-time rates stand in.
+        if (phases && hadPhaseBaseline) AddSample(now, pp, dp, p + g);
+        else AddSample(now, p, g);
         return true;
     }
 
@@ -147,7 +174,7 @@ public sealed class SpeedHistory
             // The charts of the finished requests share the rule of the other scales: they do not change with every poll.
             var recent = s.Recent.Take(12).ToList();
             var decodeMax = recent.Max(r => r.DecodeTokensPerSecond ?? 0);
-            var prefillMax = recent.Max(r => r.PrefillTokensPerSecond(1500, 2000) ?? 0);
+            var prefillMax = recent.Max(r => r.PrefillTokensPerSecond() ?? 0);
             DecodeChartScale.Observe(decodeMax, Seconds(utc));
             PrefillChartScale.Observe(prefillMax, Seconds(utc));
         }
@@ -236,12 +263,18 @@ public sealed class SpeedHistory
     }
 
     /// <summary>Adds one sample; the total is prefill plus decode. Samples older than <see cref="WindowSeconds"/> are dropped.</summary>
-    public void AddSample(double nowSeconds, double prefill, double decode)
+    public void AddSample(double nowSeconds, double prefill, double decode) =>
+        AddSample(nowSeconds, prefill, decode, double.IsNaN(prefill) || double.IsNaN(decode) ? double.NaN : prefill + decode);
+
+    /// <summary>
+    /// Adds one sample with its own total: with phase speeds for prefill and decode (each over the time spent on its phase) the total is the
+    /// throughput over wall time, which is not their sum.
+    /// </summary>
+    public void AddSample(double nowSeconds, double prefill, double decode, double total)
     {
         while (count > 0 && nowSeconds - time[start] > WindowSeconds + WarmupSeconds) { start = (start + 1) % Capacity; count--; }
         if (count == Capacity) { start = (start + 1) % Capacity; count--; }
         var i = (start + count) % Capacity;
-        var total = double.IsNaN(prefill) || double.IsNaN(decode) ? double.NaN : prefill + decode;
         time[i] = nowSeconds;
         values[0][i] = prefill; values[1][i] = decode; values[2][i] = total;
         count++;

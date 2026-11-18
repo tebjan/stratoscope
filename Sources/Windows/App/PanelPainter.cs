@@ -630,11 +630,12 @@ internal sealed class PanelPainter
     private float HistoryBlock(SpeedHistory history, float y)
     {
         var inner = Width - 2 * Pad;
-        var curves = new[] { (HistoryCurve.Prefill, "Prefill", pal.Orange), (HistoryCurve.Decode, "Decode", pal.Blue), (HistoryCurve.Total, "Total", pal.Label) };
+        // "All": the curves are the engine over all requests together (the Speed section below is per request).
+        var curves = new[] { (HistoryCurve.Prefill, "All prefill", pal.Orange), (HistoryCurve.Decode, "All decode", pal.Blue), (HistoryCurve.Total, "Total", pal.Label) };
         for (int i = 0; i < curves.Length; i++)
         {
             var (curve, name, color) = curves[i];
-            var x = Pad + new[] { 0f, 0.3f, 0.6f }[i] * inner;      // the last name is the longest
+            var x = Pad + new[] { 0f, 0.36f, 0.71f }[i] * inner;    // the last name is the shortest
             // One row: the colour mark, the name, the number. The number is the average of the raw samples of the 60 s window (not of the smoothed curve).
             using (var brush = new SolidBrush(color)) g.FillRectangle(brush, x, y + 14, 8, 3);
             T(name, x + 13, y + 8, Body, false, pal.Dim);
@@ -688,11 +689,12 @@ internal sealed class PanelPainter
     {
         var reqs = s.Recent.Take(12).Reverse().ToList();
         var dec = reqs.Select(r => r.DecodeTokensPerSecond).ToList();
-        // Prefill speed only for prompts that were actually read (not served from cache).
-        var pre = reqs.Select(r => r.PrefillTokensPerSecond(1500, 2000)).ToList();
+        // Each finished request's own speeds: its reading speed (the prompt tokens it computed over its own reading time; none when the whole
+        // prompt came from the cache) and its decode speed. The history graph above is the engine over all requests.
+        var pre = reqs.Select(r => r.PrefillTokensPerSecond()).ToList();
         var half = (Width - 2 * Pad - 16) / 2;
         var xr = Pad + half + 16;
-        T("Speed", Pad, y + 8, Body, true);
+        T("Speed per request", Pad, y + 8, Body, true);
         var dv = dec.Where(v => v.HasValue).Select(v => v!.Value).ToList();
         var pv = pre.Where(v => v.HasValue).Select(v => v!.Value).ToList();
         T("Prefill", Pad, y + 30, Body, true, pal.Orange);

@@ -42,7 +42,7 @@ public static class Tooltips
             Has(r.PromptTokens) ? Fmt.Number(r.PromptTokens) + " prompt tokens" : null,
             Has(r.PromptRead) ? Fmt.Number(r.PromptRead) + " read" : null,
             Has(r.ReusedTokens) ? Fmt.Number(r.ReusedTokens) + " reused" : null);
-        var pre = r.PrefillTokensPerSecond(1500, 2000);   // the same rule as the chart
+        var pre = r.PrefillTokensPerSecond();   // the same number as the chart
         var speeds = Casing.Join(
             pre.HasValue ? "Prefill " + Fmt.Number(pre) + " t/s" : null,
             Has(r.DecodeTokensPerSecond) ? "Decode " + Fmt.Number(r.DecodeTokensPerSecond, 1) + " t/s" : null);
@@ -190,7 +190,7 @@ public static class Tooltips
         if (s is null || !s.HasModel) return Casing.Lines(Casing.Join(word, serverName));
         if (s.Status == EngineStatus.Loading || s.Status == EngineStatus.Error) return Casing.Lines(Casing.Join(word, serverName), s.LoadingReason);
         var newest = s.Recent.Count > 0 ? s.Recent[0] : null;
-        var pre = newest?.PrefillTokensPerSecond(1500, 2000);
+        var pre = newest?.PrefillTokensPerSecond();
         return Casing.Lines(
             Casing.Join(word, state == ServerState.Reading && Has(s.Live?.Percent) ? Fmt.Number(s.Live!.Percent) + " % of the prompt" : null, serverName),
             Parallel(s),

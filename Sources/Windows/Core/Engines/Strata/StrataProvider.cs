@@ -23,8 +23,9 @@ namespace Stratoscope.Core.Engines.Strata;
 ///  - Basalt: live.tok_s, which the engine sums over its slots (BasaltProvider.cs, the speed line).
 ///  - llama.cpp: /metrics llamacpp:predicted_tokens_seconds, the server-wide decode rate over all slots (prompt_tokens_seconds for prefill). It
 ///    needs the server's --metrics flag. No sum is used (LlamaCppProvider.cs, the DecodeTokensPerSecond line).
-///  - custom: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps, the engine's counter deltas over all requests between samples
-///    (CustomProvider.cs). The per-request sum is used only when the sample has no rate.
+///  - custom: /ui/state tick.sample.decode_busy_tps and tick.sample.prefill_busy_tps (newer servers: the engine's tokens over all requests per
+///    second of the time it spent on that phase in the sample), else tick.sample.decode_tps and tick.sample.prefill_tps (its counter deltas
+///    per second of wall time between samples) (CustomProvider.cs). The per-request sum is used only when the sample has no rate.
 /// A request's own speed is shown on its own row only. Never add up the per-request rows to make the headline unless the engine has no total.
 /// This engine: live.tok_s (prefill: live.prefill_tok_s_mean). Canonical text: RoutedProvider.cs.
 /// </remarks>

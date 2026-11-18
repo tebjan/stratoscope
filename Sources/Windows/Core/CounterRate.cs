@@ -76,3 +76,56 @@ internal sealed class CounterRate
         return (e.V - events[b].V) / seconds;
     }
 }
+
+/// <summary>
+/// The speed of one phase from two cumulative counters the engine keeps for it: its tokens and the seconds it spent on that phase (custom 27B:
+/// <c>q27:prefill_tokens_total</c> over <c>q27:prefill_busy_seconds_total</c>, <c>q27:decode_step_tokens_total</c> over
+/// <c>q27:decode_busy_seconds_total</c>). The rate is the tokens over the busy seconds between two reads at which the seconds rose: exact for the
+/// work in between, whatever the read or publishing interval, so a prompt read in 0.1 s of a 1 s interval shows its own speed, not a tenth
+/// of it. Between rises the rate is held like <see cref="CounterRate"/> holds its rate (one and a half typical intervals between rises, 1 to 3 s),
+/// then it is 0: the phase did not run. A counter that falls (the engine restarted) returns NaN once and starts again from those values.
+/// </summary>
+internal sealed class PhaseRate
+{
+    private const int RisesKept = 6;
+    private double tokens = double.NaN, seconds = double.NaN, held;
+    private readonly List<double> rises = new();      // the read times at which the seconds rose, newest last
+
+    /// <summary>Forgets everything: the next <see cref="Update"/> is a new baseline.</summary>
+    public void Reset() { tokens = seconds = double.NaN; held = 0; rises.Clear(); }
+
+    /// <summary>
+    /// Feeds one read (<paramref name="t"/> seconds on any monotonic clock): the phase's cumulative tokens and busy seconds. Returns tokens per
+    /// busy second, 0 while the phase does not run, NaN for the read at which a counter fell. The first read after <see cref="Reset"/> is the
+    /// baseline and returns 0. Tokens that rise without busy seconds (they never should) count with the next rise of the seconds.
+    /// </summary>
+    public double Update(double t, double tokenCount, double busySeconds)
+    {
+        if (double.IsNaN(seconds)) { tokens = tokenCount; seconds = busySeconds; return 0; }
+        if (tokenCount < tokens || busySeconds < seconds)
+        {
+            Reset(); tokens = tokenCount; seconds = busySeconds;
+            return double.NaN;
+        }
+        if (busySeconds > seconds)
+        {
+            held = (tokenCount - tokens) / (busySeconds - seconds);
+            tokens = tokenCount; seconds = busySeconds;
+            rises.Add(t);
+            if (rises.Count > RisesKept) rises.RemoveAt(0);
+        }
+        if (rises.Count == 0) return 0;
+        return t - rises[^1] <= Hold() ? held : 0;
+    }
+
+    private readonly double[] gaps = new double[RisesKept];
+
+    private double Hold()
+    {
+        var n = 0;
+        for (int i = rises.Count - 1; i > 0; i--) gaps[n++] = Math.Min(rises[i] - rises[i - 1], CounterRate.MaxSpan);
+        Array.Sort(gaps, 0, n);
+        var typical = n == 0 ? CounterRate.MinSpan : gaps[n / 2];
+        return Math.Clamp(1.5 * typical, CounterRate.MinHold, CounterRate.MaxHold);
+    }
+}

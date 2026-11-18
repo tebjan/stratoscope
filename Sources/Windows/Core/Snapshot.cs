@@ -69,9 +69,13 @@ public sealed class RequestStats
     /// <summary>Size of the conversation after this request: the prompt plus the answer. Null when either number is unknown.</summary>
     public double? ContextTokens => PromptTokens is double prompt && OutputTokens is double output ? prompt + output : (double?)null;
 
-    /// <summary>Prefill speed, or null when the prompt was too short for the number to mean anything.</summary>
-    public double? PrefillTokensPerSecond(double minTokens = 500, double minMilliseconds = 500) =>
-        PromptMilliseconds is double ms && PromptRead is double read && ms > minMilliseconds && read > minTokens
+    /// <summary>
+    /// This request's reading speed: the prompt tokens it computed over the time the engine took to read them (custom 27B: computed_tokens over
+    /// prefill_s, its own prefill turns). No minimum: every request that read at least one token in a measured time above zero has one; null
+    /// only when nothing was read (all of the prompt came from the cache) or the engine did not report the time.
+    /// </summary>
+    public double? PrefillTokensPerSecond() =>
+        PromptMilliseconds is double ms && PromptRead is double read && ms > 0 && read > 0 && double.IsFinite(ms) && double.IsFinite(read)
             ? read / (ms / 1000) : (double?)null;
 
     /// <summary>The cache verdict of this request, or null when the engine did not report prompt and reuse.</summary>

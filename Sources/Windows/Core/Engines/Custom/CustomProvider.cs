@@ -28,10 +28,11 @@ namespace Stratoscope.Core.Engines.Custom;
 ///  - Basalt: live.tok_s, which the engine sums over its slots (BasaltProvider.cs, the speed line).
 ///  - llama.cpp: /metrics llamacpp:predicted_tokens_seconds, the server-wide decode rate over all slots (prompt_tokens_seconds for prefill). It
 ///    needs the server's --metrics flag. No sum is used (LlamaCppProvider.cs, the DecodeTokensPerSecond line).
-///  - custom: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps, the engine's counter deltas over all requests between samples
-///    (CustomProvider.cs). The per-request sum is used only when the sample has no rate.
+///  - custom: /ui/state tick.sample.decode_busy_tps and tick.sample.prefill_busy_tps (newer servers: the engine's tokens over all requests per
+///    second of the time it spent on that phase in the sample), else tick.sample.decode_tps and tick.sample.prefill_tps (its counter deltas
+///    per second of wall time between samples) (CustomProvider.cs). The per-request sum is used only when the sample has no rate.
 /// A request's own speed is shown on its own row only. Never add up the per-request rows to make the headline unless the engine has no total.
-/// This engine: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps. Canonical text: RoutedProvider.cs.
+/// This engine: /ui/state tick.sample.decode_busy_tps / prefill_busy_tps, else decode_tps / prefill_tps. Canonical text: RoutedProvider.cs.
 /// </remarks>
 public sealed class CustomProvider : RoutedProvider
 {
@@ -82,6 +83,8 @@ public sealed class CustomProvider : RoutedProvider
     /// The light read for the speed curves: only <c>/metrics</c> (about 46 KB, 60 to 90 ms measured against the live engine through the router),
     /// not <c>/ui/state</c> (about 370 KB). <c>q27:prefill_tokens_total</c> is added per prefill chunk and <c>q27:generation_tokens_total</c> per
     /// delivery, so both advance while a request runs (checked live); <c>prompt_tokens_total</c> is added once per request and is not used.
+    /// Newer servers add the phase clocks (worker.py <c>PHASE_SERIES</c>, time.perf_counter seconds): <c>q27:prefill_busy_seconds_total</c>,
+    /// <c>q27:decode_busy_seconds_total</c> and <c>q27:decode_step_tokens_total</c>; older ones leave them null.
     /// </summary>
     internal override async Task<EngineCounters?> ReadCountersFromAsync(string engineBase, CancellationToken cancellation)
     {
@@ -90,7 +93,8 @@ public sealed class CustomProvider : RoutedProvider
             var text = await http.GetTextAsync(Endpoints.Join(engineBase, "metrics"), cancellation).ConfigureAwait(false);
             if (!text.Ok) return null;
             var metrics = CustomMetrics.Parse(text.Body);
-            return metrics is null ? null : new EngineCounters(metrics.PrefillTokensTotal, metrics.GenerationTokensTotal);
+            return metrics is null ? null : new EngineCounters(metrics.PrefillTokensTotal, metrics.GenerationTokensTotal,
+                metrics.PrefillBusySecondsTotal, metrics.DecodeBusySecondsTotal, metrics.DecodeStepTokensTotal);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception) { return null; }
@@ -100,6 +104,9 @@ public sealed class CustomProvider : RoutedProvider
 
     /// <summary>Tokens divided by the seconds spent, only when both are exposed and the time is above zero.</summary>
     private static double? Speed(double? tokens, double? seconds) => tokens.HasValue && seconds > 0 ? tokens / seconds : null;
+
+    /// <summary>A phase speed of the sample when that phase ran in it (above 0), else null.</summary>
+    private static double? Positive(double? v) => v is double d && double.IsFinite(d) && d > 0 ? d : null;
 
     /// <summary>The state text of a <c>/health</c> status other than ok, or null when the engine is ready.</summary>
     internal static string? NotReady(string? status) =>
@@ -132,6 +139,7 @@ public sealed class CustomProvider : RoutedProvider
                 status = writers.Count > 0 ? EngineStatus.Decode : readers.Count > 0 ? EngineStatus.Prefill : EngineStatus.Running;
                 var together = active.Count > 1;
                 var one = together ? null : active[0];
+                var sample = ui?.Tick?.Sample;
                 // Speeds only from exposed values and only for a time above zero. Several requests together: the sum over those in the phase.
                 double? Sum(IEnumerable<double?> values) { var list = values.ToList(); return list.Count > 0 && list.All(v => v.HasValue) ? list.Sum(v => v!.Value) : null; }
                 live = new LiveRequest
@@ -141,9 +149,11 @@ public sealed class CustomProvider : RoutedProvider
                     Generated = status == EngineStatus.Decode ? Sum(writers.Select(s => s.Out)) : null,
                     MaxTokens = status == EngineStatus.Decode && !together ? one!.MaxNew : null,
                     // Speed rule (full text on this class and in RoutedProvider.cs): the headline is the engine's own total over all requests,
-                    // tick.sample.decode_tps / prefill_tps; the sum of the per-request speeds is used only when the sample has no rate.
-                    PrefillTokensPerSecond = status == EngineStatus.Prefill ? (ui?.Tick?.Sample?.PrefillTps ?? Sum(readers.Select(s => Speed(s.Computed, s.PrefillSeconds)))) : null,
-                    DecodeTokensPerSecond = ui?.Tick?.Sample?.DecodeTps ??Sum(writers.Select(s => Speed(s.Out, s.DecodeSeconds))),
+                    // tick.sample.prefill_busy_tps / decode_busy_tps (tokens per second of the time spent on that phase) when the server has them
+                    // and the phase ran in the sample, else tick.sample.prefill_tps / decode_tps (per second of wall time); the sum of the
+                    // per-request speeds is used only when the sample has no rate.
+                    PrefillTokensPerSecond = status == EngineStatus.Prefill ? (Positive(sample?.PrefillBusyTps) ?? sample?.PrefillTps ?? Sum(readers.Select(s => Speed(s.Computed, s.PrefillSeconds)))) : null,
+                    DecodeTokensPerSecond = Positive(sample?.DecodeBusyTps) ?? sample?.DecodeTps ?? Sum(writers.Select(s => Speed(s.Out, s.DecodeSeconds))),
                     Running = together ? active.Count : null,
                 };
             }

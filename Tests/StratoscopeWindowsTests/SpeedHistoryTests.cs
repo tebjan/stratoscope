@@ -116,6 +116,67 @@ public class SpeedScaleTests
     }
 }
 
+public class PhaseClockTests
+{
+    private static DateTime At(double seconds) => DateTime.UnixEpoch.AddSeconds(1_000_000 + seconds);
+    /// <summary>Counters with phase clocks: prompt tokens, generated tokens, prefill seconds, decode seconds, decode-step tokens.</summary>
+    private static EngineCounters C(double prefill, double generated, double prefillS, double decodeS, double decodeTokens) =>
+        new EngineCounters(prefill, generated, prefillS, decodeS, decodeTokens);
+
+    [Fact]
+    public void ThePhaseSpeedIsTokensOverTheTimeSpentOnThePhaseNotTheReadInterval()
+    {
+        var h = new SpeedHistory();
+        Assert.False(h.AddCounters(At(0), C(1000, 100, 2.0, 4.0, 90)));             // baseline
+        // In the next second: 800 prompt tokens in 0.1 s of prefill, 41 tokens (40 from decode steps, 1 first token) in 0.5 s of decode.
+        Assert.True(h.AddCounters(At(1.0), C(1800, 141, 2.1, 4.5, 130)));
+        Assert.Equal(8000, h.Latest(HistoryCurve.Prefill), 6);                     // not 800 per wall second
+        Assert.Equal(80, h.Latest(HistoryCurve.Decode), 6);                        // not 41
+        Assert.Equal(841, h.Latest(HistoryCurve.Total), 6);                        // the throughput stays per wall second
+    }
+
+    [Fact]
+    public void ThePhaseSpeedIsHeldBetweenPublicationsThenZero()
+    {
+        var h = new SpeedHistory();
+        h.AddCounters(At(0), C(0, 0, 0, 0, 0));
+        h.AddCounters(At(0.5), C(500, 0, 0.05, 0, 0));                              // 10,000 t/s
+        h.AddCounters(At(1.0), C(500, 0, 0.05, 0, 0));                              // not published again yet: held
+        Assert.Equal(10_000, h.Latest(HistoryCurve.Prefill), 6);
+        h.AddCounters(At(3.0), C(500, 0, 0.05, 0, 0));                              // the phase stopped
+        Assert.Equal(0, h.Latest(HistoryCurve.Prefill));
+        Assert.Equal(0, h.Latest(HistoryCurve.Decode));
+    }
+
+    [Fact]
+    public void OlderEnginesWithoutPhaseClocksKeepTheWallTimeRates()
+    {
+        var h = new SpeedHistory();
+        h.AddCounters(At(0), new EngineCounters(1000, 100));
+        h.AddCounters(At(1.0), new EngineCounters(1800, 140));
+        Assert.Equal(800, h.Latest(HistoryCurve.Prefill), 6);
+        Assert.Equal(40, h.Latest(HistoryCurve.Decode), 6);
+        // The read that first brings the clocks is their baseline: still the wall rates, phase speeds from the next one.
+        h.AddCounters(At(2.0), C(2600, 180, 3.0, 5.0, 170));
+        Assert.Equal(800, h.Latest(HistoryCurve.Prefill), 6);
+        h.AddCounters(At(3.0), C(3400, 220, 3.2, 5.8, 210));
+        Assert.Equal(4000, h.Latest(HistoryCurve.Prefill), 6);
+        Assert.Equal(50, h.Latest(HistoryCurve.Decode), 6);
+    }
+
+    [Fact]
+    public void ARestartIsAGap()
+    {
+        var h = new SpeedHistory();
+        h.AddCounters(At(0), C(1000, 100, 2.0, 4.0, 90));
+        Assert.True(h.AddCounters(At(0.5), C(10, 2, 0.01, 0.02, 1)));
+        Assert.True(double.IsNaN(h.Latest(HistoryCurve.Prefill)));
+        h.AddCounters(At(1.0), C(410, 4, 0.06, 0.06, 3));
+        Assert.Equal(8000, h.Latest(HistoryCurve.Prefill), 6);
+        Assert.Equal(50, h.Latest(HistoryCurve.Decode), 6);
+    }
+}
+
 public class CounterRateTests
 {
     private static DateTime At(double seconds) => DateTime.UnixEpoch.AddSeconds(1_000_000 + seconds);

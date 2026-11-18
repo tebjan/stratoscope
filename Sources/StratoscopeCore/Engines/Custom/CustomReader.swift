@@ -9,11 +9,12 @@ import Foundation
 //  - Basalt: live.tok_s, which the engine sums over its slots.
 //  - llama.cpp: /metrics llamacpp:predicted_tokens_seconds, the server-wide decode rate over all slots (prompt_tokens_seconds for
 //    prefill). It needs the server's --metrics flag. No sum is used.
-//  - custom: /ui/state tick.sample.decode_tps and tick.sample.prefill_tps, the engine's counter deltas over all requests between
-//    samples. The per-request sum is used only when the sample has no rate.
+//  - custom: /ui/state tick.sample.decode_busy_tps and tick.sample.prefill_busy_tps (newer servers: the engine's tokens over all
+//    requests per second of the time it spent on that phase in the sample), else tick.sample.decode_tps and tick.sample.prefill_tps
+//    (its counter deltas per second of wall time between samples). The per-request sum is used only when the sample has no rate.
 // A request's own speed is shown on its own row only. Never add up the per-request rows to make the headline unless the engine
 // has no total.
-// This file: the custom source is /ui/state tick.sample.decode_tps and tick.sample.prefill_tps.
+// This file: the custom source is /ui/state tick.sample.decode_busy_tps and prefill_busy_tps, else decode_tps and prefill_tps.
 
 /// The numbers of the custom 27B server's `GET /metrics` (Prometheus text, series prefix `q27:`). nil means the series was not in the answer.
 /// The scheduler gauges are read at the time of the request; the totals count since the engine started.
@@ -127,6 +128,8 @@ struct CustomUiState {
     var memUsedBytes: Double?, memTotalBytes: Double?
     // tick.sample: the engine's own total token rates over all requests (as Strata's live.tok_s)
     var decodeTps: Double?, prefillTps: Double?
+    // tick.sample, newer servers: the same per second of the time spent on that phase in the sample (stats.py phase_rates; 0 when none ran)
+    var decodeBusyTps: Double?, prefillBusyTps: Double?
     // tick.vram
     var vramTotal: Double?, vramBudget: Double?, vramFreeAtStart: Double?
     var vramParts: [CustomVramPart] = []
@@ -159,6 +162,7 @@ struct CustomUiState {
             s.powerLimit = customNumber(d, "power_limit"); s.smClock = customNumber(d, "sm_clock"); s.memClock = customNumber(d, "mem_clock")
             s.temp = customNumber(d, "temp"); s.memUsedBytes = customNumber(d, "used"); s.memTotalBytes = customNumber(d, "total")
             s.decodeTps = customNumber(d, "decode_tps"); s.prefillTps = customNumber(d, "prefill_tps")
+            s.decodeBusyTps = customNumber(d, "decode_busy_tps"); s.prefillBusyTps = customNumber(d, "prefill_busy_tps")
         }
         if let d = tick?["vram"] as? [String: Any] {
             s.vramTotal = customNumber(d, "total"); s.vramBudget = customNumber(d, "budget"); s.vramFreeAtStart = customNumber(d, "free_at_start")
@@ -297,6 +301,7 @@ public final class CustomReader {
                 status = !writers.isEmpty ? .decode : !readers.isEmpty ? .prefill : .running
                 let together = active.count > 1
                 // Speed only from exposed values and only for a time above zero; several together: the sum over those in the phase.
+                func positive(_ v: Double?) -> Double? { v.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
                 func speed(_ tokens: Double?, _ seconds: Double?) -> Double? {
                     guard let t = tokens, let s = seconds, s > 0 else { return nil }
                     return t / s
@@ -309,10 +314,11 @@ public final class CustomReader {
                     promptTotal: status == .prefill && !together ? active[0].prompt : nil,
                     generated: status == .decode ? sum(writers.map { $0.out }) : nil,
                     maxTokens: status == .decode && !together ? active[0].maxNew : nil,
-                    // Speed rule at the top of this file: the engine's own sample (tick.sample.*_tps) is the total over all requests;
-                    // the sum of the per-request speeds is used only when the sample has no rate.
-                    prefillTokensPerSecond: status == .prefill ? (ui?.prefillTps ?? sum(readers.map { speed($0.computed, $0.prefillSeconds) })) : nil,
-                    decodeTokensPerSecond: ui?.decodeTps ?? sum(writers.map { speed($0.out, $0.decodeSeconds) }),
+                    // Speed rule at the top of this file: the engine's own sample is the total over all requests, *_busy_tps (per second
+                    // of that phase's time) when the phase ran in the sample, else *_tps (per second of wall time); the sum of the
+                    // per-request speeds is used only when the sample has no rate.
+                    prefillTokensPerSecond: status == .prefill ? (positive(ui?.prefillBusyTps) ?? ui?.prefillTps ?? sum(readers.map { speed($0.computed, $0.prefillSeconds) })) : nil,
+                    decodeTokensPerSecond: positive(ui?.decodeBusyTps) ?? ui?.decodeTps ?? sum(writers.map { speed($0.out, $0.decodeSeconds) }),
                     reusedEstimate: sum(active.map { $0.cached }),      // the engine's own count of prompt tokens restored from the cache
                     running: together ? active.count : nil)
             }

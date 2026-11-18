@@ -183,7 +183,7 @@ public struct SpeedHistory {
             // The charts of the finished requests share the rule of the other scales: they do not change with every poll.
             let recent = s.recent.prefix(12)
             decodeChartScale.observe(recent.map { $0.decodeTokensPerSecond ?? 0 }.max() ?? 0, now: seconds)
-            prefillChartScale.observe(recent.map { $0.prefillTokensPerSecond(minTokens: 1500, minMilliseconds: 2000) ?? 0 }.max() ?? 0, now: seconds)
+            prefillChartScale.observe(recent.map { $0.prefillTokensPerSecond() ?? 0 }.max() ?? 0, now: seconds)
         }
     }
 

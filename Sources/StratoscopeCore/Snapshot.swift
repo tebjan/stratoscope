@@ -78,9 +78,10 @@ public struct RequestStats {
     /// Size of the conversation after this request: the prompt plus the answer.
     public var contextTokens: Double { promptTokens + outputTokens }
 
-    /// Prefill speed, or nil when the prompt was too short for the number to mean anything.
-    public func prefillTokensPerSecond(minTokens: Double = 500, minMilliseconds: Double = 500) -> Double? {
-        (promptMilliseconds > minMilliseconds && promptRead > minTokens) ? promptRead / (promptMilliseconds / 1000) : nil
+    /// This request's reading speed: the prompt tokens it computed over the time the engine took to read them. No minimum (twin of
+    /// RequestStats.PrefillTokensPerSecond in Snapshot.cs): nil only when nothing was read or no time was measured.
+    public func prefillTokensPerSecond() -> Double? {
+        (promptMilliseconds > 0 && promptRead > 0 && promptMilliseconds.isFinite && promptRead.isFinite) ? promptRead / (promptMilliseconds / 1000) : nil
     }
 }
 

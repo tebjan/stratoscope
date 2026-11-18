@@ -400,4 +400,38 @@ public class CustomUiStateTests
         Assert.Null(oldSlots[0].ElapsedSeconds);
         Assert.Equal(30, oldSlots[1].TokensPerSecond);
     }
+
+    [Fact]
+    public void TheHeadlineTakesThePhaseSpeedsOfTheSampleWhenThePhaseRan()
+    {
+        // tick.sample: 800 prompt tokens in 0.1 s of prefill inside a 1 s sample. prefill_tps (wall) says 800, prefill_busy_tps 8,000.
+        var precise = Provider().Translate(Busy(), "m", UiStateWith(new CustomSample { PrefillTps = 800, PrefillBusyTps = 8000, DecodeTps = 0, DecodeBusyTps = 0 }));
+        Assert.Equal(8000, precise.Live!.PrefillTokensPerSecond);
+        // An older server (no busy fields), or a sample in which no prompt work ran: the wall-time rate as before.
+        Assert.Equal(800, Provider().Translate(Busy(), "m", UiStateWith(new CustomSample { PrefillTps = 800 })).Live!.PrefillTokensPerSecond);
+        Assert.Equal(800, Provider().Translate(Busy(), "m", UiStateWith(new CustomSample { PrefillTps = 800, PrefillBusyTps = 0 })).Live!.PrefillTokensPerSecond);
+        static CustomUiState UiStateWith(CustomSample s) => new() { Tick = new CustomTick { Sample = s, Seqs = Ui("r1").Seqs } };
+    }
+
+    [Fact]
+    public void ThePhaseClocksAreReadFromTheMetrics()
+    {
+        var m = CustomMetrics.Parse("q27:prefill_tokens_total 1800\nq27:generation_tokens_total 140\nq27:prefill_busy_seconds_total 2.1\n"
+            + "q27:decode_busy_seconds_total 4.5\nq27:decode_step_tokens_total 120\n")!;
+        Assert.Equal(2.1, m.PrefillBusySecondsTotal);
+        Assert.Equal(4.5, m.DecodeBusySecondsTotal);
+        Assert.Equal(120, m.DecodeStepTokensTotal);
+        Assert.Null(Busy().PrefillBusySecondsTotal);                       // an older server: null, not 0
+    }
+
+    [Fact]
+    public void AFinishedRequestHasItsReadingSpeedWhateverItsSize()
+    {
+        // An agent turn: 312 tokens read in 41 ms (the rest from the cache). Before, anything under 1,500 tokens or 2 s had no speed.
+        var r = new RequestStats { PromptTokens = 24_000, ReusedTokens = 23_688, PromptRead = 312, PromptMilliseconds = 41 };
+        Assert.Equal(312 / 0.041, r.PrefillTokensPerSecond()!.Value, 6);
+        Assert.Null(new RequestStats { PromptRead = 0, PromptMilliseconds = 3 }.PrefillTokensPerSecond());     // all from the cache
+        Assert.Null(new RequestStats { PromptRead = 10, PromptMilliseconds = 0 }.PrefillTokensPerSecond());    // no measured time
+        Assert.Null(new RequestStats { PromptRead = 10 }.PrefillTokensPerSecond());                            // time not reported
+    }
 }

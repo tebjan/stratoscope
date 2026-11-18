@@ -131,9 +131,10 @@ final class Panels {
     func paintHistory() {
         guard let h = history else { return }
         let inner = menuWidth - 2 * pad
-        let curves: [(HistoryCurve, String, NSColor)] = [(.prefill, "Prefill", .systemOrange), (.decode, "Decode", .systemBlue), (.total, "Total", .labelColor)]
+        // "All": the curves are the engine over all requests together (the Speed section below is per request).
+        let curves: [(HistoryCurve, String, NSColor)] = [(.prefill, "All prefill", .systemOrange), (.decode, "All decode", .systemBlue), (.total, "Total", .labelColor)]
         for (i, (curve, name, color)) in curves.enumerated() {
-            let x = pad + [0, 0.3, 0.6][i] * inner      // the last name is the longest
+            let x = pad + [0, 0.36, 0.71][i] * inner    // the last name is the shortest
             color.setFill(); NSRect(x: x, y: 14, width: 8, height: 3).fill()
             let nameWidth = NSAttributedString(string: name, attributes: [.font: font(12, bold: false)]).size().width
             text(name, x: x + 13, y: 8, size: 12, color: .secondaryLabelColor)
@@ -172,10 +173,11 @@ final class Panels {
         guard let s = snap else { return }
         let reqs = Array(s.recent.prefix(12).reversed())
         let dec = reqs.map { $0.decodeTokensPerSecond }
-        // Prefill speed only for prompts that were actually read (not served from cache).
-        let pre: [Double?] = reqs.map { $0.prefillTokensPerSecond(minTokens: 1500, minMilliseconds: 2000) }
+        // Each finished request's own speeds: its reading speed (the prompt tokens it computed over its own reading time; none when the whole
+        // prompt came from the cache) and its decode speed. The history graph above is the engine over all requests.
+        let pre: [Double?] = reqs.map { $0.prefillTokensPerSecond() }
         let half = (menuWidth - 2 * pad - 16) / 2, xr = pad + half + 16
-        text("Speed", x: pad, y: 8, size: 12, bold: true)
+        text("Speed per request", x: pad, y: 8, size: 12, bold: true)
         let dv = dec.compactMap { $0 }, pv = pre.compactMap { $0 }
         text("Prefill", x: pad, y: 30, size: 11, bold: true, color: .systemOrange)
         text("\(pv.last.map { Fmt.number($0) } ?? "–") t/s", x: 0, y: 30, size: 11, right: pad + half)
