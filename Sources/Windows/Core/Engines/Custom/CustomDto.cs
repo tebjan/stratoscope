@@ -31,8 +31,10 @@ public sealed record CustomInfo
 {
     [JsonPropertyName("max_tokens")] public double? MaxTokens { get; init; }
     [JsonPropertyName("max_seqs")] public double? MaxSeqs { get; init; }
-    /// <summary>True when DFlash2 speculative decoding runs.</summary>
+    /// <summary>True when speculative decoding runs (any drafter; older servers report only this).</summary>
     [JsonPropertyName("spec")] public bool? Spec { get; init; }
+    /// <summary>The drafter the engine runs (frontend launch.drafter_name): lookup, mtp+lookup, dflash2, dflash2+dspine, dspine or none.</summary>
+    [JsonPropertyName("drafter")] public string? Drafter { get; init; }
     [JsonPropertyName("kv_dtype")] public string? KvDtype { get; init; }
     [JsonPropertyName("gpu")] public string? Gpu { get; init; }
 }
@@ -134,6 +136,15 @@ public sealed record CustomSeq
     [JsonPropertyName("computed")] public double? Computed { get; init; }
     [JsonPropertyName("prefill_s")] public double? PrefillSeconds { get; init; }
     [JsonPropertyName("decode_s")] public double? DecodeSeconds { get; init; }
+    // The request's own speeds as the engine computes them (worker.py stats(); newer servers), live while the phase runs:
+    /// <summary>computed / prefill_s: its prompt tokens over the time of its own prefill turns.</summary>
+    [JsonPropertyName("prefill_tps")] public double? PrefillTps { get; init; }
+    /// <summary>The time from its prompt's start to its first token (to now while it reads), other requests' turns included.</summary>
+    [JsonPropertyName("prefill_wall_s")] public double? PrefillWallSeconds { get; init; }
+    /// <summary>computed / prefill_wall_s.</summary>
+    [JsonPropertyName("prefill_wall_tps")] public double? PrefillWallTps { get; init; }
+    /// <summary>(out - 1) / decode_wall: the tokens after the first one over the time since the first one.</summary>
+    [JsonPropertyName("decode_tps")] public double? DecodeTps { get; init; }
 }
 
 /// <summary>

@@ -190,9 +190,13 @@ public struct BatchSlot {
     public var maxTokens: Double?
     /// Seconds the slot's running request has been going (nil while idle or when the engine does not say).
     public var elapsedSeconds: Double?
+    /// The slot's own prefill speed while it reads, when the engine reports one (custom: prompt tokens computed over its prefill wall time).
+    public var prefillTokensPerSecond: Double?
     public init(index: Int, state: String? = nil, heldTokens: Double? = nil, promptTokens: Double? = nil, promptRead: Double? = nil,
-                generated: Double? = nil, tokensPerSecond: Double? = nil, maxTokens: Double? = nil, elapsedSeconds: Double? = nil) {
+                generated: Double? = nil, tokensPerSecond: Double? = nil, maxTokens: Double? = nil, elapsedSeconds: Double? = nil,
+                prefillTokensPerSecond: Double? = nil) {
         self.elapsedSeconds = elapsedSeconds
+        self.prefillTokensPerSecond = prefillTokensPerSecond
         self.index = index; self.state = state; self.heldTokens = heldTokens; self.promptTokens = promptTokens
         self.promptRead = promptRead; self.generated = generated; self.tokensPerSecond = tokensPerSecond; self.maxTokens = maxTokens
     }

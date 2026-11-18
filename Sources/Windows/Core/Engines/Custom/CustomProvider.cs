@@ -10,8 +10,9 @@ namespace Stratoscope.Core.Engines.Custom;
 ///    prefix cache checkpoints, which admission block holds a request back, and the token totals.
 ///
 ///  - <c>/ui/state</c> (JSON, about 150 KB, asked on every poll): <c>tick.seqs</c> with each request's state, its own phase (prefill or decode), prompt,
-///    fed, out, max_new, computed, prefill_s and decode_s; <c>tick.sample</c> and <c>tick.vram</c> (video card, memory parts, KV cache); <c>tick.cache</c>
-///    and <c>tick.sched</c>; <c>info</c> (context size, slots, DFlash2, KV format, card name); <c>log</c> (the <c>done</c> events are the finished requests).
+///    fed, out, max_new, computed, prefill_s and decode_s, and on newer servers its own speeds (prefill_tps, prefill_wall_s, prefill_wall_tps, decode_tps);
+///    <c>tick.sample</c> and <c>tick.vram</c> (video card, memory parts, KV cache); <c>tick.cache</c> and <c>tick.sched</c>; <c>info</c> (context size,
+///    slots, the drafter: <c>drafter</c>, older servers only the bool <c>spec</c>, KV format, card name); <c>log</c> (the <c>done</c> events are the finished requests).
 ///    If it is missing, refused or not JSON, the phase is "running" only and those parts are not drawn.
 ///
 /// What the custom 27B server does not report is not drawn: RAM and CPU. The metrics alone are totals across all
@@ -167,7 +168,8 @@ public sealed class CustomProvider : RoutedProvider
         var kvFree = m.KvFreePages ?? tick?.Cache?.FreePages;
         var kvCheckpointOnly = m.KvCheckpointOnlyPages ?? tick?.Cache?.CheckpointOnlyPages;
         var checkpoints = m.PrefixCacheCheckpoints ?? tick?.Cache?.Checkpoints;
-        string? draft = uiInfo?.Spec is bool spec ? (spec ? "DFlash2" : "none") : null;
+        // The drafter the engine names (info.drafter); an older server reports only whether one runs (info.spec), which was always DFlash2.
+        string? draft = uiInfo?.Drafter ?? (uiInfo?.Spec is bool spec ? (spec ? "DFlash2" : "none") : null);
         EngineInfo? info = null;
         if (batchSlotCount.HasValue || kvFree.HasValue || checkpoints.HasValue || blocked != null || uiInfo != null || tick?.Sched != null)
             info = new EngineInfo
@@ -236,13 +238,17 @@ public sealed class CustomProvider : RoutedProvider
                 if (i >= held.Count) { slots.Add(new BatchSlot { Index = i, State = "idle" }); continue; }
                 var s = held[i];
                 var isRunning = Is(s.State, "running");
+                var reading = Is(s.Phase, "prefill");
                 slots.Add(new BatchSlot
                 {
                     Index = i,
-                    State = isRunning ? (Is(s.Phase, "decode") ? "decoding" : Is(s.Phase, "prefill") ? "reading" : "running") : s.State!.ToLowerInvariant(),
+                    State = isRunning ? (Is(s.Phase, "decode") ? "decoding" : reading ? "reading" : "running") : s.State!.ToLowerInvariant(),
                     PromptTokens = s.Prompt, PromptRead = s.Fed, Generated = s.Out, MaxTokens = s.MaxNew,
-                    // (a parked request decodes too, in turns with the others: its own speed over its decode time)
-                    TokensPerSecond = Is(s.Phase, "decode") ? Speed(s.Out, s.DecodeSeconds) : null,
+                    // The request's own speeds, the engine's numbers when it reports them (decode_tps, prefill_wall_tps); an older server: its decode
+                    // speed over its decode time (a parked request decodes too, in turns with the others). The reading time is its prefill wall time.
+                    TokensPerSecond = Is(s.Phase, "decode") ? s.DecodeTps ?? Speed(s.Out, s.DecodeSeconds) : null,
+                    PrefillTokensPerSecond = reading ? s.PrefillWallTps : null,
+                    ElapsedSeconds = reading ? s.PrefillWallSeconds : null,
                 });
             }
         }

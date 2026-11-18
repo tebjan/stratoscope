@@ -196,6 +196,8 @@ public sealed class BatchSlot
     public double? Generated { get; set; }
     /// <summary>The slot's own decode speed: tokens generated over the time since its first token.</summary>
     public double? TokensPerSecond { get; set; }
+    /// <summary>The slot's own prefill speed while it reads, when the engine reports one (custom: prompt tokens computed over its prefill wall time).</summary>
+    public double? PrefillTokensPerSecond { get; set; }
     public double? ElapsedSeconds { get; set; }
     /// <summary>The request's token limit, when the engine reports one for the slot (Strata does not yet).</summary>
     public double? MaxTokens { get; set; }

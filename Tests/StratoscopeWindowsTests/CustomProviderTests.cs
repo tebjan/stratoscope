@@ -366,4 +366,38 @@ public class CustomUiStateTests
         Assert.Equal(3, s.Live!.Running);
         Assert.Equal(2, s.Queued);
     }
+
+    [Fact]
+    public void TheDrafterIsTheOneTheEngineNamesAndTheOldBoolOnlyForOlderServers()
+    {
+        var named = Provider().Translate(Busy(), "m", new CustomUiState { Info = new CustomInfo { Spec = true, Drafter = "lookup" } });
+        Assert.Equal("lookup", named.Info!.DraftWindow);                   // info.drafter
+        var older = Provider().Translate(Busy(), "m", new CustomUiState { Info = new CustomInfo { Spec = true } });
+        Assert.Equal("DFlash2", older.Info!.DraftWindow);                  // info.spec true, no drafter: the only drafter those servers had
+    }
+
+    [Fact]
+    public void SlotRowsShowTheEnginesOwnPerRequestSpeeds()
+    {
+        var ui = new CustomUiState { Tick = new CustomTick { Seqs = [
+            new CustomSeq { State = "running", Phase = "prefill", Prompt = 6000, Fed = 2400, Computed = 2400, PrefillSeconds = 3, PrefillWallSeconds = 4, PrefillWallTps = 600 },
+            new CustomSeq { State = "parked", Phase = "decode", Out = 301, DecodeSeconds = 10, DecodeTps = 25 },
+        ] } };
+        var slots = Provider().Translate(Busy(), "m", ui).Slots!;
+        Assert.Equal(4, slots.Count);                                      // q27:engine_seqs
+        Assert.Equal(600, slots[0].PrefillTokensPerSecond);               // prefill_wall_tps
+        Assert.Equal(4, slots[0].ElapsedSeconds);                         // prefill_wall_s
+        Assert.Null(slots[0].TokensPerSecond);
+        Assert.Equal(25, slots[1].TokensPerSecond);                       // decode_tps, not out / decode_s
+        Assert.Null(slots[1].PrefillTokensPerSecond);
+        // An older server without the per-request speeds: the decode speed over its decode time, no prefill speed (not estimated).
+        var old = new CustomUiState { Tick = new CustomTick { Seqs = [
+            new CustomSeq { State = "running", Phase = "prefill", Prompt = 6000, Fed = 2400, Computed = 2400, PrefillSeconds = 3 },
+            new CustomSeq { State = "parked", Phase = "decode", Out = 300, DecodeSeconds = 10 },
+        ] } };
+        var oldSlots = Provider().Translate(Busy(), "m", old).Slots!;
+        Assert.Null(oldSlots[0].PrefillTokensPerSecond);
+        Assert.Null(oldSlots[0].ElapsedSeconds);
+        Assert.Equal(30, oldSlots[1].TokensPerSecond);
+    }
 }

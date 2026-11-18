@@ -135,7 +135,7 @@ internal static class Program
             if (s.Slots is { } slots)
                 foreach (var slot in slots)
                     Console.WriteLine("  slot " + (slot.Index + 1) + ": " + (slot.State ?? Fmt.Missing) + " | tokens " + Fmt.Number(slot.Tokens)
-                        + (slot.IsReading ? " | read " + Fmt.Number(slot.PromptRead) + " of " + Fmt.Number(slot.PromptTokens) : "")
+                        + (slot.IsReading ? " | read " + Fmt.Number(slot.PromptRead) + " of " + Fmt.Number(slot.PromptTokens) + " | " + Fmt.Number(slot.PrefillTokensPerSecond) + " t/s" : "")
                         + (slot.IsDecoding ? " | generated " + Fmt.Number(slot.Generated) + " of " + Fmt.Number(slot.MaxTokens) + " | " + Fmt.Number(slot.TokensPerSecond) + " t/s" : ""));
             Console.WriteLine("  finished: " + string.Join(", ", s.Recent.Take(5).Select(r => Fmt.Number(r.PromptTokens) + "/" + Fmt.Number(r.ReusedTokens) + " " + (r.Hit?.Label() ?? Fmt.Missing))));
             if (s.Info is { } info)

@@ -74,6 +74,13 @@ struct CustomSeq {
     /// Seconds to the first token, and how often the request was pushed out by the scheduler (`ttft`, `preempted`).
     var ttft: Double?
     var preempted: Double?
+    /// The request's own speeds as the engine computes them (newer servers; worker.py stats()), live while the phase runs:
+    /// `prefill_tps` computed / prefill_s, `prefill_wall_s` its prompt's start to its first token, `prefill_wall_tps` computed / prefill_wall_s,
+    /// `decode_tps` (out - 1) / decode_wall.
+    var prefillTps: Double? = nil
+    var prefillWallSeconds: Double? = nil
+    var prefillWallTps: Double? = nil
+    var decodeTps: Double? = nil
 
     func isState(_ word: String) -> Bool { state?.caseInsensitiveCompare(word) == .orderedSame }
     func isPhase(_ word: String) -> Bool { phase?.caseInsensitiveCompare(word) == .orderedSame }
@@ -92,7 +99,9 @@ struct CustomSeq {
                       prompt: customNumber(d, "prompt"), fed: customNumber(d, "fed"), out: customNumber(d, "out"), maxNew: customNumber(d, "max_new"),
                       computed: customNumber(d, "computed"), prefillSeconds: customNumber(d, "prefill_s"), decodeSeconds: customNumber(d, "decode_s"),
                       cached: customNumber(d, "cached"), reusable: customNumber(d, "reusable"), ttft: customNumber(d, "ttft"),
-                      preempted: customNumber(d, "preempted"))
+                      preempted: customNumber(d, "preempted"), prefillTps: customNumber(d, "prefill_tps"),
+                      prefillWallSeconds: customNumber(d, "prefill_wall_s"), prefillWallTps: customNumber(d, "prefill_wall_tps"),
+                      decodeTps: customNumber(d, "decode_tps"))
         } }
     }
 }
@@ -130,6 +139,8 @@ struct CustomUiState {
     var engineState: String?
     // info
     var maxTokens: Double?, maxSeqs: Double?, spec: Bool?, kvDtype: String?, gpu: String?, hasInfo = false
+    /// The drafter the engine names (`info.drafter`: lookup, mtp+lookup, dflash2, ...); older servers report only `spec`.
+    var drafter: String?
     // tick.seqs
     var seqs: [CustomSeq]?
     // log events of kind "done", newest first
@@ -175,6 +186,7 @@ struct CustomUiState {
             s.maxTokens = customNumber(d, "max_tokens"); s.maxSeqs = customNumber(d, "max_seqs"); s.kvDtype = d["kv_dtype"] as? String
             s.gpu = d["gpu"] as? String
             if let b = d["spec"] as? NSNumber, CFGetTypeID(b) == CFBooleanGetTypeID() { s.spec = b.boolValue }
+            s.drafter = d["drafter"] as? String
         }
         s.seqs = CustomSeq.parse(object: obj)
         // The engine's log keeps the last events oldest first; the "done" ones are the finished requests. Newest 20.
@@ -320,7 +332,8 @@ public final class CustomReader {
         let kvFree = m.kvFreePages ?? ui?.freePages
         let kvCheckpointOnly = m.kvCheckpointOnlyPages ?? ui?.checkpointOnlyPages
         let checkpoints = m.prefixCacheCheckpoints ?? ui?.checkpoints
-        let draft: String? = ui?.spec.map { $0 ? "DFlash2" : "none" }
+        // The drafter the engine names (info.drafter); an older server reports only whether one runs (info.spec), which was always DFlash2.
+        let draft: String? = ui?.drafter ?? ui?.spec.map { $0 ? "DFlash2" : "none" }
         var info: EngineInfo?
         if batchSlotCount != nil || kvFree != nil || checkpoints != nil || blocked != nil || ui?.hasInfo == true || ui?.hasSched == true {
             info = EngineInfo(kvFormat: ui?.kvDtype, draftWindow: draft, batchSlots: batchSlotCount,
@@ -360,10 +373,15 @@ public final class CustomReader {
                 guard i < held.count else { rows.append(BatchSlot(index: i, state: "idle")); continue }
                 let s = held[i], isRunning = s.isState("running")
                 let state = isRunning ? (s.isPhase("decode") ? "decoding" : s.isPhase("prefill") ? "reading" : "running") : (s.state ?? "").lowercased()
+                // The request's own speeds, the engine's numbers when it reports them (decode_tps, prefill_wall_tps); an older server: its decode
+                // speed over its decode time. The reading time is its prefill wall time.
                 var tps: Double?
-                if isRunning, s.isPhase("decode"), let out = s.out, let sec = s.decodeSeconds, sec > 0 { tps = out / sec }
+                if isRunning, s.isPhase("decode") { tps = s.decodeTps }
+                if tps == nil, isRunning, s.isPhase("decode"), let out = s.out, let sec = s.decodeSeconds, sec > 0 { tps = out / sec }
+                let reading = s.isPhase("prefill")
                 rows.append(BatchSlot(index: i, state: state, promptTokens: s.prompt, promptRead: s.fed, generated: s.out,
-                                      tokensPerSecond: tps, maxTokens: s.maxNew))
+                                      tokensPerSecond: tps, maxTokens: s.maxNew, elapsedSeconds: reading ? s.prefillWallSeconds : nil,
+                                      prefillTokensPerSecond: reading ? s.prefillWallTps : nil))
             }
             slots = rows
         }

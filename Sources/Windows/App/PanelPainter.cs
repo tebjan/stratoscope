@@ -576,6 +576,7 @@ internal sealed class PanelPainter
             color = pal.Orange;
             word = "Reading" + (slot.PromptTokens > 0 && slot.PromptRead.HasValue ? "  " + Fmt.Number(frac * 100) + " %" : "");
             detail = Fmt.Number(slot.PromptRead) + " / " + Fmt.Number(slot.PromptTokens);
+            if (slot.PrefillTokensPerSecond is double ps && ps > 0) speed = Fmt.Number(ps) + " t/s";
         }
         else
         {
