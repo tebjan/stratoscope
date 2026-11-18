@@ -127,12 +127,29 @@ internal sealed class PanelPainter
     private void T(string s, float x, float y, float size = Body, bool bold = false, Color? color = null, float? right = null)
     {
         var f = F(size, bold);
-        var px = right.HasValue ? right.Value - TextWidth(s, f) : x;
         Texts.Add(s);
         // Coloured text is held to 4.5:1 on the background; the state colours of dots and bars only need 3:1.
         using (var brush = new SolidBrush(color.HasValue ? pal.TextOf(color.Value) : pal.Label))
-            g.DrawString(s, f, brush, px, y - 1.5f, StringFormat.GenericTypographic);
+        {
+            if (!s.Any(char.IsDigit))
+            {
+                g.DrawString(s, f, brush, right.HasValue ? right.Value - TextWidth(s, f) : x, y - 1.5f, StringFormat.GenericTypographic);
+                return;
+            }
+            // Figures take one cell each (the widest figure), so a changing number does not change the width of its text or move what is next to it.
+            if (!figureCells.TryGetValue(f, out var cell)) figureCells[f] = cell = Typography.FigureWidth(g, f);
+            var px = right.HasValue ? right.Value - Typography.TabularWidth(g, s, f, 0) : x;
+            foreach (var c in s)
+            {
+                var text = c.ToString();
+                var w = TextWidth(text, f);
+                if (c >= '0' && c <= '9') { g.DrawString(text, f, brush, px + (cell - w) / 2, y - 1.5f, StringFormat.GenericTypographic); px += cell; }
+                else { g.DrawString(text, f, brush, px, y - 1.5f, StringFormat.GenericTypographic); px += w; }
+            }
+        }
     }
+
+    private readonly Dictionary<Font, float> figureCells = new Dictionary<Font, float>();
 
     /// <summary>Every text the painter drew, in order: what the user can read. Used by the tests that check the wording.</summary>
     public List<string> Texts { get; } = new List<string>();
@@ -451,25 +468,31 @@ internal sealed class PanelPainter
 
         var l = s.Live;
         var contextY = 108f;
-        var running = l != null && l.IsParallel && s.Slots != null ? s.Slots.Where(sl => sl.IsActive).Take(MaxRunningRows).ToList() : new List<BatchSlot>();
-        if (running.Count > 1)
+        var parallel = s.Slots != null && s.Slots.Count > 1;
+        if (parallel)
         {
-            // Several requests run together: the main bar stands for all of them (the headline is their total speed, the bar their combined
-            // progress), and directly under it one smaller bar per request, each with its own numbers: no caption under the main bar.
-            var reading = s.IsReading;
-            var combined = Display.Combined(running);
-            var main = reading ? pal.Orange : pal.Blue;
-            T(reading ? "Prefill" + (l!.Percent.HasValue ? "  " + Fmt.Number(combined.Fraction * 100) + " %" : "") : "Decode", Pad, y + 40, Body, true);
-            var total = reading ? l!.PrefillTokensPerSecond : l!.DecodeTokensPerSecond;
-            T(total.HasValue ? Fmt.Number(total) + " t/s" : Fmt.Missing, 0, y + 40, Body, true, null, Width - Pad);
-            Bar(Pad, y + 60, inner, 9, combined.Fraction, main);
-            var longest = running.Where(sl => sl.IsDecoding).Select(sl => sl.Generated ?? 0).DefaultIfEmpty(0).Max();
-            // The rows share an area of fixed height (RunningRows): the panel is as tall for two requests as for eight.
-            var shared = RunningRows.SharedLimit(running);
-            if (shared.HasValue) T("Limit " + Fmt.Number(shared) + " per request", Pad, y + LimitLineTop, Caption, false, pal.Dim);
-            var rows = RunningRows.For(running.Count);
-            for (int i = 0; i < running.Count; i++)
-                RunningRow(running[i], Display.SlotFraction(running[i], longest), y + RowsTop + (float)(i * rows.Pitch), rows, shared.HasValue, s.Slots!.IndexOf(running[i]));
+            // An engine with several slots always shows the same live block: the headline (the engine's total speed while requests run, the
+            // last finished request's speeds while idle) and one row per engine slot, an empty track for a slot that does nothing. The rows
+            // share an area of fixed height (RunningRows), so nothing moves when a request starts or ends.
+            var slots = s.Slots!.Take(MaxRunningRows).ToList();
+            var anyActive = slots.Any(sl => sl.IsActive);
+            if (l != null && anyActive)
+            {
+                var reading = s.IsReading;
+                T(reading ? "Prefill" : "Decode", Pad, y + 40, Body, true);
+                var total = reading ? l.PrefillTokensPerSecond : l.DecodeTokensPerSecond;
+                T(total.HasValue ? Fmt.Number(total) + " t/s" : Fmt.Missing, 0, y + 40, Body, true, null, Width - Pad);
+            }
+            else if (s.Recent.Count > 0)
+            {
+                var r = s.Recent[0];
+                T(r.PrefillTokensPerSecond() is double ps ? "Prefill  " + Fmt.Number(ps) + " t/s" : "Prefill  " + Fmt.Missing, Pad, y + 40, Body, true, pal.Orange);
+                T("Decode  " + Fmt.Number(r.DecodeTokensPerSecond, 1) + " t/s", 0, y + 40, Body, true, pal.Blue, Width - Pad);
+                AddTip(Pad, y + 36, inner, 20, TipKind.Request, 0);
+            }
+            var rows = RunningRows.For(slots.Count);
+            for (int i = 0; i < slots.Count; i++)
+                RunningRow(slots[i], y + RowsTop + (float)(i * rows.Pitch), rows, i);
             contextY = RowsContextY;
         }
         else if (l != null && s.IsReading)
@@ -522,7 +545,7 @@ internal sealed class PanelPainter
 
         // An engine that runs several requests together keeps the height of the rows area for one request too (and for none while a request
         // runs), so a request that starts or ends never changes the height of the panel.
-        if (l != null && s.Slots != null && s.Slots.Count > 1 && s.Slots.Any(sl => sl.IsActive)) contextY = RowsContextY;
+        if (parallel) contextY = RowsContextY;
 
         T("Context", Pad, y + contextY, Body, true);
         var max = s.Context.Max;
@@ -557,51 +580,55 @@ internal sealed class PanelPainter
 
     /// <summary>The most requests shown as rows under the headline (the engine runs at most this many together).</summary>
     internal const int MaxRunningRows = 8;
-    /// <summary>Where the shared token limit line sits under the main bar, and where the rows area starts, in the live block (epx).</summary>
-    internal const float LimitLineTop = 70f, RowsTop = 86f;
+    /// <summary>Where the rows area starts in the live block (epx), under the headline.</summary>
+    internal const float RowsTop = 64f;
     /// <summary>The Context line when the rows area is shown: under the fixed-height area of <see cref="RunningRows"/> (the same for every count).</summary>
     internal const float RowsContextY = RowsTop + (float)RunningRows.AreaHeight + 8f;
 
     /// <summary>
-    /// One running request: the state word in its colour with the slot number ("1  Decoding", "2  Reading 57 %") and its own speed at the
-    /// right, the bar, and under it what it has done so far in secondary colour. The engine reports no token limit for a slot, so the bar of
-    /// a decoding request is its length against the longest running one (see Display.SlotFraction).
+    /// One engine slot: the slot number and state word in its colour ("1  Reading", "2  Decoding") with the request's own speed at the right,
+    /// and a bar that is that speed against the adaptive scale of the taskbar readout (decode, blue, <see cref="SpeedHistory.RequestScale"/>) or its
+    /// reading counterpart (prefill, orange, <see cref="SpeedHistory.RequestPrefillScale"/>). A slot without a request, or whose engine reports
+    /// no speed, is an empty track. Speeds are the engine's per-request fields (<see cref="BatchSlot.PrefillTokensPerSecond"/>,
+    /// <see cref="BatchSlot.TokensPerSecond"/>); the token limit is in the tooltip.
     /// </summary>
-    private void RunningRow(BatchSlot slot, double frac, float y, RunningRowLayout rows, bool limitShared, int tipIndex)
+    private void RunningRow(BatchSlot slot, float y, RunningRowLayout rows, int tipIndex)
     {
         var number = (slot.Index + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
-        Color color; string word, detail; string? speed = null;
-        if (slot.IsReading)
+        Color color = pal.Dim; string word = "Idle"; string? speed = null; double frac = 0;
+        if (slot.IsActive)
         {
-            color = pal.Orange;
-            word = "Reading" + (slot.PromptTokens > 0 && slot.PromptRead.HasValue ? "  " + Fmt.Number(frac * 100) + " %" : "");
-            detail = Fmt.Number(slot.PromptRead) + " / " + Fmt.Number(slot.PromptTokens);
-            if (slot.PrefillTokensPerSecond is double ps && ps > 0) speed = Fmt.Number(ps) + " t/s";
-        }
-        else
-        {
-            color = pal.Blue;
-            word = "Decoding";
-            // The limit is shown once above the rows when all share it; otherwise each row keeps its own.
-            detail = slot.MaxTokens > 0 && !limitShared ? Fmt.Number(slot.Generated) + " / " + Fmt.Number(slot.MaxTokens) : slot.MaxTokens > 0 ? Fmt.Number(slot.Generated) : Fmt.Number(slot.Generated) + " tokens";
-            if (slot.TokensPerSecond is double ts && ts > 0) speed = Fmt.Number(ts) + " t/s";
+            if (slot.IsReading)
+            {
+                color = pal.Orange; word = "Reading";
+                if (slot.PrefillTokensPerSecond is double ps && double.IsFinite(ps) && ps > 0)
+                {
+                    speed = Fmt.Number(ps) + " t/s";
+                    frac = model.History?.RequestPrefillScale.Fraction(ps) ?? 0;
+                }
+            }
+            else
+            {
+                color = pal.Blue; word = "Decoding";
+                if (slot.TokensPerSecond is double ts && double.IsFinite(ts) && ts > 0)
+                {
+                    speed = Fmt.Number(ts) + " t/s";
+                    frac = model.History?.RequestScale.Fraction(ts) ?? 0;
+                }
+            }
         }
         var width = Width - 2 * Pad;
         var bar = (float)rows.Bar;
+        var label = number + "  " + word;
         switch (rows.Style)
         {
             case RunningRowStyle.Full:
-                if (slot.ElapsedSeconds is double e) detail += " · " + Fmt.Duration(e);
-                T(number + "  " + word, Pad, y, Body, false, color);
+                T(label, Pad, y, Body, false, color);
                 if (speed != null) T(speed, 0, y, Body, false, null, Width - Pad);
                 Bar(Pad, y + 16, width, bar, frac, color);
-                T(detail, Pad, y + 23, Caption, false, pal.Dim);
                 break;
             case RunningRowStyle.Compact:
-                // One text line: the word, its count in the secondary colour, the speed at the right; the bar directly under it.
-                var label = number + "  " + word;
                 T(label, Pad, y, Body, false, color);
-                T(detail, Pad + TextWidth(label, F(Body, false)) + 8, y + 1, Caption, false, pal.Dim);
                 if (speed != null) T(speed, 0, y, Body, false, null, Width - Pad);
                 Bar(Pad, y + 17, width, bar, frac, color);
                 break;
@@ -631,7 +658,7 @@ internal sealed class PanelPainter
     {
         var inner = Width - 2 * Pad;
         // "All": the curves are the engine over all requests together (the Speed section below is per request).
-        var curves = new[] { (HistoryCurve.Prefill, "All prefill", pal.Orange), (HistoryCurve.Decode, "All decode", pal.Blue), (HistoryCurve.Total, "Total", pal.Label) };
+        var curves = new[] { (HistoryCurve.Prefill, "Avg prefill", pal.Orange), (HistoryCurve.Decode, "Avg decode", pal.Blue), (HistoryCurve.Total, "Avg total", pal.Label) };
         for (int i = 0; i < curves.Length; i++)
         {
             var (curve, name, color) = curves[i];

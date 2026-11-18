@@ -138,7 +138,10 @@ public static class Tooltips
 
     /// <summary>A batch slot: the share of the context its tokens take.</summary>
     public static string? BatchSlot(BatchSlot slot, ContextUsage context) =>
-        Has(slot.Tokens) && Percent(slot.Tokens, context.Max) is string p ? Casing.Lines(p + " of the context") : null;
+        Casing.Lines(
+            slot.IsActive && slot.IsReading && Has(slot.PromptRead) && Has(slot.PromptTokens) ? Fmt.Number(slot.PromptRead) + " / " + Fmt.Number(slot.PromptTokens) + " prompt tokens read" : null,
+            slot.IsActive && !slot.IsReading && Has(slot.Generated) ? Fmt.Number(slot.Generated) + " tokens written" + (Has(slot.MaxTokens) && slot.MaxTokens > 0 ? " of " + Fmt.Number(slot.MaxTokens) + " allowed" : "") : null,
+            Has(slot.Tokens) && Percent(slot.Tokens, context.Max) is string p ? p + " of the context" : null);
 
     // MARK: Totals
 

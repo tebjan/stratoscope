@@ -262,7 +262,7 @@ internal sealed class ReadoutHost : IDisposable
         var window = info.Window; var notification = info.Notification;
         System.Threading.Tasks.Task.Run(() =>
         {
-            try { uiaButtons = TaskbarProbe.ButtonRectangles(window, notification); }
+            try { uiaButtons = TaskbarProbe.KeepLastGood(uiaButtons, TaskbarProbe.ButtonRectangles(window, notification)); }
             finally { buttonsKnown = true; Interlocked.Exchange(ref buttonsBusy, 0); }
         });
     }

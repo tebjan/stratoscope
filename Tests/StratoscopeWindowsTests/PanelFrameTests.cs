@@ -32,12 +32,41 @@ public class PanelFrameTests
             Assert.Equal(below, ImageSet.BelowLive(panel));      // everything below the live block keeps its distance from the anchored bottom edge
         }
         Assert.All(updates, u => { Assert.True(u.PositionChanges <= 1); Assert.Equal(1, u.Paints); Assert.Equal(0, u.Erases); });      // size and position in one call, one frame, no erase
-        Assert.Equal(new[] { true, true, false, false, true }, updates.Select(u => u.SizeChanged).ToArray());      // idle to running changes the height once; 1, 3 and 2 requests are as tall as each other
+        Assert.Equal(new[] { true, false, false, false, false }, updates.Select(u => u.SizeChanged).ToArray());      // the engine has slots: idle, 1, 3 and 2 requests are all as tall as each other (empty rows stay as rows)
         Assert.All(updates.Where(u => u.SizeChanged), u => Assert.Equal(1, u.PositionChanges));
 
         var last = sequence[^1].Snapshot;
         var again = panel.Show("same data", Model(last));     // a poll with the same numbers
         Assert.Equal(0, again.Paints); Assert.Equal(0, again.PositionChanges); Assert.Equal(0, again.Erases);
+    }
+
+    [Fact]
+    public void AnEmptyReadOfTheTaskbarButtonsKeepsTheLastGoodOnes()
+    {
+        var good = new List<Rectangle> { new Rectangle(10, 0, 40, 48), new Rectangle(50, 0, 40, 48) };
+        Assert.Same(good, TaskbarProbe.KeepLastGood(good, new List<Rectangle>()));
+        var fresh = new List<Rectangle> { new Rectangle(10, 0, 40, 48) };
+        Assert.Same(fresh, TaskbarProbe.KeepLastGood(good, fresh));
+        Assert.Empty(TaskbarProbe.KeepLastGood(new List<Rectangle>(), new List<Rectangle>()));
+    }
+
+    [Fact]
+    public void ThePanelIsAsTallIdleAsBusyForAnEngineWithSlots()
+    {
+        var heights = new List<int>();
+        foreach (var running in new[] { 0, 1, 4 })
+        {
+            var snapshot = ImageSet.Sequence()[2].Snapshot;
+            snapshot.Slots = Enumerable.Range(0, 4).Select(i => new Stratoscope.Core.BatchSlot
+            {
+                Index = i, State = i < running ? "decoding" : "idle", Generated = 500, TokensPerSecond = 40,
+            }).ToList();
+            snapshot.Live = running == 0 ? null : snapshot.Live;
+            using var panel = new OffscreenPanel();
+            panel.Show("n", Model(snapshot));
+            heights.Add(panel.Layout!.Size.Height);
+        }
+        Assert.Single(heights.Distinct());
     }
 
     [Fact]

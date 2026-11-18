@@ -86,6 +86,8 @@ public sealed class SpeedHistory
 
     /// <summary>The scale of the per-request bars in the taskbar readout (one request's decode speed).</summary>
     public SpeedScale RequestScale { get; } = new SpeedScale();
+    /// <summary>The scale of the reading rows of the panel (one request's own prefill speed): the same kind of adaptive scale as <see cref="RequestScale"/>, from 1,000 t/s.</summary>
+    public SpeedScale RequestPrefillScale { get; } = new SpeedScale(1000);
     /// <summary>The scale of the history graph (the largest of the three curves).</summary>
     public SpeedScale GraphScale { get; } = new SpeedScale();
     private readonly SpeedScale[] curveScales = { new SpeedScale(100), new SpeedScale(10), new SpeedScale(100) };
@@ -169,6 +171,18 @@ public sealed class SpeedHistory
             AddSample(Seconds(utc), prefill, decode);
         }
         if (RequestBars.PeakSpeed(RequestBars.From(s)) is double peak) RequestScale.Observe(peak, Seconds(utc));
+        if (s?.Slots != null)
+        {
+            // The panel's rows: a decoding slot's speed shares the taskbar scale, a reading slot's prefill speed has its own.
+            double? decodePeak = null, prefillPeak = null;
+            foreach (var slot in s.Slots.Where(sl => sl.IsActive))
+            {
+                if (slot.IsReading) { if (slot.PrefillTokensPerSecond is double v && double.IsFinite(v)) prefillPeak = Math.Max(prefillPeak ?? 0, v); }
+                else if (slot.TokensPerSecond is double d && double.IsFinite(d)) decodePeak = Math.Max(decodePeak ?? 0, d);
+            }
+            if (decodePeak is double dp) RequestScale.Observe(dp, Seconds(utc));
+            if (prefillPeak is double pp) RequestPrefillScale.Observe(pp, Seconds(utc));
+        }
         if (s != null && s.Recent.Count > 0)
         {
             // The charts of the finished requests share the rule of the other scales: they do not change with every poll.

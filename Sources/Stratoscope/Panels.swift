@@ -132,7 +132,7 @@ final class Panels {
         guard let h = history else { return }
         let inner = menuWidth - 2 * pad
         // "All": the curves are the engine over all requests together (the Speed section below is per request).
-        let curves: [(HistoryCurve, String, NSColor)] = [(.prefill, "All prefill", .systemOrange), (.decode, "All decode", .systemBlue), (.total, "Total", .labelColor)]
+        let curves: [(HistoryCurve, String, NSColor)] = [(.prefill, "Avg prefill", .systemOrange), (.decode, "Avg decode", .systemBlue), (.total, "Avg total", .labelColor)]
         for (i, (curve, name, color)) in curves.enumerated() {
             let x = pad + [0, 0.36, 0.71][i] * inner    // the last name is the shortest
             color.setFill(); NSRect(x: x, y: 14, width: 8, height: 3).fill()

@@ -111,6 +111,13 @@ internal static class TaskbarProbe
     /// The task, start, search and widgets buttons of the Windows 11 taskbar are drawn by XAML and have no windows of their own,
     /// so their rectangles come from UI Automation (read-only). Returns those left of the notification area.
     /// </summary>
+    /// <summary>
+    /// The buttons to place the readout by: the fresh read, or the last good one when the fresh read is empty. A Windows taskbar always has at
+    /// least the Start button, so an empty list is a UI Automation read that failed or ran while explorer rebuilt the taskbar; placing by it
+    /// puts the whole free gap at the notification area and makes the readout jump there and back.
+    /// </summary>
+    public static List<Rectangle> KeepLastGood(List<Rectangle> previous, List<Rectangle> fresh) => fresh.Count == 0 && previous.Count > 0 ? previous : fresh;
+
     public static List<Rectangle> ButtonRectangles(HWND taskbar, Rectangle notification)
     {
         var list = new List<Rectangle>();

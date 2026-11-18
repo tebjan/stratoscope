@@ -87,6 +87,8 @@ public struct SpeedHistory {
     private var start = 0, count = 0
     /// The scale of the per-request bars in the menu bar item.
     public var requestScale = SpeedScale()
+    /// The scale of the reading rows of a panel (one request's own prefill speed), from 1,000 t/s. Mirrors `RequestPrefillScale` (Windows).
+    public var requestPrefillScale = SpeedScale(initialMax: 1000)
     /// The scale of the history graph (the largest of the three curves).
     public var graphScale = SpeedScale()
     /// The scales of the bar charts of the Speed section (the speed of the last finished requests): prefill from 100 t/s, decode from 10 t/s.
@@ -179,6 +181,16 @@ public struct SpeedHistory {
             addSample(now: seconds, prefill: prefill, decode: decode)
         }
         if let peak = RequestBars.peakSpeed(RequestBars.from(s)) { requestScale.observe(peak, now: seconds) }
+        if let slots = s?.slots {
+            // The panel rows: a decoding slot's speed shares the menu bar scale, a reading slot's prefill speed has its own.
+            var decodePeak: Double?, prefillPeak: Double?
+            for slot in slots where slot.isActive {
+                if slot.isReading { if let v = slot.prefillTokensPerSecond, v.isFinite { prefillPeak = Swift.max(prefillPeak ?? 0, v) } }
+                else if let d = slot.tokensPerSecond, d.isFinite { decodePeak = Swift.max(decodePeak ?? 0, d) }
+            }
+            if let dp = decodePeak { requestScale.observe(dp, now: seconds) }
+            if let pp = prefillPeak { requestPrefillScale.observe(pp, now: seconds) }
+        }
         if let s = s, !s.recent.isEmpty {
             // The charts of the finished requests share the rule of the other scales: they do not change with every poll.
             let recent = s.recent.prefix(12)
