@@ -63,8 +63,7 @@ public sealed class AutoEngineProvider : RoutedProvider
                     else
                     {
                         cacheable = props.Ok || props.Failure is FetchFailure.Status or FetchFailure.NotJson;
-                        // Not a llama-server: the custom 27B server answers /metrics in Prometheus text with q27: series, where Strata sends JSON. A GET on an existing
-                        // endpoint, which does not wake the engine.
+                        // Not a llama-server: the custom 27B server answers /metrics in Prometheus text with q27: series, where Strata sends JSON.
                         var metrics = await http.GetTextAsync(Endpoints.Join(engineBase, "metrics"), cancellation).ConfigureAwait(false);
                         if (metrics.Ok && CustomMetrics.Parse(metrics.Body) != null) { kind = Kind.Custom; cacheable = true; }
                         else if (!metrics.Ok && metrics.Failure is not FetchFailure.Status) cacheable = false;

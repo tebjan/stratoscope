@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows reuses each full poll's metrics for routed history. The half-second history tick sends no requests through the router, including when the previously observed model is unloading or another model is starting.
+
 - Panel (engines with several slots): one fixed row per engine slot, each showing the request's own speed (decode blue on the taskbar scale, prefill orange), empty rows stay as empty tracks, the live block has the same height idle and busy; the history legend says "Avg". Windows: a failed UI Automation read of the taskbar buttons no longer moves the readout (the last good read is kept). Mac: scale and legend mirrored, unbuilt.
 
 - Taskbar and menu bar readout: one small bar per running request (up to eight) instead of one. A request that reads shows its prompt progress, one that writes shows its own speed against an adaptive scale (the maximum rises with a margin and steps back after 25 s below half); the writing dot became a blue bar. The total speed stays beside it.

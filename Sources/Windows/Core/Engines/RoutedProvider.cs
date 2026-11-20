@@ -4,7 +4,8 @@ namespace Stratoscope.Core.Engines;
 /// <param name="Status">The HTTP status of the metrics request (0 when nothing answered). 429 is the router's per-model request limit.</param>
 /// <param name="Ok">True when the engine answered with a JSON document.</param>
 /// <param name="Snapshot">The translated document. Null when the engine did not answer, or (reading a server directly) when the document is not an engine's metrics.</param>
-internal readonly record struct EngineRead(int Status, bool Ok, FetchFailure Failure, string? Detail, EngineSnapshot? Snapshot);
+/// <param name="Counters">Cumulative counters from this same document, for history when using a router.</param>
+internal readonly record struct EngineRead(int Status, bool Ok, FetchFailure Failure, string? Detail, EngineSnapshot? Snapshot, EngineCounters? Counters = null);
 
 /// <summary>
 /// The part every engine behind a llama-swap style router has in common: ask the router's <c>/running</c> which model runs, wait while it
@@ -31,7 +32,6 @@ public abstract class RoutedProvider : IEngineProvider
     protected readonly EngineConfig config;
     protected readonly IJsonSource http;
     private EngineSnapshot? lastSnapshot;
-    private string? lastModelId;
 
     private readonly ClientConfigReader? clients;
 
@@ -60,13 +60,15 @@ public abstract class RoutedProvider : IEngineProvider
 
     // MARK: Polling
 
-    private string? lastEngineBase;
+    private string? directCounterAddress;
 
-    /// <summary>The address the last full poll read the engine at, so a light counter read goes to the same place. Null before one succeeded.</summary>
-    public async Task<EngineCounters?> ReadCountersAsync(CancellationToken cancellation) =>
-        lastEngineBase is null ? null : await ReadCountersFromAsync(lastEngineBase, cancellation).ConfigureAwait(false);
+    /// <summary>Only direct connections use a separate counter request. Routed history uses the full poll's counters.</summary>
+    public Task<EngineCounters?> ReadCountersAsync(CancellationToken cancellation) =>
+        config.Router is null && Volatile.Read(ref directCounterAddress) is string address
+            ? ReadCountersFromAsync(address, cancellation)
+            : Task.FromResult<EngineCounters?>(null);
 
-    /// <summary>A light read of the cumulative counters at <paramref name="engineBase"/>; an engine that has them for the speed curves overrides it. Never throws.</summary>
+    /// <summary>A light direct read of the cumulative counters at <paramref name="engineBase"/>. An engine with counters for the speed curves overrides it.</summary>
     internal virtual Task<EngineCounters?> ReadCountersFromAsync(string engineBase, CancellationToken cancellation) => Task.FromResult<EngineCounters?>(null);
 
     public async Task<EngineSnapshot?> PollAsync(CancellationToken cancellation)
@@ -74,8 +76,12 @@ public abstract class RoutedProvider : IEngineProvider
         LastError = null;
         if (config.Router is null) return await PollDirect(cancellation).ConfigureAwait(false);
 
+        // Only a confirmed, unchanged ready target can reuse a limited snapshot. Any other result drops it.
+        var previous = lastSnapshot;
+        lastSnapshot = null;
         var router = config.Router;
         var running = await http.GetAsync(Endpoints.Join(router, "running"), Json.RunningType, cancellation).ConfigureAwait(false);
+        cancellation.ThrowIfCancellationRequested();
         if (!running.Ok)
         {
             // Without an explicitly configured server address there is nothing else to ask: no guessing at localhost.
@@ -84,7 +90,7 @@ public abstract class RoutedProvider : IEngineProvider
             return null;
         }
         var first = running.Body!.Running?.FirstOrDefault(r => r != null);
-        if (first is null)
+        if (string.IsNullOrWhiteSpace(first?.Model))
         {
             if (config.Url != null)
             {
@@ -92,28 +98,36 @@ public abstract class RoutedProvider : IEngineProvider
                 if (direct != null) return direct;
                 LastError = null;
             }
-            lastSnapshot = null; lastModelId = null;
             return Placeholder("-", EngineStatus.NoModel, null);
         }
-        var id = first.Model ?? "Model";          // what the router's URLs and the clients' configs use
+        var id = first.Model;                     // what the router's URLs and the clients' configs use
+        if (id is "." or "..") return Placeholder("-", EngineStatus.NoModel, null);
         var title = Title(first);                 // what the user sees: the friendly name from the router's config, else the id
         var state = first.State ?? "?";
         if (state != "ready") return Placeholder(title, EngineStatus.Loading, "State: " + state);
 
         var engineBase = Endpoints.Join(router, "upstream", id).AbsoluteUri.TrimEnd('/');
-        lastEngineBase = engineBase;
         BaseForLinks = engineBase;
         var read = await ReadAsync(engineBase, id, cancellation).ConfigureAwait(false);
+        cancellation.ThrowIfCancellationRequested();
         if (read.Status == 429)
         {
             // The router's per-model request limit is reached. Keep the last data and say so.
-            if (lastSnapshot != null && lastModelId == id) return lastSnapshot.WithRouterLimited();
+            if (previous != null && previous.HistorySource == engineBase)
+            {
+                lastSnapshot = previous;
+                return previous.WithRouterLimited();
+            }
             return Placeholder(title, EngineStatus.Loading, "Router request limit reached");
         }
         if (!read.Ok || read.Snapshot is null) return Placeholder(title, EngineStatus.Error, "Server not responding");
         var snapshot = read.Snapshot;
         snapshot.Model = title;
-        lastSnapshot = snapshot; lastModelId = id;
+        if (!snapshot.IsLoading && !snapshot.IsError && snapshot.HasModel)
+        {
+            SetFullPollHistory(snapshot, engineBase, read.Counters);
+            lastSnapshot = snapshot;
+        }
         return snapshot;
     }
 
@@ -125,15 +139,26 @@ public abstract class RoutedProvider : IEngineProvider
     private async Task<EngineSnapshot?> PollDirect(CancellationToken cancellation)
     {
         var address = config.Url ?? Config.DefaultUrl;
+        Volatile.Write(ref directCounterAddress, null);
         var read = await ReadAsync(address, null, cancellation).ConfigureAwait(false);
+        cancellation.ThrowIfCancellationRequested();
         if (!read.Ok || read.Snapshot is null)
         {
             LastError = read.Ok ? "The answer from " + address + "/metrics is not a " + Brand + " metrics document." : Describe(read.Failure, read.Detail, address);
             return null;
         }
-        BaseForLinks = address; lastEngineBase = address;
-        lastSnapshot = read.Snapshot; lastModelId = null;
+        BaseForLinks = address;
+        if (config.Router is null)
+            Volatile.Write(ref directCounterAddress, read.Snapshot.IsLoading ? null : address);
+        else if (!read.Snapshot.IsLoading)
+            SetFullPollHistory(read.Snapshot, address, read.Counters);
         return read.Snapshot;
+    }
+
+    private static void SetFullPollHistory(EngineSnapshot snapshot, string source, EngineCounters? counters)
+    {
+        snapshot.HistorySource = source;
+        snapshot.FullPollCounters = counters;
     }
 
     protected EngineSnapshot Placeholder(string model, EngineStatus status, string? reason) =>

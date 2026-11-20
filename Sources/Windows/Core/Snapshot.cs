@@ -243,6 +243,10 @@ public sealed class EngineSnapshot
     public List<BatchSlot>? Slots { get; set; }
     public List<EngineLink> Links { get; set; } = new List<EngineLink>();
 
+    // Full-poll history for router configurations. Use the source address as identity because model names can match.
+    internal string? HistorySource { get; set; }
+    internal EngineCounters? FullPollCounters { get; set; }
+
     /// <summary>
     /// The router refused the metrics request because its per-model request limit is reached (HTTP 429).
     /// The numbers are then the ones from the last successful poll.
@@ -290,6 +294,7 @@ public sealed class EngineSnapshot
     {
         var copy = (EngineSnapshot)MemberwiseClone();
         copy.RouterLimited = true;
+        copy.FullPollCounters = null;
         return copy;
     }
 }

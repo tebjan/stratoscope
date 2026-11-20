@@ -28,15 +28,14 @@ public sealed class ServerMonitor
 
     public ServerState State => !Polled ? ServerState.Connecting : Faulted ? ServerState.Error : Display.StateOf(Snapshot);
 
-    /// <summary>Counts the polls that changed what is shown (the state, the error, any number). A poll that brings the same data leaves it as it was.</summary>
+    /// <summary>Counts polls that change the visible state or carry a new full-poll history sample.</summary>
     public int DataVersion { get; private set; }
     private int lastContent = int.MinValue;
 
     private int sampling;
 
     /// <summary>
-    /// The light counter read between the full polls (<see cref="SpeedHistory.SampleSeconds"/>): feeds the speed curves with fine resolution. Never
-    /// throws and never overlaps itself. Returns true when the history got a new sample, so the panel can repaint.
+    /// For direct connections, reads counters between full polls to feed the speed curves. Returns true when the panel has a new sample to paint.
     /// </summary>
     public async Task<bool> SampleAsync(CancellationToken cancellation)
     {
@@ -55,13 +54,14 @@ public sealed class ServerMonitor
     public async Task<bool> PollAsync(CancellationToken cancellation)
     {
         if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) return false;
+        var cancelled = false;
         try
         {
             Snapshot = await provider.PollAsync(cancellation).ConfigureAwait(true);
             Error = Snapshot == null ? provider.LastError : null;
             Faulted = false;
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) { cancelled = true; throw; }
         catch (Exception e)
         {
             Snapshot = null;
@@ -71,9 +71,13 @@ public sealed class ServerMonitor
         finally
         {
             Polled = true;
-            History.Add(DateTime.UtcNow, Snapshot);
+            History.Add(DateTime.UtcNow, cancelled ? null : Snapshot);
             var content = HashCode.Combine(Snapshot?.ContentHash() ?? 0, Error, Faulted);
-            if (content != lastContent) { lastContent = content; DataVersion++; }
+            if (content != lastContent || (!cancelled && Snapshot?.FullPollCounters != null))
+            {
+                lastContent = content;
+                DataVersion++;
+            }
             Interlocked.Exchange(ref busy, 0);
         }
         return true;

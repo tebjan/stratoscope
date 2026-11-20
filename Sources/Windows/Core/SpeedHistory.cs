@@ -108,6 +108,7 @@ public sealed class SpeedHistory
     private readonly CounterRate prefillRate = new(), generatedRate = new();
     private readonly PhaseRate prefillPhase = new(), decodePhase = new();
     private bool phaseBaseline;
+    private string? lastHistorySource;
 
     /// <summary>
     /// A sample from the light counter read (every <see cref="SampleSeconds"/>). With the engine's phase clocks
@@ -164,7 +165,17 @@ public sealed class SpeedHistory
     /// <summary>Records the state of one full poll. A null snapshot (nothing answers) records unknown values.</summary>
     public void Add(DateTime utc, EngineSnapshot? s)
     {
-        // While the counters feed the curves (an engine with a light counter read), the full poll leaves them alone: two sources would interleave.
+        if (s?.RouterLimited == true) return;   // The panel can retain the data, but it is not a new observation.
+        if (s?.HistorySource != lastHistorySource)
+        {
+            lastHistorySource = s?.HistorySource;
+            lastCounterSeconds = double.NaN;
+            counterSampleSeconds = double.NegativeInfinity;
+            lastPollSeconds = double.NaN;
+        }
+        if (s?.FullPollCounters is { } counters) AddCounters(utc, counters);
+
+        // While counters feed the curves, do not interleave rates from another source.
         if (Seconds(utc) - counterSampleSeconds > CounterFreshSeconds)
         {
             var (prefill, decode) = RatesBetweenPolls(Seconds(utc), s);

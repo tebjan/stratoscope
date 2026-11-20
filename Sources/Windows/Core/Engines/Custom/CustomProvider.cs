@@ -3,7 +3,7 @@ namespace Stratoscope.Core.Engines.Custom;
 /// <summary>
 /// Adapter for the custom 27B server (its metrics use the q27: prefix; frontend/server.py), behind a llama-swap router or directly.
 ///
-/// Data sources, all GET on endpoints the server answers without waking it:
+/// Data sources, all GET. A routed read requires a ready model from the router's <c>/running</c>.
 ///  - <c>/health</c>: <c>{"status":"ok"}</c> when the engine is ready; another status (<c>unloaded</c>, <c>loading</c>) means no request can run
 ///    yet and <c>/metrics</c> is not asked. It names no engine, which is why <see cref="AutoEngineProvider"/> recognises the custom 27B server by its metrics.
 ///  - <c>/metrics</c> (Prometheus text, prefix <c>q27:</c>): running and waiting requests, the engine's sequence capacity, free KV pages,
@@ -49,6 +49,8 @@ public sealed class CustomProvider : RoutedProvider
         var model = routedId ?? Brand;
 
         var health = await http.GetAsync(Endpoints.Join(engineBase, "health"), Json.CustomHealthType, cancellation).ConfigureAwait(false);
+        if (routedId is not null && health.Status is 409 or 429)
+            return new EngineRead(health.Status, false, health.Failure, health.Detail, null);
         if (health.Ok && NotReady(health.Body!.Status) is string reason)
             return new EngineRead(200, true, FetchFailure.None, null, Placeholder(model, EngineStatus.Loading, reason));
         // The server answers 503 while its engine is not ready (a start, or after a crash).
@@ -76,15 +78,12 @@ public sealed class CustomProvider : RoutedProvider
             if (state.Ok) ui = state.Body;
         }
 
-        return new EngineRead(text.Status, true, FetchFailure.None, null, Translate(metrics, model, ui));
+        return new EngineRead(text.Status, true, FetchFailure.None, null, Translate(metrics, model, ui),
+            config.Router is null ? null : Counters(metrics));
     }
 
     /// <summary>
-    /// The light read for the speed curves: only <c>/metrics</c> (about 46 KB, 60 to 90 ms measured against the live engine through the router),
-    /// not <c>/ui/state</c> (about 370 KB). <c>q27:prefill_tokens_total</c> is added per prefill chunk and <c>q27:generation_tokens_total</c> per
-    /// delivery, so both advance while a request runs (checked live); <c>prompt_tokens_total</c> is added once per request and is not used.
-    /// Newer servers add the phase clocks (worker.py <c>PHASE_SERIES</c>, time.perf_counter seconds): <c>q27:prefill_busy_seconds_total</c>,
-    /// <c>q27:decode_busy_seconds_total</c> and <c>q27:decode_step_tokens_total</c>; older ones leave them null.
+    /// The light <c>/metrics</c> read for direct connections.
     /// </summary>
     internal override async Task<EngineCounters?> ReadCountersFromAsync(string engineBase, CancellationToken cancellation)
     {
@@ -93,12 +92,16 @@ public sealed class CustomProvider : RoutedProvider
             var text = await http.GetTextAsync(Endpoints.Join(engineBase, "metrics"), cancellation).ConfigureAwait(false);
             if (!text.Ok) return null;
             var metrics = CustomMetrics.Parse(text.Body);
-            return metrics is null ? null : new EngineCounters(metrics.PrefillTokensTotal, metrics.GenerationTokensTotal,
-                metrics.PrefillBusySecondsTotal, metrics.DecodeBusySecondsTotal, metrics.DecodeStepTokensTotal);
+            return metrics is null ? null : Counters(metrics);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception) { return null; }
     }
+
+    // Prefill tokens advance per chunk and generation tokens per delivery. Newer servers also report phase clocks.
+    private static EngineCounters Counters(CustomMetrics metrics) =>
+        new(metrics.PrefillTokensTotal, metrics.GenerationTokensTotal,
+            metrics.PrefillBusySecondsTotal, metrics.DecodeBusySecondsTotal, metrics.DecodeStepTokensTotal);
 
     private static bool Is(string? value, string word) => string.Equals(value, word, StringComparison.OrdinalIgnoreCase);
 
